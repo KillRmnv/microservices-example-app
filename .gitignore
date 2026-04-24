@@ -27,3 +27,9 @@ QWEN.md
 hs_err_pid*
 replay_pid*
 .idea
+build
+.gradle
+gradle
+*gradlew
+
+QWEN.md

@@ -2,16 +2,15 @@ package com.microservices_example_app.users.configuration;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.microservices_example_app.users.filters.JwtAuthenticationFilter;
+import com.microservices_example_app.users.filters.RateLimitFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.access.AccessDeniedHandler;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 import java.util.Map;
@@ -20,10 +19,12 @@ import java.util.Map;
 public class SecurityConfiguration {
 
     private final JwtAuthenticationFilter jwtFilter;
+    private final RateLimitFilter rateLimitFilter;
     private final ObjectMapper objectMapper;
 
-    public SecurityConfiguration(JwtAuthenticationFilter jwtFilter, ObjectMapper objectMapper) {
+    public SecurityConfiguration(JwtAuthenticationFilter jwtFilter, RateLimitFilter rateLimitFilter, ObjectMapper objectMapper) {
         this.jwtFilter = jwtFilter;
+        this.rateLimitFilter = rateLimitFilter;
         this.objectMapper = objectMapper;
     }
 
@@ -52,7 +53,8 @@ public class SecurityConfiguration {
                             objectMapper.writeValue(response.getWriter(),
                                     Map.of("error", "Forbidden", "message", "Insufficient permissions"));
                         }))
-                .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(rateLimitFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(jwtFilter, RateLimitFilter.class)
 
                 .build();
     }

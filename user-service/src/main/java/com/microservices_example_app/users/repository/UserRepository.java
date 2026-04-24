@@ -1,12 +1,19 @@
 package com.microservices_example_app.users.repository;
 
 import com.microservices_example_app.users.model.User;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
 import java.util.Optional;
 
 
-public interface UserRepository extends JpaRepository<User,Long> {
+public interface UserRepository extends JpaRepository<User, Integer>, JpaSpecificationExecutor<User> {
     Optional<User> findByEmail(String email);
-    Optional<User> findById(Long id);
+    @Override
+    Optional<User> findById(Integer id);
+
+    Page<User> findAll(Pageable pageable);
+
 }
