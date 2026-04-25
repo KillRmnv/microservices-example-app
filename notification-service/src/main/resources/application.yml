@@ -1,0 +1,49 @@
+server:
+  port: ${NOTIFICATION_PORT}
+  address: ${NOTIFICATION_ADDRESS}
+
+spring:
+  application:
+    name: notification-service
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: notification-service-group
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring:
+          json:
+            trusted:
+              packages: com.microservices_example_app.notification.dto
+            value:
+              default:
+                type: com.microservices_example_app.notification.dto.EmailNotificationEvent
+            use:
+              type:
+                headers: false
+
+  mail:
+    host: ${MAIL_HOST:smtp.gmail.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME}
+    password: ${MAIL_PASSWORD}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+
+notification:
+  kafka:
+    topic:
+      email: ${NOTIFICATION_EMAIL_TOPIC:notification.email}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
