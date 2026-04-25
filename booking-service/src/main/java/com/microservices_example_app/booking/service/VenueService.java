@@ -10,6 +10,10 @@ import com.microservices_example_app.booking.specification.VenueSpecification;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.Caching;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.CachePut;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
@@ -25,9 +29,11 @@ public class VenueService {
     private final VenueRepository venueRepository;
     private final TownRepository townRepository;
 
+    @CacheEvict(cacheNames = "venueSearch", allEntries = true)
     @Transactional
     public VenueResponseDto create(VenueCreateRequestDto requestDto) {
         log.info("Creating venue: {}", requestDto.getPlace());
+
         Town town = townRepository.findById(requestDto.getTownId())
                 .orElseThrow(() -> new NotFoundException("Town not found"));
 
@@ -37,18 +43,26 @@ public class VenueService {
                 .capacity(requestDto.getCapacity())
                 .build();
 
-        return toResponseDto(venueRepository.save(venue));
+        Venue saved = venueRepository.save(venue);
+        log.info("Created venue with id: {}", saved.getId());
+        return toResponseDto(saved);
     }
 
+    @Cacheable(cacheNames = "venuesById", key = "#id")
     @Transactional
     public VenueResponseDto getById(Integer id) {
         log.info("Fetching venue with id: {}", id);
+
         Venue venue = venueRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("Venue not found"));
+
         return toResponseDto(venue);
     }
 
-
+    @Caching(evict = {
+            @CacheEvict(cacheNames = "venuesById", key = "#id"),
+            @CacheEvict(cacheNames = "venueSearch", allEntries = true)
+    })
     @Transactional
     public void deleteById(Integer id) {
         if (id == null || id < 1) {
@@ -59,8 +73,14 @@ public class VenueService {
             throw new NotFoundException("Venue not found");
         }
 
+        log.info("Deleting venue with id: {}", id);
         venueRepository.deleteById(id);
     }
+
+    @Caching(evict = {
+            @CacheEvict(cacheNames = "venuesById", allEntries = true),
+            @CacheEvict(cacheNames = "venueSearch", allEntries = true)
+    })
     @Transactional
     public long deleteByFilter(VenueDeleteRequestDto requestDto) {
         Specification<Venue> spec = Specification
@@ -68,14 +88,26 @@ public class VenueService {
                 .and(VenueSpecification.hasPlace(requestDto.getPlace()))
                 .and(VenueSpecification.hasCapacityGreaterThanOrEqual(requestDto.getMinCapacity()))
                 .and(VenueSpecification.hasCapacityLessThanOrEqual(requestDto.getMaxCapacity()));
-        log.debug("Delete by filter:{}",spec);
+
+        log.debug("Delete by filter: townId={}, place={}, minCapacity={}, maxCapacity={}",
+                requestDto.getTownId(),
+                requestDto.getPlace(),
+                requestDto.getMinCapacity(),
+                requestDto.getMaxCapacity());
+
         List<Venue> venues = venueRepository.findAll(spec);
         long count = venues.size();
-        log.info("Delete by filter amount:{}",count);
+
+        log.info("Delete by filter amount: {}", count);
         venueRepository.deleteAll(venues);
+
         return count;
     }
 
+    @Cacheable(
+            cacheNames = "venueSearch",
+            key = "{#filter.townId, #filter.place, #filter.minCapacity, #filter.maxCapacity, #page, #size}"
+    )
     @Transactional
     public List<VenueResponseDto> searchByFilter(VenueSearchRequestDto filter, int page, int size) {
         if (page < 1) {
@@ -102,7 +134,15 @@ public class VenueService {
         if (filter.getMaxCapacity() != null) {
             spec = spec.and(VenueSpecification.hasCapacityLessThanOrEqual(filter.getMaxCapacity()));
         }
-        log.debug("Search by filter:{}",spec);
+
+        log.debug("Search by filter: townId={}, place={}, minCapacity={}, maxCapacity={}, page={}, size={}",
+                filter.getTownId(),
+                filter.getPlace(),
+                filter.getMinCapacity(),
+                filter.getMaxCapacity(),
+                page,
+                size);
+
         Pageable pageable = PageRequest.of(page - 1, size);
 
         return venueRepository.findAll(spec, pageable)
@@ -111,6 +151,14 @@ public class VenueService {
                 .toList();
     }
 
+    @Caching(
+            put = {
+                    @CachePut(cacheNames = "venuesById", key = "#result.id")
+            },
+            evict = {
+                    @CacheEvict(cacheNames = "venueSearch", allEntries = true)
+            }
+    )
     @Transactional
     public VenueResponseDto updateVenueById(VenueUpdateRequestDto request) {
         if (request.getId() == null || request.getId() < 1) {
@@ -141,10 +189,12 @@ public class VenueService {
         } else {
             builder.capacity(venue.getCapacity());
         }
-        log.info("Update user with id:{}",venue.getId());
+
+        log.info("Updating venue with id: {}", venue.getId());
         Venue saved = venueRepository.save(builder.build());
         return toResponseDto(saved);
     }
+
     private VenueResponseDto toResponseDto(Venue venue) {
         return VenueResponseDto.builder()
                 .id(venue.getId())

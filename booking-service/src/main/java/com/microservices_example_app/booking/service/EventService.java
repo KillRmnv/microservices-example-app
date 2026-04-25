@@ -10,6 +10,10 @@ import com.microservices_example_app.booking.specification.EventSpecification;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.Caching;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.CachePut;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
@@ -25,9 +29,11 @@ public class EventService {
     private final EventRepository eventRepository;
     private final VenueRepository venueRepository;
 
+    @CacheEvict(cacheNames = "eventSearch", allEntries = true)
     @Transactional
     public EventResponseDto create(EventCreateRequestDto requestDto) {
         log.info("Creating event: {}", requestDto.getTitle());
+
         Venue venue = venueRepository.findById(requestDto.getVenueId())
                 .orElseThrow(() -> new NotFoundException("Venue not found"));
 
@@ -39,14 +45,19 @@ public class EventService {
                 .admissionMode(requestDto.getAdmissionMode())
                 .build();
 
-        return toResponseDto(eventRepository.save(event));
+        Event saved = eventRepository.save(event);
+        log.info("Created event with id: {}", saved.getId());
+        return toResponseDto(saved);
     }
 
+    @Cacheable(cacheNames = "eventsById", key = "#id")
     @Transactional
     public EventResponseDto getById(Integer id) {
         log.info("Fetching event with id: {}", id);
+
         Event event = eventRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("Event not found"));
+
         return toResponseDto(event);
     }
 
@@ -58,6 +69,10 @@ public class EventService {
                 .toList();
     }
 
+    @Cacheable(
+            cacheNames = "eventSearch",
+            key = "{#filter.title, #filter.venueId, #filter.admissionMode, #filter.startsFrom, #filter.startsTo, #page, #size}"
+    )
     @Transactional
     public List<EventResponseDto> searchByFilter(EventSearchRequestDto filter, int page, int size) {
         if (page < 1) {
@@ -90,13 +105,25 @@ public class EventService {
         }
 
         Pageable pageable = PageRequest.of(page - 1, size);
-        log.debug("Search by filter:{}",spec);
+        log.debug("Search by filter: title={}, venueId={}, admissionMode={}, startsFrom={}, startsTo={}, page={}, size={}",
+                filter.getTitle(),
+                filter.getVenueId(),
+                filter.getAdmissionMode(),
+                filter.getStartsFrom(),
+                filter.getStartsTo(),
+                page,
+                size);
+
         return eventRepository.findAll(spec, pageable)
                 .stream()
                 .map(this::toResponseDto)
                 .toList();
     }
 
+    @Caching(evict = {
+            @CacheEvict(cacheNames = "eventsById", key = "#id"),
+            @CacheEvict(cacheNames = "eventSearch", allEntries = true)
+    })
     @Transactional
     public void deleteById(Integer id) {
         if (id == null || id < 1) {
@@ -107,8 +134,14 @@ public class EventService {
             throw new NotFoundException("Event not found");
         }
 
+        log.info("Deleting event with id: {}", id);
         eventRepository.deleteById(id);
     }
+
+    @Caching(evict = {
+            @CacheEvict(cacheNames = "eventsById", allEntries = true),
+            @CacheEvict(cacheNames = "eventSearch", allEntries = true)
+    })
     @Transactional
     public long deleteByFilter(EventDeleteRequestDto requestDto) {
         Specification<Event> spec = Specification
@@ -117,16 +150,30 @@ public class EventService {
                 .and(EventSpecification.hasAdmissionMode(requestDto.getAdmissionMode()))
                 .and(EventSpecification.startsAfter(requestDto.getStartsAt()))
                 .and(EventSpecification.startsBefore(requestDto.getStartsAt()));
-        log.debug("Delete by filter:{}",spec);
+
+        log.debug("Delete by filter: title={}, venueId={}, admissionMode={}, startsAt={}",
+                requestDto.getTitle(),
+                requestDto.getVenueId(),
+                requestDto.getAdmissionMode(),
+                requestDto.getStartsAt());
+
         List<Event> events = eventRepository.findAll(spec);
         long count = events.size();
-        log.info("Delete by filter amount:{}",count);
+
+        log.info("Delete by filter amount: {}", count);
         eventRepository.deleteAll(events);
+
         return count;
     }
 
-
-
+    @Caching(
+            put = {
+                    @CachePut(cacheNames = "eventsById", key = "#result.id")
+            },
+            evict = {
+                    @CacheEvict(cacheNames = "eventSearch", allEntries = true)
+            }
+    )
     @Transactional
     public EventResponseDto updateEventById(EventUpdateRequestDto request) {
         if (request.getId() == null || request.getId() < 1) {
@@ -169,10 +216,12 @@ public class EventService {
         } else {
             builder.admissionMode(event.getAdmissionMode());
         }
-        log.info("Update user with id:{}",event.getId());
+
+        log.info("Updating event with id: {}", event.getId());
         Event saved = eventRepository.save(builder.build());
         return toResponseDto(saved);
     }
+
     private EventResponseDto toResponseDto(Event event) {
         return EventResponseDto.builder()
                 .id(event.getId())

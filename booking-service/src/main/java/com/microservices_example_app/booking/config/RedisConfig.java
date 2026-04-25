@@ -15,25 +15,43 @@ public class RedisConfig {
 
     @Bean
     public RedisCacheManagerBuilderCustomizer redisCacheManagerBuilderCustomizer() {
+        GenericJacksonJsonRedisSerializer serializer =
+                new GenericJacksonJsonRedisSerializer(new ObjectMapper());
+
         return builder -> builder
                 .withCacheConfiguration(
-                        "events",
+                        "eventsById",
                         RedisCacheConfiguration.defaultCacheConfig()
                                 .entryTtl(Duration.ofMinutes(10))
                                 .disableCachingNullValues()
                                 .serializeValuesWith(
-                                        RedisSerializationContext.SerializationPair
-                                                .fromSerializer(new GenericJacksonJsonRedisSerializer(new ObjectMapper()))
+                                        RedisSerializationContext.SerializationPair.fromSerializer(serializer)
                                 )
                 )
                 .withCacheConfiguration(
-                        "venues",
+                        "eventSearch",
                         RedisCacheConfiguration.defaultCacheConfig()
-                                .entryTtl(Duration.ofMinutes(30))
+                                .entryTtl(Duration.ofMinutes(5))
                                 .disableCachingNullValues()
                                 .serializeValuesWith(
-                                        RedisSerializationContext.SerializationPair
-                                                .fromSerializer(new GenericJacksonJsonRedisSerializer(new ObjectMapper()))
+                                        RedisSerializationContext.SerializationPair.fromSerializer(serializer)
+                                )
+                )
+                .withCacheConfiguration(
+                        "venueSearch",
+                        RedisCacheConfiguration.defaultCacheConfig()
+                                .entryTtl(Duration.ofMinutes(5))
+                                .disableCachingNullValues()
+                                .serializeValuesWith(
+                                        RedisSerializationContext.SerializationPair.fromSerializer(serializer)
+                                )
+                ).withCacheConfiguration(
+                        "venuesById",
+                        RedisCacheConfiguration.defaultCacheConfig()
+                                .entryTtl(Duration.ofMinutes(10))
+                                .disableCachingNullValues()
+                                .serializeValuesWith(
+                                        RedisSerializationContext.SerializationPair.fromSerializer(serializer)
                                 )
                 );
     }
