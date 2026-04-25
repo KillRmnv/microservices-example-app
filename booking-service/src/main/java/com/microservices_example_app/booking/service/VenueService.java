@@ -9,6 +9,7 @@ import com.microservices_example_app.booking.repository.VenueRepository;
 import com.microservices_example_app.booking.specification.VenueSpecification;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
@@ -18,6 +19,7 @@ import java.util.List;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class VenueService {
 
     private final VenueRepository venueRepository;
@@ -25,6 +27,7 @@ public class VenueService {
 
     @Transactional
     public VenueResponseDto create(VenueCreateRequestDto requestDto) {
+        log.info("Creating venue: {}", requestDto.getPlace());
         Town town = townRepository.findById(requestDto.getTownId())
                 .orElseThrow(() -> new NotFoundException("Town not found"));
 
@@ -39,6 +42,7 @@ public class VenueService {
 
     @Transactional
     public VenueResponseDto getById(Integer id) {
+        log.info("Fetching venue with id: {}", id);
         Venue venue = venueRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("Venue not found"));
         return toResponseDto(venue);
@@ -64,9 +68,10 @@ public class VenueService {
                 .and(VenueSpecification.hasPlace(requestDto.getPlace()))
                 .and(VenueSpecification.hasCapacityGreaterThanOrEqual(requestDto.getMinCapacity()))
                 .and(VenueSpecification.hasCapacityLessThanOrEqual(requestDto.getMaxCapacity()));
-
+        log.debug("Delete by filter:{}",spec);
         List<Venue> venues = venueRepository.findAll(spec);
         long count = venues.size();
+        log.info("Delete by filter amount:{}",count);
         venueRepository.deleteAll(venues);
         return count;
     }
@@ -97,7 +102,7 @@ public class VenueService {
         if (filter.getMaxCapacity() != null) {
             spec = spec.and(VenueSpecification.hasCapacityLessThanOrEqual(filter.getMaxCapacity()));
         }
-
+        log.debug("Search by filter:{}",spec);
         Pageable pageable = PageRequest.of(page - 1, size);
 
         return venueRepository.findAll(spec, pageable)
@@ -136,7 +141,7 @@ public class VenueService {
         } else {
             builder.capacity(venue.getCapacity());
         }
-
+        log.info("Update user with id:{}",venue.getId());
         Venue saved = venueRepository.save(builder.build());
         return toResponseDto(saved);
     }

@@ -9,6 +9,7 @@ import com.microservices_example_app.booking.repository.VenueRepository;
 import com.microservices_example_app.booking.specification.SeatSpecification;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
@@ -18,6 +19,7 @@ import java.util.List;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class SeatService {
 
     private final SeatRepository seatRepository;
@@ -25,6 +27,7 @@ public class SeatService {
 
     @Transactional
     public SeatResponseDto create(SeatCreateRequestDto requestDto) {
+        log.info("Creating seat in venue id: {}", requestDto.getVenueId());
         Venue venue = venueRepository.findById(requestDto.getVenueId())
                 .orElseThrow(() -> new NotFoundException("Venue not found"));
 
@@ -40,6 +43,7 @@ public class SeatService {
 
     @Transactional
     public SeatResponseDto getById(Integer id) {
+        log.info("Fetching seat with id: {}", id);
         Seat seat = seatRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("Seat not found"));
         return toResponseDto(seat);
@@ -73,7 +77,7 @@ public class SeatService {
         }
 
         Pageable pageable = PageRequest.of(page - 1, size);
-
+        log.debug("Search by filter:{}",spec);
         return seatRepository.findAll(spec, pageable)
                 .stream()
                 .map(this::toResponseDto)
@@ -99,9 +103,10 @@ public class SeatService {
                 .and(SeatSpecification.hasSector(requestDto.getSector()))
                 .and(SeatSpecification.hasRow(requestDto.getRow()))
                 .and(SeatSpecification.hasNumber(requestDto.getNumber()));
-
+        log.debug("Delete by filter:{}",spec);
         List<Seat> seats = seatRepository.findAll(spec);
         long count = seats.size();
+        log.info("Delete by filter amount:{}",count);
         seatRepository.deleteAll(seats);
         return count;
     }
@@ -142,7 +147,7 @@ public class SeatService {
         } else {
             builder.venue(seat.getVenue());
         }
-
+        log.info("Update user with id:{}",seat.getId());
         Seat saved = seatRepository.save(builder.build());
         return toResponseDto(saved);
     }

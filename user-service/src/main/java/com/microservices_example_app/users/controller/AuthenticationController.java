@@ -9,11 +9,14 @@ import jakarta.validation.constraints.Email;
 import lombok.AllArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import lombok.extern.slf4j.Slf4j;
 
 import java.util.List;
 
+@Slf4j
 @AllArgsConstructor
-@RestController("/users/auth")
+@RestController
+@RequestMapping("/users/auth")
 public class AuthenticationController {
     private UserService userService;
     private RoleRepository roleDao;
@@ -26,6 +29,7 @@ public class AuthenticationController {
 
     @PostMapping("/register")
     public ResponseEntity<UserRegistrationDto> register(@RequestBody UserRegistrationRequestDto request) {
+        log.info("Registration attempt for email: {}", request.getEmail());
         UserRegistrationDto response = userService.register(
                 request.getEmail(),
                 request.getPassword(),
@@ -37,6 +41,7 @@ public class AuthenticationController {
 
     @PostMapping("/login")
     public ResponseEntity<UserLoginResponseDto> login(@RequestBody UserLoginRequestDto request) {
+        log.info("Login attempt for email: {}", request.getEmail());
         return ResponseEntity.ok(userService.login(request.getEmail(), request.getPassword()));
     }
     @GetMapping("/roles")

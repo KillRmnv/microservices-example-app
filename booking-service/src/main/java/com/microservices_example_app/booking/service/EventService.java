@@ -9,6 +9,7 @@ import com.microservices_example_app.booking.repository.VenueRepository;
 import com.microservices_example_app.booking.specification.EventSpecification;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
@@ -18,6 +19,7 @@ import java.util.List;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class EventService {
 
     private final EventRepository eventRepository;
@@ -25,6 +27,7 @@ public class EventService {
 
     @Transactional
     public EventResponseDto create(EventCreateRequestDto requestDto) {
+        log.info("Creating event: {}", requestDto.getTitle());
         Venue venue = venueRepository.findById(requestDto.getVenueId())
                 .orElseThrow(() -> new NotFoundException("Venue not found"));
 
@@ -41,6 +44,7 @@ public class EventService {
 
     @Transactional
     public EventResponseDto getById(Integer id) {
+        log.info("Fetching event with id: {}", id);
         Event event = eventRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("Event not found"));
         return toResponseDto(event);
@@ -86,7 +90,7 @@ public class EventService {
         }
 
         Pageable pageable = PageRequest.of(page - 1, size);
-
+        log.debug("Search by filter:{}",spec);
         return eventRepository.findAll(spec, pageable)
                 .stream()
                 .map(this::toResponseDto)
@@ -100,7 +104,7 @@ public class EventService {
         }
 
         if (!eventRepository.existsById(id)) {
-            throw new RuntimeException("Event not found");
+            throw new NotFoundException("Event not found");
         }
 
         eventRepository.deleteById(id);
@@ -113,9 +117,10 @@ public class EventService {
                 .and(EventSpecification.hasAdmissionMode(requestDto.getAdmissionMode()))
                 .and(EventSpecification.startsAfter(requestDto.getStartsAt()))
                 .and(EventSpecification.startsBefore(requestDto.getStartsAt()));
-
+        log.debug("Delete by filter:{}",spec);
         List<Event> events = eventRepository.findAll(spec);
         long count = events.size();
+        log.info("Delete by filter amount:{}",count);
         eventRepository.deleteAll(events);
         return count;
     }
@@ -164,7 +169,7 @@ public class EventService {
         } else {
             builder.admissionMode(event.getAdmissionMode());
         }
-
+        log.info("Update user with id:{}",event.getId());
         Event saved = eventRepository.save(builder.build());
         return toResponseDto(saved);
     }

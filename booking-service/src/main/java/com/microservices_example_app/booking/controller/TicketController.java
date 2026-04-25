@@ -3,6 +3,7 @@ package com.microservices_example_app.booking.controller;
 import com.microservices_example_app.booking.dto.*;
 import com.microservices_example_app.booking.service.TicketService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -10,17 +11,20 @@ import java.util.List;
 @RestController
 @RequestMapping("/booking/tickets")
 @RequiredArgsConstructor
+@Slf4j
 public class TicketController {
 
     private final TicketService ticketService;
 
     @PostMapping
     public TicketResponseDto create(@RequestBody TicketCreateRequestDto requestDto) {
+        log.info("Creating new ticket for event id: {}", requestDto.getEventId());
         return ticketService.create(requestDto);
     }
 
     @GetMapping("/{id}")
     public TicketResponseDto getById(@PathVariable Integer id) {
+        log.info("Fetching ticket with id: {}", id);
         return ticketService.getById(id);
     }
 
@@ -40,6 +44,7 @@ public class TicketController {
 
     @DeleteMapping("/{id}")
     public void deleteById(@PathVariable Integer id) {
+        log.info("Deleting ticket with id: {}", id);
         ticketService.deleteById(id);
     }
 

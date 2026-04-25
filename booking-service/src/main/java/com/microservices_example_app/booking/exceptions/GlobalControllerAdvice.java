@@ -21,14 +21,14 @@ public class GlobalControllerAdvice {
     public ResponseEntity<Map<String,Object>> illegalArgumentException(IllegalArgumentException ex){
         return ResponseEntity.
                 status(HttpStatus.BAD_REQUEST).
-                body(Map.of("message:",ex.getMessage(),
+                body(Map.of("message",ex.getMessage(),
                         "status",HttpStatus.BAD_REQUEST));
     }
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String,Object>> unexpectedException(Exception ex){
         return ResponseEntity.
                 status(HttpStatus.INTERNAL_SERVER_ERROR).
-                body(Map.of("message: Unexpected exception:",ex.getMessage(),
+                body(Map.of("message",ex.getMessage(),
                         "status",HttpStatus.INTERNAL_SERVER_ERROR));
     }
 }

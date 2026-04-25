@@ -2,7 +2,6 @@ package com.microservices_example_app.users.configuration;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.microservices_example_app.users.filters.JwtAuthenticationFilter;
-import com.microservices_example_app.users.filters.RateLimitFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpStatus;
@@ -19,12 +18,11 @@ import java.util.Map;
 public class SecurityConfiguration {
 
     private final JwtAuthenticationFilter jwtFilter;
-    private final RateLimitFilter rateLimitFilter;
+
     private final ObjectMapper objectMapper;
 
-    public SecurityConfiguration(JwtAuthenticationFilter jwtFilter, RateLimitFilter rateLimitFilter, ObjectMapper objectMapper) {
+    public SecurityConfiguration(JwtAuthenticationFilter jwtFilter , ObjectMapper objectMapper) {
         this.jwtFilter = jwtFilter;
-        this.rateLimitFilter = rateLimitFilter;
         this.objectMapper = objectMapper;
     }
 
@@ -34,7 +32,7 @@ public class SecurityConfiguration {
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/auth/login", "/auth/register").permitAll()
+                        .requestMatchers("/users/auth/login", "/users/auth/register").permitAll()
                         .requestMatchers("/admin/**").hasRole("ADMIN")
                         .requestMatchers("/manager/**").hasRole("EVENT_MANAGER")
                         .anyRequest().authenticated())
@@ -53,8 +51,8 @@ public class SecurityConfiguration {
                             objectMapper.writeValue(response.getWriter(),
                                     Map.of("error", "Forbidden", "message", "Insufficient permissions"));
                         }))
-                .addFilterBefore(rateLimitFilter, UsernamePasswordAuthenticationFilter.class)
-                .addFilterBefore(jwtFilter, RateLimitFilter.class)
+                .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
+
 
                 .build();
     }

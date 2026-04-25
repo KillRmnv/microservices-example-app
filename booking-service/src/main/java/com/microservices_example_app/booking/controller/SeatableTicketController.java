@@ -3,6 +3,7 @@ package com.microservices_example_app.booking.controller;
 import com.microservices_example_app.booking.dto.*;
 import com.microservices_example_app.booking.service.SeatableTicketService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -10,17 +11,20 @@ import java.util.List;
 @RestController
 @RequestMapping("/booking/seatable-tickets")
 @RequiredArgsConstructor
+@Slf4j
 public class SeatableTicketController {
 
     private final SeatableTicketService seatableTicketService;
 
     @PostMapping
     public SeatableTicketResponseDto create(@RequestBody SeatableTicketCreateRequestDto requestDto) {
+        log.info("Creating seatable ticket for event id: {}", requestDto.getEventId());
         return seatableTicketService.create(requestDto);
     }
 
     @GetMapping("/{id}")
     public SeatableTicketResponseDto getById(@PathVariable Integer id) {
+        log.info("Fetching seatable ticket with id: {}", id);
         return seatableTicketService.getById(id);
     }
 
@@ -40,6 +44,7 @@ public class SeatableTicketController {
 
     @DeleteMapping("/{id}")
     public void deleteById(@PathVariable Integer id) {
+        log.info("Deleting seatable ticket with id: {}", id);
         seatableTicketService.deleteById(id);
     }
 

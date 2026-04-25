@@ -9,6 +9,7 @@ import com.microservices_example_app.booking.repository.TicketRepository;
 import com.microservices_example_app.booking.specification.TicketSpecification;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
@@ -18,6 +19,7 @@ import java.util.List;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class TicketService {
 
     private final TicketRepository ticketRepository;
@@ -25,6 +27,7 @@ public class TicketService {
 
     @Transactional
     public TicketResponseDto create(TicketCreateRequestDto requestDto) {
+        log.info("Creating ticket for event id: {}", requestDto.getEventId());
         Event event = eventRepository.findById(requestDto.getEventId())
                 .orElseThrow(() -> new NotFoundException("Event not found"));
 
@@ -41,6 +44,7 @@ public class TicketService {
 
     @Transactional
     public TicketResponseDto getById(Integer id) {
+        log.info("Fetching ticket with id: {}", id);
         Ticket ticket = ticketRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("Ticket not found"));
         return toResponseDto(ticket);
@@ -80,7 +84,7 @@ public class TicketService {
         if (filter.getMaxPrice() != null) {
             spec = spec.and(TicketSpecification.hasPriceLessThanOrEqual(filter.getMaxPrice()));
         }
-
+        log.debug("Search by filter:{}",spec);
         Pageable pageable = PageRequest.of(page - 1, size);
 
         return ticketRepository.findAll(spec, pageable)
@@ -110,9 +114,10 @@ public class TicketService {
                 .and(TicketSpecification.hasActive(requestDto.getActive()))
                 .and(TicketSpecification.hasPriceGreaterThanOrEqual(requestDto.getMinPrice()))
                 .and(TicketSpecification.hasPriceLessThanOrEqual(requestDto.getMaxPrice()));
-
+        log.debug("Delete by filter:{}",spec);
         List<Ticket> tickets = ticketRepository.findAll(spec);
         long count = tickets.size();
+        log.info("Delete by filter amount:{}",count);
         ticketRepository.deleteAll(tickets);
         return count;
     }
@@ -160,7 +165,7 @@ public class TicketService {
         } else {
             builder.userId(ticket.getUserId());
         }
-
+        log.info("Update user with id:{}",ticket.getId());
         Ticket saved = ticketRepository.save(builder.build());
         return toResponseDto(saved);
     }

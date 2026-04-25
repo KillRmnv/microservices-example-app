@@ -11,6 +11,7 @@ import com.microservices_example_app.booking.repository.SeatableTicketRepository
 import com.microservices_example_app.booking.specification.SeatableTicketSpecification;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
@@ -20,6 +21,7 @@ import java.util.List;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class SeatableTicketService {
 
     private final SeatableTicketRepository seatableTicketRepository;
@@ -28,6 +30,7 @@ public class SeatableTicketService {
 
     @Transactional
     public SeatableTicketResponseDto create(SeatableTicketCreateRequestDto requestDto) {
+        log.info("Creating seatable ticket for event id: {}", requestDto.getEventId());
         Event event = eventRepository.findById(requestDto.getEventId())
                 .orElseThrow(() -> new NotFoundException("Event not found"));
 
@@ -48,6 +51,7 @@ public class SeatableTicketService {
 
     @Transactional
     public SeatableTicketResponseDto getById(Integer id) {
+        log.info("Fetching seatable ticket with id: {}", id);
         SeatableTicket ticket = seatableTicketRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("Seatable ticket not found"));
         return toResponseDto(ticket);
@@ -79,9 +83,10 @@ public class SeatableTicketService {
                 .and(SeatableTicketSpecification.hasSector(requestDto.getSector()))
                 .and(SeatableTicketSpecification.hasRow(requestDto.getRow()))
                 .and(SeatableTicketSpecification.hasNumber(requestDto.getNumber()));
-
+        log.debug("Delete by filter:{}",spec);
         List<SeatableTicket> tickets = seatableTicketRepository.findAll(spec);
         long count = tickets.size();
+        log.info("Delete by filter amount:{}",count);
         seatableTicketRepository.deleteAll(tickets);
         return count;
     }
@@ -138,7 +143,7 @@ public class SeatableTicketService {
         }
 
         Pageable pageable = PageRequest.of(page - 1, size);
-
+        log.debug("Search by filter:{}",spec);
         return seatableTicketRepository.findAll(spec, pageable)
                 .stream()
                 .map(this::toResponseDto)
@@ -195,7 +200,7 @@ public class SeatableTicketService {
         } else {
             builder.userId(ticket.getUserId());
         }
-
+        log.info("Update user with id:{}",ticket.getId());
         SeatableTicket saved = seatableTicketRepository.save(builder.build());
         return toResponseDto(saved);
     }

@@ -4,6 +4,7 @@ import com.microservices_example_app.booking.dto.TownCreateRequestDto;
 import com.microservices_example_app.booking.dto.TownResponseDto;
 import com.microservices_example_app.booking.service.TownService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -11,17 +12,20 @@ import java.util.List;
 @RestController
 @RequestMapping("/booking/towns")
 @RequiredArgsConstructor
+@Slf4j
 public class TownController {
 
     private final TownService townService;
 
     @PostMapping
     public TownResponseDto create(@RequestBody TownCreateRequestDto requestDto) {
+        log.info("Creating new town: {}", requestDto.getName());
         return townService.create(requestDto);
     }
 
     @GetMapping("/{id}")
     public TownResponseDto getById(@PathVariable Integer id) {
+        log.info("Fetching town with id: {}", id);
         return townService.getById(id);
     }
 
@@ -32,6 +36,7 @@ public class TownController {
 
     @DeleteMapping("/{id}")
     public void deleteById(@PathVariable Integer id) {
+        log.info("Deleting town with id: {}", id);
         townService.delete(id);
     }
 }
