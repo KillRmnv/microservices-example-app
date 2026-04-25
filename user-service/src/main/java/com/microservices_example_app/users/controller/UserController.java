@@ -17,22 +17,6 @@ public class UserController {
         this.userService = userService;
     }
 
-    @PostMapping("/register")
-    public ResponseEntity<UserRegistrationDto> register(@RequestBody UserRegistrationRequestDto request) {
-        UserRegistrationDto response = userService.register(
-                request.getEmail(),
-                request.getPassword(),
-                request.getRole(),
-                request.getUsername()
-        );
-        return ResponseEntity.ok(response);
-    }
-
-    @PostMapping("/login")
-    public ResponseEntity<UserLoginResponseDto> login(@RequestBody UserLoginRequestDto request) {
-        return ResponseEntity.ok(userService.login(request.getEmail(), request.getPassword()));
-    }
-
     @GetMapping
     public ResponseEntity<List<UserResponseDto>> getAll() {
         return ResponseEntity.ok(userService.getAll());

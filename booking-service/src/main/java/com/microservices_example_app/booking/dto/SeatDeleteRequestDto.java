@@ -1,15 +1,12 @@
 package com.microservices_example_app.booking.dto;
 
-import lombok.AllArgsConstructor;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
+import lombok.*;
 
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
-public class SeatCreateRequestDto {
+public class SeatDeleteRequestDto {
     private String sector;
     private String row;
     private String number;
