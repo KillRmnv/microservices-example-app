@@ -1,0 +1,50 @@
+package com.microservices_example_app.booking.controller;
+
+import com.microservices_example_app.booking.dto.*;
+import com.microservices_example_app.booking.service.TicketService;
+import lombok.RequiredArgsConstructor;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/booking/tickets")
+@RequiredArgsConstructor
+public class TicketController {
+
+    private final TicketService ticketService;
+
+    @PostMapping
+    public TicketResponseDto create(@RequestBody TicketCreateRequestDto requestDto) {
+        return ticketService.create(requestDto);
+    }
+
+    @GetMapping("/{id}")
+    public TicketResponseDto getById(@PathVariable Integer id) {
+        return ticketService.getById(id);
+    }
+
+    @GetMapping("/search")
+    public List<TicketResponseDto> searchByFilter(@ModelAttribute TicketSearchRequestDto filter,
+                                                  @RequestParam(defaultValue = "1") int page,
+                                                  @RequestParam(defaultValue = "10") int size) {
+        return ticketService.searchByFilter(filter, page, size);
+    }
+
+    @PutMapping("/{id}")
+    public TicketResponseDto updateById(@PathVariable Integer id,
+                                        @RequestBody TicketUpdateRequestDto requestDto) {
+        requestDto.setId(id);
+        return ticketService.updateTicketById(requestDto);
+    }
+
+    @DeleteMapping("/{id}")
+    public void deleteById(@PathVariable Integer id) {
+        ticketService.deleteById(id);
+    }
+
+    @DeleteMapping("/search")
+    public long deleteByFilter(@RequestBody TicketDeleteRequestDto requestDto) {
+        return ticketService.deleteByFilter(requestDto);
+    }
+}
