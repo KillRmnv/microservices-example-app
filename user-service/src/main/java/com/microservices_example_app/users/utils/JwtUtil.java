@@ -7,38 +7,41 @@ import io.jsonwebtoken.security.Keys;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
 import javax.crypto.SecretKey;
+
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 
 public final class JwtUtil {
 
     private static String SECRET =
-        System.getenv("JWT_SECRET") != null
-            ? System.getenv("JWT_SECRET")
-            : "your-super-secret-key-at-least-32-characters-long!";
-            
+            System.getenv("JWT_SECRET") != null
+                    ? System.getenv("JWT_SECRET")
+                    : "your-super-secret-key-at-least-32-characters-long!";
+
     private static Long EXPIRATION =
-        System.getenv("JWT_EXPIRATION") != null
-            ? Long.parseLong(System.getenv("JWT_EXPIRATION"))
-            : 3600000L;
-            
+            System.getenv("JWT_EXPIRATION") != null
+                    ? Long.parseLong(System.getenv("JWT_EXPIRATION"))
+                    : 3600000L;
+
     private static SecretKey KEY = Keys.hmacShaKeyFor(
-        SECRET.getBytes(StandardCharsets.UTF_8)
+            SECRET.getBytes(StandardCharsets.UTF_8)
     );
 
     public static String generateToken(
-        String username,
-        String email,
-        String roleName
+            int id,
+            String username,
+            String email,
+            String roleName
     ) {
         return Jwts.builder()
-            .expiration(new Date(System.currentTimeMillis() + EXPIRATION))
-            .issuedAt(new Date())
-            .subject(username)
-            .claim("email", email)
-            .claim("role", roleName)
-            .signWith(KEY)
-            .compact();
+                .expiration(new Date(System.currentTimeMillis() + EXPIRATION))
+                .issuedAt(new Date())
+                .subject(username)
+                .claim("email", email)
+                .claim("role", roleName)
+                .claim("id", id)
+                .signWith(KEY)
+                .compact();
     }
 
     public static boolean validateToken(String token) {
@@ -53,10 +56,10 @@ public final class JwtUtil {
     public static Claims parseToken(String token) {
         try {
             return Jwts.parser()
-                .verifyWith(KEY)
-                .build()
-                .parseSignedClaims(token)
-                .getPayload();
+                    .verifyWith(KEY)
+                    .build()
+                    .parseSignedClaims(token)
+                    .getPayload();
         } catch (Exception e) {
             throw new IllegalArgumentException("Invalid token");
         }
