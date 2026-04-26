@@ -32,6 +32,14 @@ public class GlobalExceptionHandling {
                 body(Map.of("message",ex.getMessage(),
                         "status",HttpStatus.BAD_REQUEST));
     }
+    @ExceptionHandler(EmailForwardingException.class)
+    public ResponseEntity<Map<String,Object>> emailForwardingException(EmailForwardingException ex){
+        logger.warn("EmailForwardingException exception:{}",ex.getMessage());
+        return ResponseEntity.
+                status(HttpStatus.INTERNAL_SERVER_ERROR).
+                body(Map.of("message",ex.getMessage(),
+                        "status",HttpStatus.INTERNAL_SERVER_ERROR));
+    }
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String,Object>> unexpectedException(Exception ex){
         logger.warn("Unknown exception:{}",ex.getMessage());

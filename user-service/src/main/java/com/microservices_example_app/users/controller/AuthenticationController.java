@@ -23,8 +23,9 @@ public class AuthenticationController {
 
 
     @GetMapping("/forget-password")
-    public PasswordRestoringResponse forgetPassword(@RequestParam @Email String email){
-        return userService.restorePassword(email);
+    public int forgetPassword(@RequestParam @Email String email){
+         userService.restorePassword(email);
+        return HttpServletResponse.SC_OK;
     }
 
     @PostMapping("/register")

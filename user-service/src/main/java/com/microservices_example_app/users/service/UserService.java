@@ -1,13 +1,20 @@
 package com.microservices_example_app.users.service;
 
 import com.microservices_example_app.users.dto.*;
+import com.microservices_example_app.users.event.ForgetPasswordEvent;
+import com.microservices_example_app.users.event.SuccessfulRegistrationEmailEvent;
+import com.microservices_example_app.users.exceptions.EmailForwardingException;
 import com.microservices_example_app.users.exceptions.UserNotFoundException;
 import com.microservices_example_app.users.model.Role;
 import com.microservices_example_app.users.model.User;
+import com.microservices_example_app.users.producers.NotificationKafkaAuthenticationProducer;
 import com.microservices_example_app.users.repository.RoleRepository;
 import com.microservices_example_app.users.repository.UserRepository;
 import com.microservices_example_app.users.utils.JwtUtil;
+import lombok.AllArgsConstructor;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
@@ -18,17 +25,17 @@ import java.util.List;
 
 @Slf4j
 @Service
+@AllArgsConstructor
 public final class UserService {
 
     private final UserRepository userDao;
     private final RoleRepository roleRepository;
     private final PasswordService passwordService;
-
-    public UserService(UserRepository userDao, RoleRepository roleRepository, PasswordService passwordService) {
-        this.userDao = userDao;
-        this.roleRepository = roleRepository;
-        this.passwordService = passwordService;
-    }
+    @Value("${user-service.authentication.reset-password-url}")
+    private String resetPasswordUrl;
+    private NotificationKafkaAuthenticationProducer authenticationProducer;
+    @Value("${spring.application.name}")
+    private String serviceName;
 
     @Transactional
     public UserRegistrationDto register(String email, String password, String role, String username) {
@@ -51,7 +58,12 @@ public final class UserService {
 
         User saved = userDao.save(user);
         log.info("User registered successfully: id={}, email={}", saved.getId(), saved.getEmail());
-
+        try {
+            SuccessfulRegistrationEmailEvent event = new SuccessfulRegistrationEmailEvent(saved.getEmail(), serviceName, saved.getUsername());
+            authenticationProducer.sendSuccessfulRegistrationEmail(event);
+        }catch(Exception e){
+            log.warn("Exception during successful registration email forming process");
+        }
         return new UserRegistrationDto(saved.getId(), saved.getUsername(), saved.getEmail());
     }
 
@@ -94,10 +106,22 @@ public final class UserService {
         log.debug("User found by email={}: id={}", email, user.getId());
         return toResponseDto(user);
     }
-
-    public PasswordRestoringResponse restorePassword(String email) {
+    @Transactional
+    public void restorePassword(String email) {
         log.info("Password restore requested for email={}", email);
-        return null;
+        try {
+            userDao.findByEmail(email).
+                    ifPresentOrElse(u -> {
+                        log.info("User with id {} trying to restore password via {}", u.getId(), u.getEmail());
+                        String token = JwtUtil.generatePasswordResetToken(u.getId(), email);
+                        String link = resetPasswordUrl + "?token=" + token;
+                        ForgetPasswordEvent event = new ForgetPasswordEvent(email, serviceName, link);
+                        authenticationProducer.sendEmailToRestorePassword(event);
+                    },()-> log.warn("Unknown user tries to restore password"));
+        } catch (Exception e) {
+            log.warn("Error during email forming process: {}", e.getMessage());
+            throw new EmailForwardingException("Error during email forming process:", e);
+        }
     }
 
     private UserResponseDto toResponseDto(User user) {
