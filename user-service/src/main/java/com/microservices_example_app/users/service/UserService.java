@@ -25,15 +25,15 @@ import java.util.List;
 
 @Slf4j
 @Service
-@AllArgsConstructor
-public final class UserService {
+@RequiredArgsConstructor
+public  class UserService {
 
     private final UserRepository userDao;
     private final RoleRepository roleRepository;
     private final PasswordService passwordService;
     @Value("${user-service.authentication.reset-password-url}")
     private String resetPasswordUrl;
-    private NotificationKafkaAuthenticationProducer authenticationProducer;
+    private  final NotificationKafkaAuthenticationProducer authenticationProducer;
     @Value("${spring.application.name}")
     private String serviceName;
 

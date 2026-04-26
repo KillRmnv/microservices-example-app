@@ -2,6 +2,7 @@ package com.microservices_example_app.booking.producers;
 
 import com.microservices_example_app.booking.event.SuccessfulBookingEvent;
 import com.microservices_example_app.booking.event.SuccessfulTicketRefundEvent;
+import lombok.AllArgsConstructor;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.core.KafkaTemplate;
@@ -17,13 +18,14 @@ public class NotificationKafkaBookingProducer {
     @Value("${topic.ticket-refund}")
     private String ticketRefundTopic;
 
-    private final KafkaTemplate<String, Object> kafkaTemplate;
+    private final KafkaTemplate<String, SuccessfulBookingEvent> bookingKafkaTemplate;
+    private final KafkaTemplate<String, SuccessfulTicketRefundEvent> ticketRefundKafkaTemplate;
 
     public void sendSuccessfulBookingEvent(SuccessfulBookingEvent event) {
-        kafkaTemplate.send(bookingClientTopic, event.getEmail(), event);
+        bookingKafkaTemplate.send(bookingClientTopic, event.getEmail(), event);
     }
 
     public void sendSuccessfulTicketRefundEvent(SuccessfulTicketRefundEvent event) {
-        kafkaTemplate.send(ticketRefundTopic, event.getEmail(), event);
+        ticketRefundKafkaTemplate.send(ticketRefundTopic, event.getEmail(), event);
     }
 }

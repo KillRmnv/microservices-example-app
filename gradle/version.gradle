@@ -9,7 +9,7 @@ ext {
     set('jwtVersion', '0.12.3')
     set('testcontainersVersion', '1.19.8')
     set('awaitilityVersion', '4.2.1')
-    set('redissonVersion', '3.27.2')
+    set('redissonVersion', '4.3.0')
 
     set('springCloudVersion', '2025.1.0')
 

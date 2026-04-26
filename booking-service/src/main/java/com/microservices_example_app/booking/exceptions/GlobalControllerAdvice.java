@@ -15,10 +15,10 @@ import java.util.stream.Collectors;
 @AllArgsConstructor
 @RestControllerAdvice
 public class GlobalControllerAdvice {
-    private Logger logger;
+   
     @ExceptionHandler(NotFoundException.class)
     public ResponseEntity<Map<String, Object>> notFoundException(NotFoundException ex) {
-        logger.warn("NotFoundException:{}",ex.getMessage());
+        log.warn("NotFoundException:{}",ex.getMessage());
         return ResponseEntity.
                 status(HttpStatus.NOT_FOUND).
                 body(Map.of("status", HttpStatus.NOT_FOUND,
@@ -27,7 +27,7 @@ public class GlobalControllerAdvice {
     }
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Map<String,Object>> illegalArgumentException(IllegalArgumentException ex){
-        logger.warn("IllegalArgumentException:{}",ex.getMessage());
+        log.warn("IllegalArgumentException:{}",ex.getMessage());
         return ResponseEntity.
                 status(HttpStatus.BAD_REQUEST).
                 body(Map.of("message",ex.getMessage(),
@@ -41,7 +41,7 @@ public class GlobalControllerAdvice {
                         error -> error.getDefaultMessage() != null ? error.getDefaultMessage() : "Invalid value",
                         (first, second) -> first
                 ));
-        logger.warn("Validation error: {}", errors);
+        log.warn("Validation error: {}", errors);
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
                 .body(Map.of(
@@ -52,7 +52,7 @@ public class GlobalControllerAdvice {
     }
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String,Object>> unexpectedException(Exception ex){
-        logger.warn("Unknown exception:{}",ex.getMessage());
+        log.warn("Unknown exception:{}",ex.getMessage());
         return ResponseEntity.
                 status(HttpStatus.INTERNAL_SERVER_ERROR).
                 body(Map.of("message",ex.getMessage(),

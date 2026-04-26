@@ -3,8 +3,10 @@ package com.microservices_example_app.notification.service;
 import com.microservices_example_app.notification.dto.ForgetPasswordEvent;
 import com.microservices_example_app.notification.dto.SuccessfulBookingEvent;
 import com.microservices_example_app.notification.dto.SuccessfulRegistrationEmailEvent;
+import com.microservices_example_app.notification.dto.TicketRefundEvent;
 import com.microservices_example_app.notification.exceptions.EmailSendingException;
 import lombok.AllArgsConstructor;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.MailException;
@@ -14,14 +16,34 @@ import org.springframework.stereotype.Service;
 
 @Slf4j
 @Service
-@AllArgsConstructor
+@RequiredArgsConstructor
 public class EmailService {
 
     private final JavaMailSender mailSender;
 
     @Value("${spring.mail.username}")
     private String senderEmail;
+    public void sendTicketRefundEmail(TicketRefundEvent event) {
+        log.info("Sending ticket refund email: email={}, username={}, eventTitle={}, sourceService={}",
+                event.getEmail(), event.getUsername(), event.getEventTitle(), event.getSourceService());
 
+        SimpleMailMessage message = new SimpleMailMessage();
+        message.setFrom(senderEmail);
+        message.setTo(event.getEmail());
+        message.setSubject("Ticket refund confirmed");
+        message.setText("""
+            Hello, %s!
+            
+            Your ticket refund for the event "%s" was completed successfully.
+            
+            If the payment was already charged, the refund will be processed according to your payment provider's terms.
+            
+            Best regards,
+            Microservices Example App
+            """.formatted(event.getUsername(), event.getEventTitle()));
+
+        send(message, "ticket refund", event.getEmail(), event.getSourceService());
+    }
     public void sendBookingSuccessEmail(SuccessfulBookingEvent event) {
         log.info("Sending booking success email: email={}, username={}, sourceService={}",
                 event.getEmail(), event.getUsername(), event.getSourceService());

@@ -27,7 +27,6 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-security'
 
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
-	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
 	implementation 'org.springframework.boot:spring-boot-starter-cache'
 	implementation 'org.springframework.kafka:spring-kafka'
 
@@ -35,7 +34,6 @@ dependencies {
 	implementation 'org.flywaydb:flyway-core'
 	implementation 'org.flywaydb:flyway-database-postgresql'
 
-	implementation "org.redisson:redisson-spring-boot-starter:${redissonVersion}"
 
 	implementation "io.jsonwebtoken:jjwt-api:${jwtVersion}"
 	implementation "io.jsonwebtoken:jjwt-impl:${jwtVersion}"
@@ -43,8 +41,6 @@ dependencies {
 
 	implementation "com.password4j:password4j:${password4jVersion}"
 	implementation "com.bucket4j:bucket4j-core:${bucket4jVersion}"
-	implementation "com.bucket4j:bucket4j-redis:${bucket4jVersion}"
-	implementation "io.lettuce:lettuce-core:${lettuceVersion}"
 
 	compileOnly "org.projectlombok:lombok:${lombokVersion}"
 	annotationProcessor "org.projectlombok:lombok:${lombokVersion}"
@@ -57,7 +53,6 @@ dependencies {
 	testImplementation "org.testcontainers:junit-jupiter:${testcontainersVersion}"
 	testImplementation "org.testcontainers:postgresql:${testcontainersVersion}"
 	testImplementation "org.testcontainers:kafka:${testcontainersVersion}"
-	testImplementation "com.redis:testcontainers-redis:${redisTestcontainersVersion}"
 	testImplementation "org.awaitility:awaitility:${awaitilityVersion}"
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
