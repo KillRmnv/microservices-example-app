@@ -1,0 +1,47 @@
+.admin-only,
+.manager-access,
+.customer-only {
+    display: none;
+}
+
+body.role-admin .admin-only,
+body.role-admin .manager-access,
+body.role-admin .customer-only {
+    display: block;
+}
+
+body.role-admin .nav-link.admin-only,
+body.role-admin .nav-link.manager-access,
+body.role-admin .nav-link.customer-only {
+    display: inline-block;
+}
+
+body.role-event_manager .manager-access,
+body.role-event_manager .customer-only {
+    display: block;
+}
+
+body.role-event_manager .nav-link.manager-access,
+body.role-event_manager .nav-link.customer-only {
+    display: inline-block;
+}
+
+body.role-customer .customer-only {
+    display: block;
+}
+
+body.role-customer .nav-link.customer-only {
+    display: inline-block;
+}
+
+body.logged-in #login-btn {
+    display: none;
+}
+
+body.logged-in #logout-btn {
+    display: inline-block;
+}
+
+body:not(.logged-in) #logout-btn {
+    display: none;
+}

@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Event Booking System</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/roles.css">
+</head>
+<body>
+    <header>
+        <div class="container header-content">
+            <h1 id="app-title">Event Booking</h1>
+            <nav id="main-nav">
+                <a href="#/" data-view="home" class="nav-link">Каталог событий</a>
+                <a href="#/my-tickets" data-view="my-tickets" class="nav-link customer-only">Мои билеты</a>
+                <a href="#/admin/users" data-view="admin-users" class="nav-link admin-only">Пользователи</a>
+                <a href="#/admin/towns" data-view="admin-towns" class="nav-link admin-only">Города</a>
+                <a href="#/manager/events" data-view="manager-events" class="nav-link manager-access">Управление событиями</a>
+            </nav>
+            <div id="auth-section">
+                <button id="login-btn" class="btn btn-primary">Войти</button>
+            </div>
+        </div>
+    </header>
+
+    <main class="container" id="app">
+        <div id="loading" class="loading">
+            <div class="spinner"></div>
+            <p>Загрузка...</p>
+        </div>
+        <div id="content"></div>
+    </main>
+
+    <div id="modal-overlay" class="modal-overlay hidden">
+        <div class="modal" id="modal">
+            <button class="modal-close" id="modal-close">&times;</button>
+            <div id="modal-content"></div>
+        </div>
+    </div>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2026 Event Booking System</p>
+        </div>
+    </footer>
+
+    <script src="js/api.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/app.js"></script>
+    <script src="js/views/authView.js"></script>
+    <script src="js/views/homeView.js"></script>
+    <script src="js/views/eventView.js"></script>
+    <script src="js/views/myTicketsView.js"></script>
+    <script src="js/views/managerView.js"></script>
+    <script src="js/views/adminView.js"></script>
+</body>
+</html>
