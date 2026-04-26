@@ -4,4 +4,6 @@ ext {
     set('awaitilityVersion', '4.2.1')
     set('redissonVersion', '3.27.2')
     set('springCloudVersion', '2024.0.0')
+    set('lombok', '1.18.42')
+
 }

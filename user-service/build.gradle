@@ -45,8 +45,10 @@ dependencies {
 	implementation 'com.bucket4j:bucket4j-redis:8.10.1'
 	implementation 'io.lettuce:lettuce-core:6.3.2.RELEASE'
 
-	compileOnly 'org.projectlombok:lombok'
-	annotationProcessor 'org.projectlombok:lombok'
+	compileOnly "org.projectlombok:lombok:${lombok}"
+	annotationProcessor "org.projectlombok:lombok:${lombok}"
+	testCompileOnly "org.projectlombok:lombok:${lombok}"
+	testAnnotationProcessor "org.projectlombok:lombok:${lombok}"
 
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testImplementation 'org.springframework.boot:spring-boot-testcontainers'
