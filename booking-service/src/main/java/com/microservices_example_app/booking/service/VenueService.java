@@ -117,23 +117,12 @@ public class VenueService {
             throw new IllegalArgumentException("Size must be >= 1");
         }
 
-        Specification<Venue> spec = Specification.where((Specification<Venue>) null);
+        Specification<Venue> spec = Specification.
+                where(VenueSpecification.hasTownId(filter.getTownId())).
+                and(VenueSpecification.hasPlace(filter.getPlace())).
+                and(VenueSpecification.hasCapacityGreaterThanOrEqual(filter.getMinCapacity())).
+                and(VenueSpecification.hasCapacityLessThanOrEqual(filter.getMaxCapacity()));
 
-        if (filter.getTownId() != null) {
-            spec = spec.and(VenueSpecification.hasTownId(filter.getTownId()));
-        }
-
-        if (filter.getPlace() != null && !filter.getPlace().isBlank()) {
-            spec = spec.and(VenueSpecification.hasPlace(filter.getPlace()));
-        }
-
-        if (filter.getMinCapacity() != null) {
-            spec = spec.and(VenueSpecification.hasCapacityGreaterThanOrEqual(filter.getMinCapacity()));
-        }
-
-        if (filter.getMaxCapacity() != null) {
-            spec = spec.and(VenueSpecification.hasCapacityLessThanOrEqual(filter.getMaxCapacity()));
-        }
 
         log.debug("Search by filter: townId={}, place={}, minCapacity={}, maxCapacity={}, page={}, size={}",
                 filter.getTownId(),

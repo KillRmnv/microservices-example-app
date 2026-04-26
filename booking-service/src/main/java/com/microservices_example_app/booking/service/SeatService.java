@@ -58,26 +58,14 @@ public class SeatService {
             throw new IllegalArgumentException("Size must be >= 1");
         }
 
-        Specification<Seat> spec = Specification.where((Specification<Seat>) null);
+        Specification<Seat> spec = Specification.where(SeatSpecification.hasVenueId(filter.getVenueId())).
+                and(SeatSpecification.hasSector(filter.getSector())).
+                and(SeatSpecification.hasRow(filter.getRow())).
+                and(SeatSpecification.hasNumber(filter.getNumber()));
 
-        if (filter.getVenueId() != null) {
-            spec = spec.and(SeatSpecification.hasVenueId(filter.getVenueId()));
-        }
-
-        if (filter.getSector() != null && !filter.getSector().isBlank()) {
-            spec = spec.and(SeatSpecification.hasSector(filter.getSector()));
-        }
-
-        if (filter.getRow() != null && !filter.getRow().isBlank()) {
-            spec = spec.and(SeatSpecification.hasRow(filter.getRow()));
-        }
-
-        if (filter.getNumber() != null && !filter.getNumber().isBlank()) {
-            spec = spec.and(SeatSpecification.hasNumber(filter.getNumber()));
-        }
 
         Pageable pageable = PageRequest.of(page - 1, size);
-        log.debug("Search by filter:{}",spec);
+        log.debug("Search by filter:{}", spec);
         return seatRepository.findAll(spec, pageable)
                 .stream()
                 .map(this::toResponseDto)
@@ -96,6 +84,7 @@ public class SeatService {
 
         seatRepository.deleteById(id);
     }
+
     @Transactional
     public long deleteByFilter(SeatDeleteRequestDto requestDto) {
         Specification<Seat> spec = Specification
@@ -103,10 +92,10 @@ public class SeatService {
                 .and(SeatSpecification.hasSector(requestDto.getSector()))
                 .and(SeatSpecification.hasRow(requestDto.getRow()))
                 .and(SeatSpecification.hasNumber(requestDto.getNumber()));
-        log.debug("Delete by filter:{}",spec);
+        log.debug("Delete by filter:{}", spec);
         List<Seat> seats = seatRepository.findAll(spec);
         long count = seats.size();
-        log.info("Delete by filter amount:{}",count);
+        log.info("Delete by filter amount:{}", count);
         seatRepository.deleteAll(seats);
         return count;
     }
@@ -147,10 +136,11 @@ public class SeatService {
         } else {
             builder.venue(seat.getVenue());
         }
-        log.info("Update user with id:{}",seat.getId());
+        log.info("Update user with id:{}", seat.getId());
         Seat saved = seatRepository.save(builder.build());
         return toResponseDto(saved);
     }
+
     private SeatResponseDto toResponseDto(Seat seat) {
         return SeatResponseDto.builder()
                 .id(seat.getId())

@@ -42,18 +42,19 @@ public class TicketService {
         Event event = eventRepository.findById(requestDto.getEventId())
                 .orElseThrow(() -> new NotFoundException("Event not found"));
 
+        Integer currentUserId = jwtRequestUserExtractor.extractUserId();
+        String email = jwtRequestUserExtractor.extractEmail();
+        String username = jwtRequestUserExtractor.extractUsername();
+
         Ticket ticket = Ticket.builder()
                 .event(event)
                 .zone(requestDto.getZone())
                 .price(requestDto.getPrice())
                 .active(Boolean.TRUE.equals(requestDto.getActive()))
-                .userId(requestDto.getUserId())
+                .userId(currentUserId)
                 .build();
 
         Ticket saved = ticketRepository.save(ticket);
-
-        String email = jwtRequestUserExtractor.extractEmail();
-        String username = jwtRequestUserExtractor.extractUsername();
 
         SuccessfulBookingEvent bookingEvent = new SuccessfulBookingEvent(
                 email,
@@ -71,8 +72,10 @@ public class TicketService {
     @Transactional
     public TicketResponseDto getById(Integer id) {
         log.info("Fetching ticket with id: {}", id);
+
         Ticket ticket = ticketRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("Ticket not found"));
+
         return toResponseDto(ticket);
     }
 
@@ -129,10 +132,16 @@ public class TicketService {
         Ticket ticket = ticketRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("Ticket not found"));
 
+        Integer currentUserId = jwtRequestUserExtractor.extractUserId();
         String email = jwtRequestUserExtractor.extractEmail();
         String username = jwtRequestUserExtractor.extractUsername();
 
-        log.info("Deleting ticket with id: {}", id);
+        if (!ticket.getUserId().equals(currentUserId)) {
+            log.warn("User id={} attempted to delete foreign ticket id={}", currentUserId, id);
+            throw new IllegalArgumentException("You can delete only your own ticket");
+        }
+
+        log.info("Deleting ticket with id={}, userId={}", id, currentUserId);
         ticketRepository.delete(ticket);
 
         SuccessfulTicketRefundEvent refundEvent = new SuccessfulTicketRefundEvent(
@@ -201,11 +210,7 @@ public class TicketService {
             builder.active(ticket.isActive());
         }
 
-        if (request.getUserId() != null) {
-            builder.userId(request.getUserId());
-        } else {
-            builder.userId(ticket.getUserId());
-        }
+        builder.userId(ticket.getUserId());
 
         log.info("Update ticket with id: {}", ticket.getId());
         Ticket saved = ticketRepository.save(builder.build());

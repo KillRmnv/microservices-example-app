@@ -120,10 +120,12 @@ public class SeatableTicketService {
 
     @Transactional
     public long deleteByFilter(SeatableTicketDeleteRequestDto requestDto) {
+        Integer currentUserId = jwtRequestUserExtractor.extractUserId();
+
         Specification<SeatableTicket> spec = Specification
                 .where(SeatableTicketSpecification.hasEventId(requestDto.getEventId()))
                 .and(SeatableTicketSpecification.hasSeatId(requestDto.getSeatId()))
-                .and(SeatableTicketSpecification.hasUserId(requestDto.getUserId()))
+                .and(SeatableTicketSpecification.hasUserId(currentUserId))
                 .and(SeatableTicketSpecification.hasZone(requestDto.getZone()))
                 .and(SeatableTicketSpecification.hasActive(requestDto.getActive()))
                 .and(SeatableTicketSpecification.hasPriceGreaterThanOrEqual(requestDto.getMinPrice()))
@@ -132,10 +134,10 @@ public class SeatableTicketService {
                 .and(SeatableTicketSpecification.hasRow(requestDto.getRow()))
                 .and(SeatableTicketSpecification.hasNumber(requestDto.getNumber()));
 
-        log.debug("Delete by filter: {}", spec);
+        log.debug("Delete by filter for userId={}: {}", currentUserId, spec);
         List<SeatableTicket> tickets = seatableTicketRepository.findAll(spec);
         long count = tickets.size();
-        log.info("Delete by filter amount: {}", count);
+        log.info("Delete by filter amount for userId={}: {}", currentUserId, count);
         seatableTicketRepository.deleteAll(tickets);
         return count;
     }
@@ -149,50 +151,22 @@ public class SeatableTicketService {
             throw new IllegalArgumentException("Size must be >= 1");
         }
 
-        Specification<SeatableTicket> spec = Specification.where((Specification<SeatableTicket>) null);
+        Integer currentUserId = jwtRequestUserExtractor.extractUserId();
 
-        if (filter.getEventId() != null) {
-            spec = spec.and(SeatableTicketSpecification.hasEventId(filter.getEventId()));
-        }
-
-        if (filter.getSeatId() != null) {
-            spec = spec.and(SeatableTicketSpecification.hasSeatId(filter.getSeatId()));
-        }
-
-        if (filter.getUserId() != null) {
-            spec = spec.and(SeatableTicketSpecification.hasUserId(filter.getUserId()));
-        }
-
-        if (filter.getZone() != null) {
-            spec = spec.and(SeatableTicketSpecification.hasZone(filter.getZone()));
-        }
-
-        if (filter.getActive() != null) {
-            spec = spec.and(SeatableTicketSpecification.hasActive(filter.getActive()));
-        }
-
-        if (filter.getMinPrice() != null) {
-            spec = spec.and(SeatableTicketSpecification.hasPriceGreaterThanOrEqual(filter.getMinPrice()));
-        }
-
-        if (filter.getMaxPrice() != null) {
-            spec = spec.and(SeatableTicketSpecification.hasPriceLessThanOrEqual(filter.getMaxPrice()));
-        }
-
-        if (filter.getSector() != null && !filter.getSector().isBlank()) {
-            spec = spec.and(SeatableTicketSpecification.hasSector(filter.getSector()));
-        }
-
-        if (filter.getRow() != null && !filter.getRow().isBlank()) {
-            spec = spec.and(SeatableTicketSpecification.hasRow(filter.getRow()));
-        }
-
-        if (filter.getNumber() != null && !filter.getNumber().isBlank()) {
-            spec = spec.and(SeatableTicketSpecification.hasNumber(filter.getNumber()));
-        }
+        Specification<SeatableTicket> spec = Specification.
+                where(SeatableTicketSpecification.hasEventId(filter.getEventId())).
+                and(SeatableTicketSpecification.hasSeatId(filter.getSeatId())).
+                and(SeatableTicketSpecification.hasUserId(currentUserId)).
+                and(SeatableTicketSpecification.hasZone(filter.getZone())).
+                and(SeatableTicketSpecification.hasActive(filter.getActive())).
+                and(SeatableTicketSpecification.hasPriceGreaterThanOrEqual(filter.getMinPrice())).
+                and(SeatableTicketSpecification.hasPriceLessThanOrEqual(filter.getMaxPrice())).
+                and(SeatableTicketSpecification.hasSector(filter.getSector())).
+                and(SeatableTicketSpecification.hasRow(filter.getRow())).
+                and(SeatableTicketSpecification.hasNumber(filter.getNumber()));
 
         Pageable pageable = PageRequest.of(page - 1, size);
-        log.debug("Search by filter: {}", spec);
+        log.debug("Search by filter for userId={}: {}", currentUserId, spec);
 
         return seatableTicketRepository.findAll(spec, pageable)
                 .stream()
@@ -245,11 +219,7 @@ public class SeatableTicketService {
             builder.active(ticket.isActive());
         }
 
-        if (request.getUserId() != null) {
-            builder.userId(request.getUserId());
-        } else {
-            builder.userId(ticket.getUserId());
-        }
+        builder.userId(ticket.getUserId());
 
         log.info("Update seatable ticket with id: {}", ticket.getId());
         SeatableTicket saved = seatableTicketRepository.save(builder.build());
