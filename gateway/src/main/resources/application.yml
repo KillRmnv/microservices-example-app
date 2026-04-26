@@ -3,7 +3,7 @@ server:
   address: ${GATEWAY_ADDRESS}
 spring:
   application:
-    name: ${GATEWAY_APPLICATION_NAME}
+    name: ${GATEWAY_APPLICATION_NAME:gateway}
 
   cloud:
     gateway:
@@ -12,14 +12,14 @@ spring:
 
       routes:
         - id: users-service
-          uri: http://localhost:8081
+          uri: http://user-service:8081
           predicates:
             - Path=/users/**
           filters:
             - CircuitBreaker=usersCircuitBreaker, forward:/fallback/users
 
         - id: booking-service
-          uri: http://localhost:8082
+          uri: http://booking-service:8082
           predicates:
             - Path=/booking/**
           filters:
@@ -29,7 +29,7 @@ spring:
         cors-configurations:
           '[/**]':
             allowedOrigins:
-              - "http://localhost:3000"
+              - "http://localhost:8080"
             allowedMethods:
               - GET
               - POST
@@ -47,3 +47,5 @@ management:
     web:
       exposure:
         include: health,info,gateway
+app:
+  frontend-path: ../frontend/
