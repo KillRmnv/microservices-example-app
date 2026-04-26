@@ -1,15 +1,20 @@
 package com.microservices_example_app.booking.service;
 
 import com.microservices_example_app.booking.dto.*;
+import com.microservices_example_app.booking.event.SuccessfulBookingEvent;
+import com.microservices_example_app.booking.event.SuccessfulTicketRefundEvent;
 import com.microservices_example_app.booking.exceptions.NotFoundException;
 import com.microservices_example_app.booking.model.Event;
 import com.microservices_example_app.booking.model.Ticket;
+import com.microservices_example_app.booking.producers.NotificationKafkaBookingProducer;
 import com.microservices_example_app.booking.repository.EventRepository;
 import com.microservices_example_app.booking.repository.TicketRepository;
 import com.microservices_example_app.booking.specification.TicketSpecification;
+import com.microservices_example_app.booking.utils.JwtRequestUserExtractor;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
@@ -24,10 +29,16 @@ public class TicketService {
 
     private final TicketRepository ticketRepository;
     private final EventRepository eventRepository;
+    private final NotificationKafkaBookingProducer notificationKafkaBookingProducer;
+    private final JwtRequestUserExtractor jwtRequestUserExtractor;
+
+    @Value("${spring.application.name}")
+    private String serviceName;
 
     @Transactional
     public TicketResponseDto create(TicketCreateRequestDto requestDto) {
         log.info("Creating ticket for event id: {}", requestDto.getEventId());
+
         Event event = eventRepository.findById(requestDto.getEventId())
                 .orElseThrow(() -> new NotFoundException("Event not found"));
 
@@ -39,7 +50,22 @@ public class TicketService {
                 .userId(requestDto.getUserId())
                 .build();
 
-        return toResponseDto(ticketRepository.save(ticket));
+        Ticket saved = ticketRepository.save(ticket);
+
+        String email = jwtRequestUserExtractor.extractEmail();
+        String username = jwtRequestUserExtractor.extractUsername();
+
+        SuccessfulBookingEvent bookingEvent = new SuccessfulBookingEvent(
+                email,
+                username,
+                saved.getEvent().getTitle(),
+                serviceName
+        );
+
+        notificationKafkaBookingProducer.sendSuccessfulBookingEvent(bookingEvent);
+        log.info("Successful booking event sent for ticket id={}, email={}", saved.getId(), email);
+
+        return toResponseDto(saved);
     }
 
     @Transactional
@@ -84,7 +110,8 @@ public class TicketService {
         if (filter.getMaxPrice() != null) {
             spec = spec.and(TicketSpecification.hasPriceLessThanOrEqual(filter.getMaxPrice()));
         }
-        log.debug("Search by filter:{}",spec);
+
+        log.debug("Search by filter: {}", spec);
         Pageable pageable = PageRequest.of(page - 1, size);
 
         return ticketRepository.findAll(spec, pageable)
@@ -99,12 +126,26 @@ public class TicketService {
             throw new IllegalArgumentException("Ticket id must be positive");
         }
 
-        if (!ticketRepository.existsById(id)) {
-            throw new NotFoundException("Ticket not found");
-        }
+        Ticket ticket = ticketRepository.findById(id)
+                .orElseThrow(() -> new NotFoundException("Ticket not found"));
 
-        ticketRepository.deleteById(id);
+        String email = jwtRequestUserExtractor.extractEmail();
+        String username = jwtRequestUserExtractor.extractUsername();
+
+        log.info("Deleting ticket with id: {}", id);
+        ticketRepository.delete(ticket);
+
+        SuccessfulTicketRefundEvent refundEvent = new SuccessfulTicketRefundEvent(
+                email,
+                username,
+                ticket.getEvent().getTitle(),
+                serviceName
+        );
+
+        notificationKafkaBookingProducer.sendSuccessfulTicketRefundEvent(refundEvent);
+        log.info("Successful ticket refund event sent for ticket id={}, email={}", id, email);
     }
+
     @Transactional
     public long deleteByFilter(TicketDeleteRequestDto requestDto) {
         Specification<Ticket> spec = Specification
@@ -114,14 +155,14 @@ public class TicketService {
                 .and(TicketSpecification.hasActive(requestDto.getActive()))
                 .and(TicketSpecification.hasPriceGreaterThanOrEqual(requestDto.getMinPrice()))
                 .and(TicketSpecification.hasPriceLessThanOrEqual(requestDto.getMaxPrice()));
-        log.debug("Delete by filter:{}",spec);
+
+        log.debug("Delete by filter: {}", spec);
         List<Ticket> tickets = ticketRepository.findAll(spec);
         long count = tickets.size();
-        log.info("Delete by filter amount:{}",count);
+        log.info("Delete by filter amount: {}", count);
         ticketRepository.deleteAll(tickets);
         return count;
     }
-
 
     @Transactional
     public TicketResponseDto updateTicketById(TicketUpdateRequestDto request) {
@@ -165,10 +206,12 @@ public class TicketService {
         } else {
             builder.userId(ticket.getUserId());
         }
-        log.info("Update user with id:{}",ticket.getId());
+
+        log.info("Update ticket with id: {}", ticket.getId());
         Ticket saved = ticketRepository.save(builder.build());
         return toResponseDto(saved);
     }
+
     private TicketResponseDto toResponseDto(Ticket ticket) {
         return TicketResponseDto.builder()
                 .id(ticket.getId())
