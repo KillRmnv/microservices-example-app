@@ -6,10 +6,11 @@ plugins {
 
 group = 'com.microservices-example-app'
 version = '0.0.1-SNAPSHOT'
+apply from: '../gradle/version.gradle'
 
 java {
 	toolchain {
-		languageVersion = JavaLanguageVersion.of(25)
+		languageVersion = JavaLanguageVersion.of(javaVersion)
 	}
 }
 
@@ -17,7 +18,6 @@ repositories {
 	mavenCentral()
 }
 
-apply from: '../gradle/version.gradle'
 
 dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter'
@@ -26,13 +26,13 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-mail'
 	implementation 'org.springframework.kafka:spring-kafka'
 
-	implementation("tools.jackson.core:jackson-databind:3.1.0")
+	implementation "tools.jackson.core:jackson-databind:${jackson3Version}"
+	implementation "tools.jackson.core:jackson-core:${jackson3Version}"
 
-	implementation("tools.jackson.core:jackson-core:3.1.0")
-	compileOnly "org.projectlombok:lombok:${lombok}"
-	annotationProcessor "org.projectlombok:lombok:${lombok}"
-	testCompileOnly "org.projectlombok:lombok:${lombok}"
-	testAnnotationProcessor "org.projectlombok:lombok:${lombok}"
+	compileOnly "org.projectlombok:lombok:${lombokVersion}"
+	annotationProcessor "org.projectlombok:lombok:${lombokVersion}"
+	testCompileOnly "org.projectlombok:lombok:${lombokVersion}"
+	testAnnotationProcessor "org.projectlombok:lombok:${lombokVersion}"
 
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testImplementation 'org.springframework.kafka:spring-kafka-test'
@@ -41,7 +41,6 @@ dependencies {
 	testImplementation "org.awaitility:awaitility:${awaitilityVersion}"
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
-
 tasks.named('test') {
 	useJUnitPlatform()
 }

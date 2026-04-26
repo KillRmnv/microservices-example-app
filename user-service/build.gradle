@@ -6,10 +6,11 @@ plugins {
 
 group = 'com.microservices-example-app'
 version = '0.0.1-SNAPSHOT'
+apply from: '../gradle/version.gradle'
 
 java {
 	toolchain {
-		languageVersion = JavaLanguageVersion.of(25)
+		languageVersion = JavaLanguageVersion.of(javaVersion)
 	}
 }
 
@@ -40,15 +41,15 @@ dependencies {
 	implementation "io.jsonwebtoken:jjwt-impl:${jwtVersion}"
 	implementation "io.jsonwebtoken:jjwt-jackson:${jwtVersion}"
 
-	implementation 'com.password4j:password4j:1.8.2'
-	implementation 'com.bucket4j:bucket4j-core:8.10.1'
-	implementation 'com.bucket4j:bucket4j-redis:8.10.1'
-	implementation 'io.lettuce:lettuce-core:6.3.2.RELEASE'
+	implementation "com.password4j:password4j:${password4jVersion}"
+	implementation "com.bucket4j:bucket4j-core:${bucket4jVersion}"
+	implementation "com.bucket4j:bucket4j-redis:${bucket4jVersion}"
+	implementation "io.lettuce:lettuce-core:${lettuceVersion}"
 
-	compileOnly "org.projectlombok:lombok:${lombok}"
-	annotationProcessor "org.projectlombok:lombok:${lombok}"
-	testCompileOnly "org.projectlombok:lombok:${lombok}"
-	testAnnotationProcessor "org.projectlombok:lombok:${lombok}"
+	compileOnly "org.projectlombok:lombok:${lombokVersion}"
+	annotationProcessor "org.projectlombok:lombok:${lombokVersion}"
+	testCompileOnly "org.projectlombok:lombok:${lombokVersion}"
+	testAnnotationProcessor "org.projectlombok:lombok:${lombokVersion}"
 
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testImplementation 'org.springframework.boot:spring-boot-testcontainers'
@@ -56,11 +57,10 @@ dependencies {
 	testImplementation "org.testcontainers:junit-jupiter:${testcontainersVersion}"
 	testImplementation "org.testcontainers:postgresql:${testcontainersVersion}"
 	testImplementation "org.testcontainers:kafka:${testcontainersVersion}"
-	testImplementation 'com.redis:testcontainers-redis:2.2.2'
+	testImplementation "com.redis:testcontainers-redis:${redisTestcontainersVersion}"
 	testImplementation "org.awaitility:awaitility:${awaitilityVersion}"
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
-
 tasks.named('test') {
 	useJUnitPlatform()
 }
