@@ -3,6 +3,7 @@ package com.microservices_example_app.booking.controller;
 import com.microservices_example_app.booking.dto.TownCreateRequestDto;
 import com.microservices_example_app.booking.dto.TownResponseDto;
 import com.microservices_example_app.booking.service.TownService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
@@ -18,7 +19,7 @@ public class TownController {
     private final TownService townService;
 
     @PostMapping
-    public TownResponseDto create(@RequestBody TownCreateRequestDto requestDto) {
+    public TownResponseDto create(@Valid @RequestBody TownCreateRequestDto requestDto) {
         log.info("Creating new town: {}", requestDto.getName());
         return townService.create(requestDto);
     }

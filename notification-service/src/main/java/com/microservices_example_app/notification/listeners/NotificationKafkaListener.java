@@ -39,7 +39,11 @@ public class NotificationKafkaListener {
             return;
         }
 
-        emailService.sendSuccessfulRegistrationEmail(event);
+        try {
+            emailService.sendSuccessfulRegistrationEmail(event);
+        } catch (Exception e) {
+            log.error("Failed to send successful registration email to {}: {}", event.getEmail(), e.getMessage(), e);
+        }
     }
 
     @KafkaHandler
@@ -55,7 +59,11 @@ public class NotificationKafkaListener {
             return;
         }
 
-        emailService.sendForgetPasswordEmail(event);
+        try {
+            emailService.sendForgetPasswordEmail(event);
+        } catch (Exception e) {
+            log.error("Failed to send forget password email to {}: {}", event.getEmail(), e.getMessage(), e);
+        }
     }
 
     @KafkaHandler(isDefault = true)

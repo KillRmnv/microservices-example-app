@@ -2,6 +2,7 @@ package com.microservices_example_app.users.controller;
 
 import com.microservices_example_app.users.dto.*;
 import com.microservices_example_app.users.service.UserService;
+import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -55,7 +56,7 @@ public class UserController {
     }
 
     @GetMapping("/search")
-    public ResponseEntity<List<UserResponseDto>> searchByFilter(@ModelAttribute UserSerchRequestDto filter) {
+    public ResponseEntity<List<UserResponseDto>> searchByFilter(@Valid @ModelAttribute UserSerchRequestDto filter) {
         log.info("Request received: search users by filter, email={}, username={}, role={}",
                 filter.getEmail(), filter.getUsername(), filter.getRole());
         List<UserResponseDto> users = userService.searchByFilter(filter);
@@ -65,7 +66,7 @@ public class UserController {
 
     @GetMapping("/search/page")
     public ResponseEntity<List<UserResponseDto>> searchByFilterWithPage(
-            @ModelAttribute UserSerchRequestDto filter,
+            @Valid @ModelAttribute UserSerchRequestDto filter,
             @RequestParam int page,
             @RequestParam int size
     ) {
@@ -77,7 +78,7 @@ public class UserController {
     }
 
     @PutMapping
-    public ResponseEntity<UserResponseDto> updateUser(@RequestBody UserUpdateRequestDto request) {
+    public ResponseEntity<UserResponseDto> updateUser(@Valid @RequestBody UserUpdateRequestDto request) {
         log.info("Request received: update user id={}", request.getId());
         UserResponseDto updated = userService.updateUserById(request);
         log.info("User updated successfully: id={}", request.getId());
@@ -85,7 +86,7 @@ public class UserController {
     }
 
     @DeleteMapping
-    public ResponseEntity<Void> deleteUser(@RequestBody UserDeleteRequestDto request) {
+    public ResponseEntity<Void> deleteUser(@Valid @RequestBody UserDeleteRequestDto request) {
         log.info("Request received: delete user id={}", request.getId());
         userService.deleteUser(request);
         log.info("User deleted successfully: id={}", request.getId());
@@ -93,7 +94,7 @@ public class UserController {
     }
 
     @DeleteMapping("/search")
-    public ResponseEntity<Long> deleteByFilter(@RequestBody UserDeleteRequestDto request) {
+    public ResponseEntity<Long> deleteByFilter(@Valid @RequestBody UserDeleteRequestDto request) {
         log.info("Request received: delete users by filter, email={}, username={}, role={}",
                 request.getEmail(), request.getUsername(), request.getRole());
         long deletedCount = userService.deleteByFilter(request);

@@ -2,6 +2,7 @@ package com.microservices_example_app.booking.controller;
 
 import com.microservices_example_app.booking.dto.*;
 import com.microservices_example_app.booking.service.TicketService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
@@ -17,7 +18,7 @@ public class TicketController {
     private final TicketService ticketService;
 
     @PostMapping
-    public TicketResponseDto create(@RequestBody TicketCreateRequestDto requestDto) {
+    public TicketResponseDto create(@Valid @RequestBody TicketCreateRequestDto requestDto) {
         log.info("Creating new ticket for event id: {}", requestDto.getEventId());
         return ticketService.create(requestDto);
     }
@@ -29,7 +30,7 @@ public class TicketController {
     }
 
     @GetMapping("/search")
-    public List<TicketResponseDto> searchByFilter(@ModelAttribute TicketSearchRequestDto filter,
+    public List<TicketResponseDto> searchByFilter(@Valid @ModelAttribute TicketSearchRequestDto filter,
                                                   @RequestParam(defaultValue = "1") int page,
                                                   @RequestParam(defaultValue = "10") int size) {
         return ticketService.searchByFilter(filter, page, size);
@@ -37,7 +38,7 @@ public class TicketController {
 
     @PutMapping("/{id}")
     public TicketResponseDto updateById(@PathVariable Integer id,
-                                        @RequestBody TicketUpdateRequestDto requestDto) {
+                                        @Valid @RequestBody TicketUpdateRequestDto requestDto) {
         requestDto.setId(id);
         return ticketService.updateTicketById(requestDto);
     }
@@ -49,7 +50,7 @@ public class TicketController {
     }
 
     @DeleteMapping("/search")
-    public long deleteByFilter(@RequestBody TicketDeleteRequestDto requestDto) {
+    public long deleteByFilter(@Valid @RequestBody TicketDeleteRequestDto requestDto) {
         return ticketService.deleteByFilter(requestDto);
     }
 }

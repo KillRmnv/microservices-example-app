@@ -2,6 +2,7 @@ package com.microservices_example_app.booking.controller;
 
 import com.microservices_example_app.booking.dto.*;
 import com.microservices_example_app.booking.service.SeatableTicketService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
@@ -17,7 +18,7 @@ public class SeatableTicketController {
     private final SeatableTicketService seatableTicketService;
 
     @PostMapping
-    public SeatableTicketResponseDto create(@RequestBody SeatableTicketCreateRequestDto requestDto) {
+    public SeatableTicketResponseDto create(@Valid @RequestBody SeatableTicketCreateRequestDto requestDto) {
         log.info("Creating seatable ticket for event id: {}", requestDto.getEventId());
         return seatableTicketService.create(requestDto);
     }
@@ -29,7 +30,7 @@ public class SeatableTicketController {
     }
 
     @GetMapping("/search")
-    public List<SeatableTicketResponseDto> searchByFilter(@ModelAttribute SeatableTicketSearchRequestDto filter,
+    public List<SeatableTicketResponseDto> searchByFilter(@Valid @ModelAttribute SeatableTicketSearchRequestDto filter,
                                                           @RequestParam(defaultValue = "1") int page,
                                                           @RequestParam(defaultValue = "10") int size) {
         return seatableTicketService.searchByFilter(filter, page, size);
@@ -37,7 +38,7 @@ public class SeatableTicketController {
 
     @PutMapping("/{id}")
     public SeatableTicketResponseDto updateById(@PathVariable Integer id,
-                                                @RequestBody SeatableTicketUpdateRequestDto requestDto) {
+                                                @Valid @RequestBody SeatableTicketUpdateRequestDto requestDto) {
         requestDto.setId(id);
         return seatableTicketService.updateSeatableTicketById(requestDto);
     }
@@ -49,7 +50,7 @@ public class SeatableTicketController {
     }
 
     @DeleteMapping("/search")
-    public long deleteByFilter(@RequestBody SeatableTicketDeleteRequestDto requestDto) {
+    public long deleteByFilter(@Valid @RequestBody SeatableTicketDeleteRequestDto requestDto) {
         return seatableTicketService.deleteByFilter(requestDto);
     }
 }

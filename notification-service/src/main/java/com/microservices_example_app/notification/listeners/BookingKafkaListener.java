@@ -36,6 +36,10 @@ public class BookingKafkaListener {
             return;
         }
 
-        emailService.sendBookingSuccessEmail(event);
+        try {
+            emailService.sendBookingSuccessEmail(event);
+        } catch (Exception e) {
+            log.error("Failed to send booking success email to {}: {}", event.getEmail(), e.getMessage(), e);
+        }
     }
 }

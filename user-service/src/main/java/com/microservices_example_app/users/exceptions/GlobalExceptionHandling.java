@@ -5,11 +5,13 @@ import lombok.extern.slf4j.Slf4j;
 import org.slf4j.Logger;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import java.rmi.NoSuchObjectException;
 import java.util.Map;
+import java.util.stream.Collectors;
 @Slf4j
 @RestControllerAdvice
 @AllArgsConstructor
@@ -39,6 +41,23 @@ public class GlobalExceptionHandling {
                 status(HttpStatus.INTERNAL_SERVER_ERROR).
                 body(Map.of("message",ex.getMessage(),
                         "status",HttpStatus.INTERNAL_SERVER_ERROR));
+    }
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<Map<String, Object>> validationException(MethodArgumentNotValidException ex) {
+        Map<String, String> errors = ex.getBindingResult().getFieldErrors().stream()
+                .collect(Collectors.toMap(
+                        error -> error.getField(),
+                        error -> error.getDefaultMessage() != null ? error.getDefaultMessage() : "Invalid value",
+                        (first, second) -> first
+                ));
+        logger.warn("Validation error: {}", errors);
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(Map.of(
+                        "status", HttpStatus.BAD_REQUEST,
+                        "message", "Validation failed",
+                        "errors", errors
+                ));
     }
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String,Object>> unexpectedException(Exception ex){

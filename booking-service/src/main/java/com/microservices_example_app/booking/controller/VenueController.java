@@ -2,6 +2,7 @@ package com.microservices_example_app.booking.controller;
 
 import com.microservices_example_app.booking.dto.*;
 import com.microservices_example_app.booking.service.VenueService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
@@ -17,7 +18,7 @@ public class VenueController {
     private final VenueService venueService;
 
     @PostMapping
-    public VenueResponseDto create(@RequestBody VenueCreateRequestDto requestDto) {
+    public VenueResponseDto create(@Valid @RequestBody VenueCreateRequestDto requestDto) {
         log.info("Creating new venue in town id: {}", requestDto.getTownId());
         return venueService.create(requestDto);
     }
@@ -29,7 +30,7 @@ public class VenueController {
     }
 
     @GetMapping("/search")
-    public List<VenueResponseDto> searchByFilter(@ModelAttribute VenueSearchRequestDto filter,
+    public List<VenueResponseDto> searchByFilter(@Valid @ModelAttribute VenueSearchRequestDto filter,
                                                  @RequestParam(defaultValue = "1") int page,
                                                  @RequestParam(defaultValue = "10") int size) {
         return venueService.searchByFilter(filter, page, size);
@@ -37,7 +38,7 @@ public class VenueController {
 
     @PutMapping("/{id}")
     public VenueResponseDto updateById(@PathVariable Integer id,
-                                       @RequestBody VenueUpdateRequestDto requestDto) {
+                                       @Valid @RequestBody VenueUpdateRequestDto requestDto) {
         requestDto.setId(id);
         return venueService.updateVenueById(requestDto);
     }
@@ -49,7 +50,7 @@ public class VenueController {
     }
 
     @DeleteMapping("/search")
-    public long deleteByFilter(@RequestBody VenueDeleteRequestDto requestDto) {
+    public long deleteByFilter(@Valid @RequestBody VenueDeleteRequestDto requestDto) {
         return venueService.deleteByFilter(requestDto);
     }
 }

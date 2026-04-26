@@ -5,6 +5,7 @@ import com.microservices_example_app.users.model.Role;
 import com.microservices_example_app.users.repository.RoleRepository;
 import com.microservices_example_app.users.service.UserService;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import lombok.AllArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -29,7 +30,7 @@ public class AuthenticationController {
     }
 
     @PostMapping("/register")
-    public ResponseEntity<UserRegistrationDto> register(@RequestBody UserRegistrationRequestDto request) {
+    public ResponseEntity<UserRegistrationDto> register(@Valid @RequestBody UserRegistrationRequestDto request) {
         log.info("Registration attempt for email: {}", request.getEmail());
         UserRegistrationDto response = userService.register(
                 request.getEmail(),
@@ -41,7 +42,7 @@ public class AuthenticationController {
     }
 
     @PostMapping("/login")
-    public ResponseEntity<UserLoginResponseDto> login(@RequestBody UserLoginRequestDto request) {
+    public ResponseEntity<UserLoginResponseDto> login(@Valid @RequestBody UserLoginRequestDto request) {
         log.info("Login attempt for email: {}", request.getEmail());
         return ResponseEntity.ok(userService.login(request.getEmail(), request.getPassword()));
     }

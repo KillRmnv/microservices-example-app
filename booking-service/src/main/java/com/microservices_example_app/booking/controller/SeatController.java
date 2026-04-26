@@ -2,6 +2,7 @@ package com.microservices_example_app.booking.controller;
 
 import com.microservices_example_app.booking.dto.*;
 import com.microservices_example_app.booking.service.SeatService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
@@ -17,7 +18,7 @@ public class SeatController {
     private final SeatService seatService;
 
     @PostMapping
-    public SeatResponseDto create(@RequestBody SeatCreateRequestDto requestDto) {
+    public SeatResponseDto create(@Valid @RequestBody SeatCreateRequestDto requestDto) {
         log.info("Creating new seat in venue id: {}", requestDto.getVenueId());
         return seatService.create(requestDto);
     }
@@ -29,7 +30,7 @@ public class SeatController {
     }
 
     @GetMapping("/search")
-    public List<SeatResponseDto> searchByFilter(@ModelAttribute SeatSearchRequestDto filter,
+    public List<SeatResponseDto> searchByFilter(@Valid @ModelAttribute SeatSearchRequestDto filter,
                                                 @RequestParam(defaultValue = "1") int page,
                                                 @RequestParam(defaultValue = "10") int size) {
         return seatService.searchByFilter(filter, page, size);
@@ -37,7 +38,7 @@ public class SeatController {
 
     @PutMapping("/{id}")
     public SeatResponseDto updateById(@PathVariable Integer id,
-                                      @RequestBody SeatUpdateRequestDto requestDto) {
+                                      @Valid @RequestBody SeatUpdateRequestDto requestDto) {
         requestDto.setId(id);
         return seatService.updateSeatById(requestDto);
     }
@@ -49,7 +50,7 @@ public class SeatController {
     }
 
     @DeleteMapping("/search")
-    public long deleteByFilter(@RequestBody SeatDeleteRequestDto requestDto) {
+    public long deleteByFilter(@Valid @RequestBody SeatDeleteRequestDto requestDto) {
         return seatService.deleteByFilter(requestDto);
     }
 }

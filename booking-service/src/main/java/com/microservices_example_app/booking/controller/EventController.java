@@ -2,6 +2,7 @@ package com.microservices_example_app.booking.controller;
 
 import com.microservices_example_app.booking.dto.*;
 import com.microservices_example_app.booking.service.EventService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
@@ -17,7 +18,7 @@ public class EventController {
     private final EventService eventService;
 
     @PostMapping
-    public EventResponseDto create(@RequestBody EventCreateRequestDto requestDto) {
+    public EventResponseDto create(@Valid @RequestBody EventCreateRequestDto requestDto) {
         log.info("Creating new event: {}", requestDto.getTitle());
         return eventService.create(requestDto);
     }
@@ -34,7 +35,7 @@ public class EventController {
     }
 
     @GetMapping("/search")
-    public List<EventResponseDto> searchByFilter(@ModelAttribute EventSearchRequestDto filter,
+    public List<EventResponseDto> searchByFilter(@Valid @ModelAttribute EventSearchRequestDto filter,
                                                  @RequestParam(defaultValue = "1") int page,
                                                  @RequestParam(defaultValue = "10") int size) {
         return eventService.searchByFilter(filter, page, size);
@@ -42,7 +43,7 @@ public class EventController {
 
     @PutMapping("/{id}")
     public EventResponseDto updateById(@PathVariable Integer id,
-                                       @RequestBody EventUpdateRequestDto requestDto) {
+                                       @Valid @RequestBody EventUpdateRequestDto requestDto) {
         requestDto.setId(id);
         return eventService.updateEventById(requestDto);
     }
@@ -54,7 +55,7 @@ public class EventController {
     }
 
     @DeleteMapping("/search")
-    public long deleteByFilter(@RequestBody EventDeleteRequestDto requestDto) {
+    public long deleteByFilter(@Valid @RequestBody EventDeleteRequestDto requestDto) {
         return eventService.deleteByFilter(requestDto);
     }
 }
