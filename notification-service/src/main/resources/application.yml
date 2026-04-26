@@ -40,7 +40,9 @@ spring:
 notification:
   kafka:
     topic:
-      email: ${NOTIFICATION_EMAIL_TOPIC:notification.email}
+      authentication: ${NOTIFICATION_AUTHENTICATION_TOPIC:notification.authentication}
+      booking: ${NOTIFICATION_BOOKING_TOPIC:notification.booking}
+
 
 management:
   endpoints:
