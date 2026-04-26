@@ -224,15 +224,8 @@ public final class UserService {
         log.debug("Searching users by filter: email={}, username={}, role={}",
                 filter.getEmail(), filter.getUsername(), filter.getRole());
 
-        Specification<User> spec = Specification.where((Specification<User>) null);
-
-        if (filter.getEmail() != null && !filter.getEmail().isBlank()) {
-            spec = spec.and(UserSpecification.hasEmail(filter.getEmail()));
-        }
-
-        if (filter.getUsername() != null && !filter.getUsername().isBlank()) {
-            spec = spec.and(UserSpecification.hasUsername(filter.getUsername()));
-        }
+        Specification<User> spec = Specification.where(UserSpecification.hasEmail(filter.getEmail())).
+                and(UserSpecification.hasUsername(filter.getUsername()));
 
         if (filter.getRole() != null && !filter.getRole().isBlank()) {
             Role role = roleRepository.findByName(filter.getRole())
@@ -266,15 +259,8 @@ public final class UserService {
             throw new IllegalArgumentException("Size must be >= 1");
         }
 
-        Specification<User> spec = Specification.where((Specification<User>) null);
-
-        if (filter.getEmail() != null && !filter.getEmail().isBlank()) {
-            spec = spec.and(UserSpecification.hasEmail(filter.getEmail()));
-        }
-
-        if (filter.getUsername() != null && !filter.getUsername().isBlank()) {
-            spec = spec.and(UserSpecification.hasUsername(filter.getUsername()));
-        }
+        Specification<User> spec = Specification.where(UserSpecification.hasEmail(filter.getEmail())).
+                and(UserSpecification.hasUsername(filter.getUsername()));
 
         if (filter.getRole() != null && !filter.getRole().isBlank()) {
             Role role = roleRepository.findByName(filter.getRole())
