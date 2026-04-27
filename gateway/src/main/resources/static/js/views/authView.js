@@ -1,4 +1,6 @@
-const AuthView = {
+const App = window.App;
+
+export const AuthView = {
     renderLogin() {
         const content = document.getElementById('content');
         content.innerHTML = `
@@ -29,12 +31,13 @@ const AuthView = {
             const errorDiv = document.getElementById('login-error');
 
             
-            try {
-                const response = await Auth.login(email, password);
-                errorDiv.classList.add('hidden');
-                App.showAlert('Вход выполнен успешно!', 'success');
-                setTimeout(() => window.location.reload(), 500);
-            } catch (error) {
+             try {
+                 const response = await Auth.login(email, password);
+                 errorDiv.classList.add('hidden');
+                 App.showAlert('Вход выполнен успешно!', 'success');
+                 App.updateAuthUI();
+                 setTimeout(() => App.navigate('/'), 500);
+             } catch (error) {
                 errorDiv.textContent = error.message || 'Ошибка входа';
                 errorDiv.classList.remove('hidden');
             }

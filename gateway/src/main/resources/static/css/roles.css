@@ -1,9 +1,11 @@
+/* Role-based visibility */
 .admin-only,
 .manager-access,
 .customer-only {
     display: none;
 }
 
+/* Admin sees everything */
 body.role-admin .admin-only,
 body.role-admin .manager-access,
 body.role-admin .customer-only {
@@ -16,6 +18,7 @@ body.role-admin .nav-link.customer-only {
     display: inline-block;
 }
 
+/* Event Manager sees manager and customer content */
 body.role-event_manager .manager-access,
 body.role-event_manager .customer-only {
     display: block;
@@ -26,6 +29,7 @@ body.role-event_manager .nav-link.customer-only {
     display: inline-block;
 }
 
+/* Customer sees only customer content */
 body.role-customer .customer-only {
     display: block;
 }
@@ -34,14 +38,16 @@ body.role-customer .nav-link.customer-only {
     display: inline-block;
 }
 
+/* Logged in state */
 body.logged-in #login-btn {
-    display: none;
+    display: none !important;
 }
 
-body.logged-in #logout-btn {
-    display: inline-block;
+body:not(.logged-in) #auth-section .badge,
+body:not(.logged-in) #auth-section #logout-btn {
+    display: none !important;
 }
 
-body:not(.logged-in) #logout-btn {
-    display: none;
+body.logged-in #auth-section #login-btn {
+    display: none !important;
 }

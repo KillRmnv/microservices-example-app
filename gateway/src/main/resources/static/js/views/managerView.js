@@ -1,4 +1,6 @@
-const ManagerView = {
+const App = window.App;
+
+export const ManagerView = {
     async renderEvents() {
         const content = document.getElementById('content');
         content.innerHTML = `
@@ -47,7 +49,7 @@ const ManagerView = {
 
     renderEventsTable(events) {
         const container = document.getElementById('events-container');
-        
+
         if (!events || events.length === 0) {
             container.innerHTML = '<div class="card"><p>События не найдены</p></div>';
             return;
@@ -74,7 +76,7 @@ const ManagerView = {
                             <td>${App.formatDate(e.startsAt)}</td>
                             <td><span class="badge ${e.admissionMode === 'FREE' ? 'badge-customer' : 'badge-manager'}">${e.admissionMode}</span></td>
                             <td class="actions">
-                                <button class="btn btn-secondary btn-sm" onclick="ManagerView.renderEventForm(${e.id})">Редактировать</button>
+                                <button class="btn btn-secondary btn-sm" onclick="ManagerView.renderEventForm(${e.id})">Ред.</button>
                                 <button class="btn btn-danger btn-sm" onclick="ManagerView.deleteEvent(${e.id})">Удалить</button>
                             </td>
                         </tr>
@@ -82,6 +84,12 @@ const ManagerView = {
                 </tbody>
             </table>
         `;
+    },
+
+    formatDateTimeLocal(dateStr) {
+        if (!dateStr) return '';
+        const date = new Date(dateStr);
+        return date.toISOString().slice(0, 16);
     },
 
     async renderEventForm(eventId = null) {
@@ -152,10 +160,16 @@ const ManagerView = {
                 admissionMode: document.getElementById('admissionMode').value
             };
 
-            if (eventId) data.id = eventId;
+            if (!data.title || !data.venueId || !data.startsAt || !data.endsAt) {
+                const errorDiv = document.getElementById('form-error');
+                errorDiv.textContent = 'Заполните все обязательные поля';
+                errorDiv.classList.remove('hidden');
+                return;
+            }
 
             try {
                 if (eventId) {
+                    data.id = eventId;
                     await API.updateEvent(data);
                     App.showAlert('Событие обновлено!', 'success');
                 } else {
@@ -213,7 +227,7 @@ const ManagerView = {
 
     renderVenuesTable(venues) {
         const container = document.getElementById('venues-container');
-        
+
         if (!venues || venues.length === 0) {
             container.innerHTML = '<div class="card"><p>Площадки не найдены</p></div>';
             return;
@@ -238,7 +252,7 @@ const ManagerView = {
                             <td>${App.escapeHtml(v.townName || '-')}</td>
                             <td>${v.capacity || '-'}</td>
                             <td class="actions">
-                                <button class="btn btn-secondary btn-sm" onclick="ManagerView.renderVenueForm(${v.id})">Редактировать</button>
+                                <button class="btn btn-secondary btn-sm" onclick="ManagerView.renderVenueForm(${v.id})">Ред.</button>
                                 <button class="btn btn-danger btn-sm" onclick="ManagerView.deleteVenue(${v.id})">Удалить</button>
                             </td>
                         </tr>
@@ -301,10 +315,16 @@ const ManagerView = {
                 capacity: parseInt(document.getElementById('capacity').value) || null
             };
 
-            if (venueId) data.id = venueId;
+            if (!data.place || !data.townId) {
+                const errorDiv = document.getElementById('form-error');
+                errorDiv.textContent = 'Заполните все обязательные поля';
+                errorDiv.classList.remove('hidden');
+                return;
+            }
 
             try {
                 if (venueId) {
+                    data.id = venueId;
                     await API.updateVenue(data);
                     App.showAlert('Площадка обновлена!', 'success');
                 } else {
@@ -329,11 +349,6 @@ const ManagerView = {
         } catch (error) {
             App.showAlert('Ошибка: ' + error.message);
         }
-    },
-
-    formatDateTimeLocal(dateStr) {
-        if (!dateStr) return '';
-        const date = new Date(dateStr);
-        return date.toISOString().slice(0, 16);
     }
 };
+

@@ -55,6 +55,45 @@ const API = {
         });
     },
 
+    async getUserById(id) {
+        return this.get(`/users/${id}`);
+    },
+
+    async getMyTickets(userId) {
+        const tickets = await this.searchTickets({ userId });
+        const seatableTickets = await this.searchSeatableTickets({ userId });
+        return { tickets, seatableTickets };
+    },
+
+    async searchTickets(filter, page = 1, size = 100) {
+        const params = new URLSearchParams();
+        if (filter.eventId) params.append('eventId', filter.eventId);
+        if (filter.userId) params.append('userId', filter.userId);
+        if (filter.zone) params.append('zone', filter.zone);
+        if (filter.active !== undefined) params.append('active', filter.active);
+        if (filter.minPrice) params.append('minPrice', filter.minPrice);
+        if (filter.maxPrice) params.append('maxPrice', filter.maxPrice);
+        params.append('page', page);
+        params.append('size', size);
+        return this.get(`/booking/tickets/search?${params}`);
+    },
+
+    async searchSeatableTickets(filter, page = 1, size = 100) {
+        const params = new URLSearchParams();
+        if (filter.eventId) params.append('eventId', filter.eventId);
+        if (filter.userId) params.append('userId', filter.userId);
+        if (filter.zone) params.append('zone', filter.zone);
+        if (filter.active !== undefined) params.append('active', filter.active);
+        if (filter.minPrice) params.append('minPrice', filter.minPrice);
+        if (filter.maxPrice) params.append('maxPrice', filter.maxPrice);
+        if (filter.sector) params.append('sector', filter.sector);
+        if (filter.row) params.append('row', filter.row);
+        if (filter.number) params.append('number', filter.number);
+        params.append('page', page);
+        params.append('size', size);
+        return this.get(`/booking/seatable-tickets/search?${params}`);
+    },
+
     async login(email, password) {
         return this.post('/users/auth/login', { email, password });
     },

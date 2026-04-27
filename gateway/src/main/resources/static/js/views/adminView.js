@@ -1,4 +1,6 @@
-const AdminView = {
+const App = window.App;
+
+export const AdminView = {
     async renderUsers() {
         const content = document.getElementById('content');
         content.innerHTML = `
@@ -40,7 +42,7 @@ const AdminView = {
 
     renderUsersTable(users) {
         const container = document.getElementById('users-container');
-        
+
         if (!users || users.length === 0) {
             container.innerHTML = '<div class="card"><p>Пользователи не найдены</p></div>';
             return;
@@ -95,6 +97,7 @@ const AdminView = {
                         <option value="ADMIN" ${currentRole === 'ADMIN' ? 'selected' : ''}>ADMIN</option>
                     </select>
                 </div>
+                <div id="form-error" class="alert alert-error hidden"></div>
                 <div style="display: flex; gap: 1rem;">
                     <button type="submit" class="btn btn-success">Сохранить</button>
                     <button type="button" class="btn btn-secondary" onclick="App.closeModal()">Отмена</button>
@@ -114,7 +117,9 @@ const AdminView = {
                 App.showAlert('Пользователь обновлен', 'success');
                 await this.loadUsers();
             } catch (error) {
-                App.showAlert('Ошибка: ' + error.message);
+                const errorDiv = document.getElementById('form-error');
+                errorDiv.textContent = error.message;
+                errorDiv.classList.remove('hidden');
             }
         });
     },
@@ -158,7 +163,7 @@ const AdminView = {
 
     renderTownsTable(towns) {
         const container = document.getElementById('towns-container');
-        
+
         if (!towns || towns.length === 0) {
             container.innerHTML = '<div class="card"><p>Города не найдены</p></div>';
             return;
@@ -196,6 +201,7 @@ const AdminView = {
                     <label>Название *</label>
                     <input type="text" id="town-name" required placeholder="Москва">
                 </div>
+                <div id="form-error" class="alert alert-error hidden"></div>
                 <div style="display: flex; gap: 1rem;">
                     <button type="submit" class="btn btn-success">Создать</button>
                     <button type="button" class="btn btn-secondary" onclick="App.closeModal()">Отмена</button>
@@ -205,13 +211,24 @@ const AdminView = {
 
         document.getElementById('town-form').addEventListener('submit', async (e) => {
             e.preventDefault();
+            const name = document.getElementById('town-name').value;
+            
+            if (!name) {
+                const errorDiv = document.getElementById('form-error');
+                errorDiv.textContent = 'Введите название города';
+                errorDiv.classList.remove('hidden');
+                return;
+            }
+
             try {
-                await API.createTown({ name: document.getElementById('town-name').value });
+                await API.createTown({ name });
                 App.closeModal();
                 App.showAlert('Город создан', 'success');
                 await this.loadTowns();
             } catch (error) {
-                App.showAlert('Ошибка: ' + error.message);
+                const errorDiv = document.getElementById('form-error');
+                errorDiv.textContent = error.message;
+                errorDiv.classList.remove('hidden');
             }
         });
     },

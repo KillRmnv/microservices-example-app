@@ -15,38 +15,56 @@ const App = {
 
     setupRoutes() {
         this.routes = {
-            '': () => import('./views/homeView.js').then(m => m.render()),
-            '/': () => import('./views/homeView.js').then(m => m.render()),
-            '/login': () => import('./views/authView.js').then(m => m.renderLogin()),
-            '/register': () => import('./views/authView.js').then(m => m.renderRegister()),
-            '/event/:id': (params) => import('./views/eventView.js').then(m => m.render(params.id)),
-            '/my-tickets': () => import('./views/myTicketsView.js').then(m => m.render()),
-            '/manager/events': () => import('./views/managerView.js').then(m => m.renderEvents()),
-            '/manager/event/new': () => import('./views/managerView.js').then(m => m.renderEventForm()),
-            '/manager/event/:id/edit': (params) => import('./views/managerView.js').then(m => m.renderEventForm(params.id)),
-            '/manager/venues': () => import('./views/managerView.js').then(m => m.renderVenues()),
-            '/manager/venue/new': () => import('./views/managerView.js').then(m => m.renderVenueForm()),
-            '/manager/venue/:id/edit': (params) => import('./views/managerView.js').then(m => m.renderVenueForm(params.id)),
-            '/admin/users': () => import('./views/adminView.js').then(m => m.renderUsers()),
-            '/admin/towns': () => import('./views/adminView.js').then(m => m.renderTowns()),
+            '': () => import('./views/homeView.js').then(m => m.HomeView.render()),
+            '/': () => import('./views/homeView.js').then(m => m.HomeView.render()),
+            '/login': () => import('./views/authView.js').then(m => m.AuthView.renderLogin()),
+            '/register': () => import('./views/authView.js').then(m => m.AuthView.renderRegister()),
+            '/event/:id': (params) => import('./views/eventView.js').then(m => m.EventView.render(params.id)),
+            '/my-tickets': () => import('./views/myTicketsView.js').then(m => m.MyTicketsView.render()),
+            '/manager/events': () => import('./views/managerView.js').then(m => m.ManagerView.renderEvents()),
+            '/manager/event/new': () => import('./views/managerView.js').then(m => m.ManagerView.renderEventForm()),
+            '/manager/event/:id/edit': (params) => import('./views/managerView.js').then(m => m.ManagerView.renderEventForm(params.id)),
+            '/manager/venues': () => import('./views/managerView.js').then(m => m.ManagerView.renderVenues()),
+            '/manager/venue/new': () => import('./views/managerView.js').then(m => m.ManagerView.renderVenueForm()),
+            '/manager/venue/:id/edit': (params) => import('./views/managerView.js').then(m => m.ManagerView.renderVenueForm(params.id)),
+            '/admin/users': () => import('./views/adminView.js').then(m => m.AdminView.renderUsers()),
+            '/admin/towns': () => import('./views/adminView.js').then(m => m.AdminView.renderTowns()),
         };
     },
 
     setupAuth() {
+        this.updateAuthUI();
+    },
+
+    updateAuthUI() {
         const body = document.body;
         const authSection = document.getElementById('auth-section');
+
+        // Clear existing role classes
+        body.classList.remove('logged-in', 'role-admin', 'role-event_manager', 'role-customer');
 
         if (Auth.isLoggedIn()) {
             body.classList.add('logged-in');
             const role = Auth.getUserRole();
             body.classList.add(`role-${role.toLowerCase()}`);
-            
+
             authSection.innerHTML = `
                 <span style="margin-right: 1rem;">${Auth.getUserEmail()}</span>
                 <span class="badge badge-${role.toLowerCase()}">${role}</span>
-                <button id="logout-btn" class="btn btn-secondary">Выйти</button>
+                <button id="logout-btn" class="btn btn-secondary btn-sm">Выйти</button>
             `;
-            document.getElementById('logout-btn').addEventListener('click', () => Auth.logout());
+            document.getElementById('logout-btn').addEventListener('click', () => {
+                Auth.logout();
+                this.updateAuthUI();
+                this.handleRoute();
+            });
+        } else {
+            authSection.innerHTML = `
+                <button id="login-btn" class="btn btn-primary btn-sm">Войти</button>
+            `;
+            document.getElementById('login-btn').addEventListener('click', () => {
+                this.navigate('/login');
+            });
         }
     },
 
@@ -153,3 +171,6 @@ const App = {
 };
 
 document.addEventListener('DOMContentLoaded', () => App.init());
+
+// Make App globally accessible to dynamically imported modules
+window.App = App;

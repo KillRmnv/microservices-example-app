@@ -1,7 +1,10 @@
-const HomeView = {
+const App = window.App;
+
+export const HomeView = {
     currentPage: 1,
     pageSize: 12,
     filter: {},
+    totalPages: 1,
 
     async render() {
         const content = document.getElementById('content');
@@ -75,6 +78,7 @@ const HomeView = {
         try {
             const events = await API.searchEvents(this.filter, this.currentPage, this.pageSize);
             this.renderEvents(events);
+            this.renderPagination();
         } catch (error) {
             grid.innerHTML = `<div class="alert alert-error">Ошибка загрузки: ${error.message}</div>`;
         }
@@ -82,7 +86,7 @@ const HomeView = {
 
     renderEvents(events) {
         const grid = document.getElementById('events-grid');
-        
+
         if (!events || events.length === 0) {
             grid.innerHTML = '<div class="card"><p style="text-align:center">События не найдены</p></div>';
             return;
@@ -95,7 +99,7 @@ const HomeView = {
                     <span>📍 ${App.escapeHtml(event.venuePlace || '-')}</span>
                     <span>📅 ${App.formatDate(event.startsAt)}</span>
                 </div>
-                <div class="event-meta">
+                <div class="event-meta" style="margin-top: 0.5rem;">
                     <span class="badge ${event.admissionMode === 'FREE' ? 'badge-customer' : 'badge-manager'}">
                         ${event.admissionMode === 'FREE' ? 'Бесплатный' : 'Платный'}
                     </span>
@@ -108,5 +112,37 @@ const HomeView = {
                 App.navigate(`/event/${card.dataset.id}`);
             });
         });
+    },
+
+    renderPagination() {
+        const pagination = document.getElementById('pagination');
+        if (this.totalPages <= 1) {
+            pagination.innerHTML = '';
+            return;
+        }
+
+        let buttons = '';
+        const maxVisible = 5;
+        let start = Math.max(1, this.currentPage - Math.floor(maxVisible / 2));
+        let end = Math.min(this.totalPages, start + maxVisible - 1);
+
+        if (this.currentPage > 1) {
+            buttons += `<button onclick="HomeView.goToPage(${this.currentPage - 1})">← Назад</button>`;
+        }
+
+        for (let i = start; i <= end; i++) {
+            buttons += `<button class="${i === this.currentPage ? 'active' : ''}" onclick="HomeView.goToPage(${i})">${i}</button>`;
+        }
+
+        if (this.currentPage < this.totalPages) {
+            buttons += `<button onclick="HomeView.goToPage(${this.currentPage + 1})">Вперед →</button>`;
+        }
+
+        pagination.innerHTML = buttons;
+    },
+
+    goToPage(page) {
+        this.currentPage = page;
+        this.loadEvents();
     }
 };
