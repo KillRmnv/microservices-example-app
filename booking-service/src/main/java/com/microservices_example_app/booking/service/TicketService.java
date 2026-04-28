@@ -88,31 +88,14 @@ public class TicketService {
             throw new IllegalArgumentException("Size must be >= 1");
         }
 
-        Specification<Ticket> spec = Specification.where((Specification<Ticket>) null);
+        Specification<Ticket> spec = Specification.
+                where(TicketSpecification.hasEventId(filter.getEventId())).
+                and(TicketSpecification.hasUserId(filter.getUserId())).
+                and(TicketSpecification.hasZone(filter.getZone())).
+                and(TicketSpecification.hasActive(filter.getActive())).
+                and(TicketSpecification.hasPriceGreaterThanOrEqual(filter.getMinPrice())).
+                and(TicketSpecification.hasPriceLessThanOrEqual(filter.getMaxPrice()));
 
-        if (filter.getEventId() != null) {
-            spec = spec.and(TicketSpecification.hasEventId(filter.getEventId()));
-        }
-
-        if (filter.getUserId() != null) {
-            spec = spec.and(TicketSpecification.hasUserId(filter.getUserId()));
-        }
-
-        if (filter.getZone() != null) {
-            spec = spec.and(TicketSpecification.hasZone(filter.getZone()));
-        }
-
-        if (filter.getActive() != null) {
-            spec = spec.and(TicketSpecification.hasActive(filter.getActive()));
-        }
-
-        if (filter.getMinPrice() != null) {
-            spec = spec.and(TicketSpecification.hasPriceGreaterThanOrEqual(filter.getMinPrice()));
-        }
-
-        if (filter.getMaxPrice() != null) {
-            spec = spec.and(TicketSpecification.hasPriceLessThanOrEqual(filter.getMaxPrice()));
-        }
 
         log.debug("Search by filter: {}", spec);
         Pageable pageable = PageRequest.of(page - 1, size);

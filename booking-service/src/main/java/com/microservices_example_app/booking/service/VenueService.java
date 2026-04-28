@@ -59,6 +59,14 @@ public class VenueService {
         return toResponseDto(venue);
     }
 
+    @Transactional
+    public List<VenueResponseDto> getAll() {
+        log.info("Fetching all venues");
+        return venueRepository.findAll().stream()
+                .map(this::toResponseDto)
+                .toList();
+    }
+
     @Caching(evict = {
             @CacheEvict(cacheNames = "venuesById", key = "#id"),
             @CacheEvict(cacheNames = "venueSearch", allEntries = true)

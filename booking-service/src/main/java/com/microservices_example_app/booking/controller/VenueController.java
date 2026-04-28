@@ -23,6 +23,12 @@ public class VenueController {
         return venueService.create(requestDto);
     }
 
+    @GetMapping
+    public List<VenueResponseDto> getAll() {
+        log.info("Fetching all venues");
+        return venueService.getAll();
+    }
+
     @GetMapping("/{id}")
     public VenueResponseDto getById(@PathVariable Integer id) {
         log.info("Fetching venue with id: {}", id);

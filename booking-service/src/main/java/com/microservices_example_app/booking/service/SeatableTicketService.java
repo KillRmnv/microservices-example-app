@@ -153,17 +153,17 @@ public class SeatableTicketService {
 
         Integer currentUserId = jwtRequestUserExtractor.extractUserId();
 
-        Specification<SeatableTicket> spec = Specification.
-                where(SeatableTicketSpecification.hasEventId(filter.getEventId())).
-                and(SeatableTicketSpecification.hasSeatId(filter.getSeatId())).
-                and(SeatableTicketSpecification.hasUserId(currentUserId)).
-                and(SeatableTicketSpecification.hasZone(filter.getZone())).
-                and(SeatableTicketSpecification.hasActive(filter.getActive())).
-                and(SeatableTicketSpecification.hasPriceGreaterThanOrEqual(filter.getMinPrice())).
-                and(SeatableTicketSpecification.hasPriceLessThanOrEqual(filter.getMaxPrice())).
-                and(SeatableTicketSpecification.hasSector(filter.getSector())).
-                and(SeatableTicketSpecification.hasRow(filter.getRow())).
-                and(SeatableTicketSpecification.hasNumber(filter.getNumber()));
+        Specification<SeatableTicket> spec = Specification
+                .where(SeatableTicketSpecification.hasEventId(filter.getEventId()))
+                .and(SeatableTicketSpecification.hasSeatId(filter.getSeatId()))
+                .and(SeatableTicketSpecification.hasUserId(currentUserId))
+                .and(SeatableTicketSpecification.hasZone(filter.getZone()))
+                .and(SeatableTicketSpecification.hasActive(filter.getActive()))
+                .and(SeatableTicketSpecification.hasPriceGreaterThanOrEqual(filter.getMinPrice()))
+                .and(SeatableTicketSpecification.hasPriceLessThanOrEqual(filter.getMaxPrice()))
+                .and(SeatableTicketSpecification.hasSector(filter.getSector()))
+                .and(SeatableTicketSpecification.hasRow(filter.getRow()))
+                .and(SeatableTicketSpecification.hasNumber(filter.getNumber()));
 
         Pageable pageable = PageRequest.of(page - 1, size);
         log.debug("Search by filter for userId={}: {}", currentUserId, spec);
