@@ -102,6 +102,22 @@ const API = {
         return this.post('/users/auth/register', { email, password, username, role });
     },
 
+    async forgetPassword(email) {
+        return this.get(`/users/auth/forget-password?email=${encodeURIComponent(email)}`);
+    },
+
+    async resetPassword(token, newPassword) {
+        return this.post(`/users/auth/reset-password?token=${encodeURIComponent(token)}&newPassword=${encodeURIComponent(newPassword)}`);
+    },
+
+    async getRoles() {
+        return this.get('/users/auth/roles');
+    },
+
+    async validateResetToken(token) {
+        return this.get(`/users/auth/validate-reset-token?token=${encodeURIComponent(token)}`);
+    },
+
     async getCurrentUser() {
         return this.get('/users/by-email?email=' + encodeURIComponent(localStorage.getItem('userEmail')));
     },
@@ -251,3 +267,6 @@ const API = {
         return this.delete(`/booking/seatable-tickets/${id}`);
     }
 };
+
+// Make API globally accessible
+window.API = API;

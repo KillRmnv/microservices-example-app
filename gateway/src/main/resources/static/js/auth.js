@@ -1,3 +1,5 @@
+// API is available from global scope (set by api.js)
+
 const Auth = {
     TOKEN_KEY: 'token',
     USER_EMAIL_KEY: 'userEmail',
@@ -91,3 +93,6 @@ const Auth = {
         return this.getUserRole() === 'ADMIN';
     }
 };
+
+// Make Auth globally accessible
+window.Auth = Auth;

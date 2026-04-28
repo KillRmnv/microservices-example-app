@@ -19,6 +19,8 @@ const App = {
             '/': () => import('./views/homeView.js').then(m => m.HomeView.render()),
             '/login': () => import('./views/authView.js').then(m => m.AuthView.renderLogin()),
             '/register': () => import('./views/authView.js').then(m => m.AuthView.renderRegister()),
+            '/forgot-password': () => import('./views/forgetPasswordView.js').then(m => m.ForgetPasswordView.render()),
+            '/reset-password': () => import('./views/resetPasswordView.js').then(m => m.ResetPasswordView.render()),
             '/event/:id': (params) => import('./views/eventView.js').then(m => m.EventView.render(params.id)),
             '/my-tickets': () => import('./views/myTicketsView.js').then(m => m.MyTicketsView.render()),
             '/manager/events': () => import('./views/managerView.js').then(m => m.ManagerView.renderEvents()),
