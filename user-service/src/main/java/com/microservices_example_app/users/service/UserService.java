@@ -89,8 +89,8 @@ public  class UserService {
                 user.getUserRole().getName()
         );
 
-        log.info("Login successful: userId={}, email={}", user.getId(), user.getEmail());
-        return new UserLoginResponseDto(token, user.getId());
+        log.info("Login successful: userId={}, email={}, role={}", user.getId(), user.getEmail(), user.getUserRole().getName());
+        return new UserLoginResponseDto(token, user.getId(), user.getUserRole().getName());
     }
 
     @Transactional(readOnly = true)
