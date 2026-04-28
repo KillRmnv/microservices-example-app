@@ -16,17 +16,17 @@ import java.util.Set;
 @Slf4j
 @Component
 @AllArgsConstructor
-@KafkaListener(
-        topics = "${notification.kafka.topic.authentication}",
-        groupId = "${spring.kafka.consumer.group-id}",
-        containerFactory = "authenticationKafkaListenerContainerFactory"
-)
+
 public class NotificationKafkaListener {
 
     private final EmailService emailService;
     private final Validator validator;
 
-    @KafkaHandler
+    @KafkaListener(
+            topics = "${notification.kafka.topic.authentication}",
+            groupId = "${spring.kafka.consumer.group-id}",
+            containerFactory = "successfulRegistrationKafkaListenerContainerFactory"
+    )
     public void handleSuccessfulRegistration(SuccessfulRegistrationEmailEvent event) {
         log.info("Received successful registration event: email={}, username={}, sourceService={}",
                 event.getEmail(), event.getUsername(), event.getSourceService());
@@ -46,7 +46,11 @@ public class NotificationKafkaListener {
         }
     }
 
-    @KafkaHandler
+    @KafkaListener(
+            topics = "${notification.kafka.topic.authentication}",
+            groupId = "${spring.kafka.consumer.group-id}",
+            containerFactory = "forgetPasswordKafkaListenerContainerFactory"
+    )
     public void handleForgetPassword(ForgetPasswordEvent event) {
         log.info("Received forget password event: email={}, sourceService={}",
                 event.getEmail(), event.getSourceService());
@@ -66,8 +70,12 @@ public class NotificationKafkaListener {
         }
     }
 
-    @KafkaHandler(isDefault = true)
-    public void handleUnknown(Object event) {
-        log.warn("Received unknown authentication event type: {}", event);
-    }
+//    @KafkaListener(
+//            topics = "${notification.kafka.topic.authentication}",
+//            groupId = "${spring.kafka.consumer.group-id}",
+//            containerFactory = "authenticationKafkaListenerContainerFactory"
+//    )
+//    public void handleUnknown(Object event) {
+//        log.warn("Received unknown authentication event type: {}", event);
+//    }
 }
