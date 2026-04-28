@@ -62,7 +62,7 @@ public  class UserService {
             SuccessfulRegistrationEmailEvent event = new SuccessfulRegistrationEmailEvent(saved.getEmail(), serviceName, saved.getUsername());
             authenticationProducer.sendSuccessfulRegistrationEmail(event);
         }catch(Exception e){
-            log.warn("Exception during successful registration email forming process");
+            log.warn("Exception during successful registration email forming process:{}",e.getMessage());
         }
         return new UserRegistrationDto(saved.getId(), saved.getUsername(), saved.getEmail());
     }
@@ -122,6 +122,40 @@ public  class UserService {
             log.warn("Error during email forming process: {}", e.getMessage());
             throw new EmailForwardingException("Error during email forming process:", e);
         }
+    }
+
+    @Transactional
+    public void resetPassword(String token, String newPassword) {
+        log.info("Resetting password with token");
+        
+        if (!JwtUtil.validatePasswordResetToken(token)) {
+            log.warn("Invalid or expired reset token");
+            throw new IllegalArgumentException("Invalid or expired reset token");
+        }
+        
+        Integer userId = JwtUtil.extractUserIdFromPasswordResetToken(token);
+        log.info("Extracted user ID from token: {}", userId);
+        
+        User user = userDao.findById(userId)
+                .orElseThrow(() -> {
+                    log.warn("User not found for ID: {}", userId);
+                    return new UserNotFoundException("User not found");
+                });
+        
+        String hashedPassword = passwordService.hash(newPassword);
+
+        User withNewPassword=User.builder().
+                passwordHash(hashedPassword).
+                userRole(user.getUserRole()).
+                id(user.getId()).
+                build();
+        userDao.save(withNewPassword);
+        
+        log.info("Password reset successfully for user ID: {}", userId);
+    }
+
+    public boolean validateResetToken(String token) {
+        return JwtUtil.validatePasswordResetToken(token);
     }
 
     private UserResponseDto toResponseDto(User user) {

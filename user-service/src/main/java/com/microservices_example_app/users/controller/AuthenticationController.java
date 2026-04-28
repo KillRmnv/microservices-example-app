@@ -29,25 +29,40 @@ public class AuthenticationController {
         return HttpServletResponse.SC_OK;
     }
 
+    @PostMapping("/reset-password")
+    public void resetPassword(@RequestParam String token, @RequestParam String newPassword) {
+        log.info("Password reset request with token");
+        userService.resetPassword(token, newPassword);
+    }
+
     @PostMapping("/register")
     public ResponseEntity<UserRegistrationDto> register(@Valid @RequestBody UserRegistrationRequestDto request) {
+        log.info("                 REGISTRATION REQUEST RECEIVED                 ");
         log.info("Registration attempt for email: {}", request.getEmail());
+        log.info("Request details - username: {}, role: {}", request.getUsername(), request.getRole());
         UserRegistrationDto response = userService.register(
                 request.getEmail(),
                 request.getPassword(),
                 request.getRole(),
                 request.getUsername()
         );
+        log.info("Registration successful for email: {}", request.getEmail());
         return ResponseEntity.ok(response);
     }
 
     @PostMapping("/login")
     public ResponseEntity<UserLoginResponseDto> login(@Valid @RequestBody UserLoginRequestDto request) {
+        log.info("                 LOGIN REQUEST RECEIVED                 ");
         log.info("Login attempt for email: {}", request.getEmail());
         return ResponseEntity.ok(userService.login(request.getEmail(), request.getPassword()));
     }
     @GetMapping("/roles")
     public List<Role> getRoles(){
         return roleDao.findAll();
+    }
+
+    @GetMapping("/validate-reset-token")
+    public boolean validateResetToken(@RequestParam String token) {
+        return userService.validateResetToken(token);
     }
 }
