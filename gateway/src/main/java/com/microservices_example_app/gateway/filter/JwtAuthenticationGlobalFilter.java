@@ -3,6 +3,7 @@ package com.microservices_example_app.gateway.filter;
 import com.microservices_example_app.gateway.filter.RouteValidator;
 import com.microservices_example_app.gateway.utils.JwtUtil;
 import io.jsonwebtoken.Claims;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.Ordered;
 import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.http.HttpHeaders;
@@ -18,6 +19,7 @@ import reactor.core.publisher.Mono;
 import java.nio.charset.StandardCharsets;
 
 @Component
+@Slf4j
 public class JwtAuthenticationGlobalFilter implements GlobalFilter, Ordered {
 
     private final RouteValidator routeValidator;
@@ -28,13 +30,20 @@ public class JwtAuthenticationGlobalFilter implements GlobalFilter, Ordered {
         this.jwtUtil = jwtUtil;
     }
 
+
+
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
         ServerHttpRequest request = exchange.getRequest();
+        String path = request.getURI().getPath();
+        String method = request.getMethod().name();
+        log.info("Incoming request: {} {}", method, path);
 
         if (!routeValidator.isSecured.test(request)) {
+            log.info("Request {} is NOT secured, skipping JWT check", path);
             return chain.filter(exchange);
         }
+        log.info("Request {} IS secured, validating JWT", path);
 
         String authHeader = request.getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
 

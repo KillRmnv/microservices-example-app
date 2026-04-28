@@ -1,5 +1,5 @@
 server:
-  port: ${GATEWAY_PORT}
+  port: ${GATEWAY_PORT:8080}
   address: ${GATEWAY_ADDRESS}
 spring:
   application:
@@ -7,45 +7,51 @@ spring:
 
   cloud:
     gateway:
-      default-filters:
-        - DedupeResponseHeader=Access-Control-Allow-Credentials Access-Control-Allow-Origin
+      server:
+        webflux:
+          default-filters:
+            - DedupeResponseHeader=Access-Control-Allow-Credentials Access-Control-Allow-Origin
 
-      routes:
-        - id: users-service
-          uri: http://user-service:8081
-          predicates:
-            - Path=/users/**
-          filters:
-            - CircuitBreaker=usersCircuitBreaker, forward:/fallback/users
+          routes:
+            - id: users-service
+              uri: http://user-service:8081
+              predicates:
+                - Path=/users/**
 
-        - id: booking-service
-          uri: http://booking-service:8082
-          predicates:
-            - Path=/booking/**
-          filters:
-            - CircuitBreaker=bookingCircuitBreaker, forward:/fallback/booking
-      globalcors:
-        add-to-simple-url-handler-mapping: true
-        cors-configurations:
-          '[/**]':
-            allowedOrigins:
-              - "http://localhost:8080"
-            allowedMethods:
-              - GET
-              - POST
-              - PUT
-              - DELETE
-              - OPTIONS
-            allowedHeaders:
-              - "*"
-            allowCredentials: true
-            maxAge: 3600
+            - id: booking-service
+              uri: http://booking-service:8082
+              predicates:
+                - Path=/booking/**
+          globalcors:
+            add-to-simple-url-handler-mapping: true
+            cors-configurations:
+              '[/**]':
+                allowedOrigins:
+                  - "http://localhost:8080"
+                allowedMethods:
+                  - GET
+                  - POST
+                  - PUT
+                  - DELETE
+                  - OPTIONS
+                allowedHeaders:
+                  - "*"
+                allowCredentials: true
+                maxAge: 3600
 jwt:
   secret: ${JWT_SECRET:your-super-secret-key-at-least-32-characters-long!}
 management:
   endpoints:
     web:
       exposure:
-        include: health,info,gateway
-app:
-  frontend-path: ../frontend/
+        include: health,info,gateway,env,configprops
+logging:
+  level:
+    org.springframework.cloud.gateway: TRACE
+    org.springframework.web.reactive: DEBUG
+    reactor.netty.http.client: DEBUG
+    reactor.netty.http.server: DEBUG
+    org.springframework.security: DEBUG
+    com.microservices_example_app.gateway: TRACE
+    org.springframework.http.server.reactive: DEBUG
+    org.springframework.web.server: DEBUG
