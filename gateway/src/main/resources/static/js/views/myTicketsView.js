@@ -28,7 +28,8 @@ export const MyTicketsView = {
         try {
             const userId = Auth.getUserId();
             if (!userId) {
-                await Auth.updateUserInfo();
+                console.warn('[MyTickets] No user ID found, skipping updateUserInfo');
+                // await Auth.updateUserInfo(); // Removed to prevent role overwrite
             }
 
             const { tickets, seatableTickets } = await API.getMyTickets(Auth.getUserId());

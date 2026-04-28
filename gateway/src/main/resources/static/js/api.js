@@ -95,7 +95,10 @@ const API = {
     },
 
     async login(email, password) {
-        return this.post('/users/auth/login', { email, password });
+        console.log('[API] Login request for:', email);
+        const response = await this.post('/users/auth/login', { email, password });
+        console.log('[API] Login response:', response);
+        return response;
     },
 
     async register(email, password, username, role = 'CUSTOMER') {

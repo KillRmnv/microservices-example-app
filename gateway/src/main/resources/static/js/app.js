@@ -3,6 +3,7 @@ const App = {
     currentView: null,
 
     init() {
+        console.log('[App] init() - Current role on init:', Auth.getUserRole());
         this.setupRoutes();
         this.setupAuth();
         window.addEventListener('hashchange', () => this.handleRoute());
@@ -46,9 +47,12 @@ const App = {
         body.classList.remove('logged-in', 'role-admin', 'role-event_manager', 'role-customer');
 
         if (Auth.isLoggedIn()) {
-            body.classList.add('logged-in');
             const role = Auth.getUserRole();
+            console.log('[App] updateAuthUI - User role from storage:', role);
+            
+            body.classList.add('logged-in');
             body.classList.add(`role-${role.toLowerCase()}`);
+            console.log('[App] updateAuthUI - Applied CSS class: role-' + role.toLowerCase());
 
             authSection.innerHTML = `
                 <span style="margin-right: 1rem;">${Auth.getUserEmail()}</span>
