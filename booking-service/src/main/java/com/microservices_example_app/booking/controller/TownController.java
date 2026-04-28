@@ -2,6 +2,7 @@ package com.microservices_example_app.booking.controller;
 
 import com.microservices_example_app.booking.dto.TownCreateRequestDto;
 import com.microservices_example_app.booking.dto.TownResponseDto;
+import com.microservices_example_app.booking.dto.TownUpdateRequestDto;
 import com.microservices_example_app.booking.service.TownService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -33,6 +34,13 @@ public class TownController {
     @GetMapping
     public List<TownResponseDto> getAll() {
         return townService.getAll();
+    }
+
+    @PutMapping("/{id}")
+    public TownResponseDto updateById(@PathVariable Integer id,
+                                      @Valid @RequestBody TownUpdateRequestDto requestDto) {
+        requestDto.setId(id);
+        return townService.updateTownById(requestDto);
     }
 
     @DeleteMapping("/{id}")

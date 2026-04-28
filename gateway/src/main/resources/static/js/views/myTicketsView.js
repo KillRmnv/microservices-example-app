@@ -85,8 +85,8 @@ export const MyTicketsView = {
                     </span>
                 </div>
                 <div class="ticket-details">
-                    <p>📍 ${App.escapeHtml(venue)}</p>
-                    <p>📅 ${eventDate}</p>
+                    <p>${App.escapeHtml(venue)}</p>
+                    <p>${eventDate}</p>
                     ${isSeatable ? `
                         <p>🎫 Место: ${ticket.seatRow}-${ticket.seatNumber}</p>
                         ${ticket.price ? `<p>💰 Цена: ${ticket.price}₽</p>` : ''}
@@ -94,7 +94,7 @@ export const MyTicketsView = {
                     ${!isSeatable && ticket.price ? `<p>💰 Цена: ${ticket.price}₽</p>` : ''}
                 </div>
                 <div class="ticket-actions">
-                    <button class="btn btn-sm btn-danger" onclick="MyTicketsView.refundTicket(${ticket.id}, '${ticket.type}')">
+                    <button class="btn btn-sm btn-danger refund-ticket" data-ticket-id="${ticket.id}" data-ticket-type="${ticket.type}">
                         Вернуть билет
                     </button>
                 </div>

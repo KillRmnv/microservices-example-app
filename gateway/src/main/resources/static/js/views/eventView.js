@@ -41,12 +41,12 @@ export const EventView = {
                     <div>
                         <h2>${App.escapeHtml(event.title)}</h2>
                         <div class="event-meta" style="margin-top: 0.5rem;">
-                            <span>📍 ${App.escapeHtml(event.venuePlace || '-')}</span>
-                            <span>📅 ${App.formatDate(event.startsAt)} - ${App.formatDate(event.endsAt)}</span>
+                            <span>${App.escapeHtml(event.venuePlace || '-')}</span>
+                            <span>${App.formatDate(event.startsAt)} - ${App.formatDate(event.endsAt)}</span>
                         </div>
                     </div>
-                    <span class="badge ${event.admissionMode === 'FREE' ? 'badge-customer' : 'badge-manager'}">
-                        ${event.admissionMode === 'FREE' ? 'Бесплатный' : 'Платный'}
+                    <span class="badge ${event.admissionMode === 'GENERAL' ? 'badge-customer' : 'badge-manager'}">
+                        ${event.admissionMode === 'SEATABLE' ? 'Размещенные места' : 'Общий вход'}
                     </span>
                 </div>
                 ${event.description ? `<p style="color: var(--text-secondary); margin-bottom: 1rem;">${App.escapeHtml(event.description)}</p>` : ''}

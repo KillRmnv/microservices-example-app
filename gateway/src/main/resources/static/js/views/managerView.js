@@ -12,8 +12,8 @@ export const ManagerView = {
                 <input type="text" id="search-title" placeholder="Поиск по названию...">
                 <select id="search-admission">
                     <option value="">Все типы</option>
-                    <option value="FREE">Бесплатный</option>
-                    <option value="PAID">Платный</option>
+                    <option value="SEATABLE">Размещенные места</option>
+                    <option value="GENERAL">Общий вход</option>
                 </select>
                 <button class="btn btn-primary" id="search-btn">Найти</button>
             </div>
@@ -74,16 +74,31 @@ export const ManagerView = {
                             <td>${App.escapeHtml(e.title)}</td>
                             <td>${App.escapeHtml(e.venuePlace || '-')}</td>
                             <td>${App.formatDate(e.startsAt)}</td>
-                            <td><span class="badge ${e.admissionMode === 'FREE' ? 'badge-customer' : 'badge-manager'}">${e.admissionMode}</span></td>
+                            <td><span class="badge ${e.admissionMode === 'GENERAL' ? 'badge-customer' : 'badge-manager'}">${e.admissionMode === 'SEATABLE' ? 'Размещенные места' : 'Общий вход'}</span></td>
                             <td class="actions">
-                                <button class="btn btn-secondary btn-sm" onclick="ManagerView.renderEventForm(${e.id})">Ред.</button>
-                                <button class="btn btn-danger btn-sm" onclick="ManagerView.deleteEvent(${e.id})">Удалить</button>
+                                <button class="btn btn-secondary btn-sm edit-event" data-id="${e.id}">Ред.</button>
+                                <button class="btn btn-danger btn-sm delete-event" data-id="${e.id}">Удалить</button>
                             </td>
                         </tr>
                     `).join('')}
                 </tbody>
             </table>
         `;
+
+        // Use event delegation for edit and delete buttons
+        container.onclick = (e) => {
+            const editButton = e.target.closest('.edit-event');
+            if (editButton) {
+                const id = parseInt(editButton.dataset.id);
+                this.renderEventForm(id);
+                return;
+            }
+            const deleteButton = e.target.closest('.delete-event');
+            if (deleteButton) {
+                const id = parseInt(deleteButton.dataset.id);
+                this.deleteEvent(id);
+            }
+        };
     },
 
     formatDateTimeLocal(dateStr) {
@@ -137,8 +152,8 @@ export const ManagerView = {
                     <div class="form-group">
                         <label for="admissionMode">Тип входа *</label>
                         <select id="admissionMode" required>
-                            <option value="FREE" ${event?.admissionMode === 'FREE' ? 'selected' : ''}>Бесплатный</option>
-                            <option value="PAID" ${event?.admissionMode === 'PAID' ? 'selected' : ''}>Платный</option>
+                            <option value="SEATABLE" ${event?.admissionMode === 'SEATABLE' ? 'selected' : ''}>Размещенные места</option>
+                            <option value="GENERAL" ${event?.admissionMode === 'GENERAL' ? 'selected' : ''}>Общий вход</option>
                         </select>
                     </div>
                     <div id="form-error" class="alert alert-error hidden"></div>
@@ -252,14 +267,29 @@ export const ManagerView = {
                             <td>${App.escapeHtml(v.townName || '-')}</td>
                             <td>${v.capacity || '-'}</td>
                             <td class="actions">
-                                <button class="btn btn-secondary btn-sm" onclick="ManagerView.renderVenueForm(${v.id})">Ред.</button>
-                                <button class="btn btn-danger btn-sm" onclick="ManagerView.deleteVenue(${v.id})">Удалить</button>
+                                <button class="btn btn-secondary btn-sm edit-venue" data-id="${v.id}">Ред.</button>
+                                <button class="btn btn-danger btn-sm delete-venue" data-id="${v.id}">Удалить</button>
                             </td>
                         </tr>
                     `).join('')}
                 </tbody>
             </table>
         `;
+
+        // Attach event listeners for edit and delete buttons
+        container.querySelectorAll('.edit-venue').forEach(button => {
+            button.addEventListener('click', () => {
+                const id = parseInt(button.dataset.id);
+                this.renderVenueForm(id);
+            });
+        });
+
+        container.querySelectorAll('.delete-venue').forEach(button => {
+            button.addEventListener('click', () => {
+                const id = parseInt(button.dataset.id);
+                this.deleteVenue(id);
+            });
+        });
     },
 
     async renderVenueForm(venueId = null) {

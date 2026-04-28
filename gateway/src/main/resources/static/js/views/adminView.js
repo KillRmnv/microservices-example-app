@@ -4,7 +4,10 @@ export const AdminView = {
     async renderUsers() {
         const content = document.getElementById('content');
         content.innerHTML = `
-            <h2>Управление пользователями</h2>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                <h2>Управление пользователями</h2>
+                <button class="btn btn-success" id="create-user-btn">+ Создать пользователя</button>
+            </div>
             <div class="search-bar">
                 <input type="text" id="search-email" placeholder="Email...">
                 <input type="text" id="search-username" placeholder="Имя пользователя...">
@@ -19,6 +22,7 @@ export const AdminView = {
             <div id="users-container"></div>
         `;
 
+        document.getElementById('create-user-btn').addEventListener('click', () => this.showCreateUserModal());
         document.getElementById('search-btn').addEventListener('click', () => this.loadUsers());
         await this.loadUsers();
     },
@@ -67,14 +71,31 @@ export const AdminView = {
                             <td>${App.escapeHtml(u.email)}</td>
                             <td><span class="badge badge-${u.userRole?.name?.toLowerCase() || 'customer'}">${u.userRole?.name || '-'}</span></td>
                             <td class="actions">
-                                <button class="btn btn-secondary btn-sm" onclick="AdminView.showEditUserModal(${u.id}, '${App.escapeHtml(u.username)}', '${u.userRole?.name}')">Ред.</button>
-                                <button class="btn btn-danger btn-sm" onclick="AdminView.deleteUser(${u.id})">Удалить</button>
+                                <button class="btn btn-secondary btn-sm edit-user" data-id="${u.id}" data-username="${App.escapeHtml(u.username)}" data-role="${u.userRole?.name}">Ред.</button>
+                                <button class="btn btn-danger btn-sm delete-user" data-id="${u.id}">Удалить</button>
                             </td>
                         </tr>
                     `).join('')}
                 </tbody>
             </table>
         `;
+
+        // Привязываем обработчики после рендера
+        container.querySelectorAll('.edit-user').forEach(button => {
+            button.addEventListener('click', () => {
+                const id = parseInt(button.dataset.id);
+                const username = button.dataset.username;
+                const role = button.dataset.role;
+                this.showEditUserModal(id, username, role);
+            });
+        });
+
+        container.querySelectorAll('.delete-user').forEach(button => {
+            button.addEventListener('click', () => {
+                const id = parseInt(button.dataset.id);
+                this.deleteUser(id);
+            });
+        });
     },
 
     showEditUserModal(id, username, currentRole) {
@@ -184,13 +205,30 @@ export const AdminView = {
                             <td>${t.id}</td>
                             <td>${App.escapeHtml(t.name)}</td>
                             <td class="actions">
-                                <button class="btn btn-danger btn-sm" onclick="AdminView.deleteTown(${t.id})">Удалить</button>
+                                <button class="btn btn-secondary btn-sm edit-town" data-id="${t.id}" data-name="${App.escapeHtml(t.name)}">Ред.</button>
+                                <button class="btn btn-danger btn-sm delete-town" data-id="${t.id}">Удалить</button>
                             </td>
                         </tr>
                     `).join('')}
                 </tbody>
             </table>
         `;
+
+        // Привязываем обработчики после рендера
+        container.querySelectorAll('.edit-town').forEach(button => {
+            button.addEventListener('click', () => {
+                const id = parseInt(button.dataset.id);
+                const name = button.dataset.name;
+                this.showEditTownModal(id, name);
+            });
+        });
+
+        container.querySelectorAll('.delete-town').forEach(button => {
+            button.addEventListener('click', () => {
+                const id = parseInt(button.dataset.id);
+                this.deleteTown(id);
+            });
+        });
     },
 
     showTownModal() {
@@ -242,5 +280,43 @@ export const AdminView = {
         } catch (error) {
             App.showAlert('Ошибка: ' + error.message);
         }
+    },
+
+    showEditTownModal(id, name) {
+        App.showModal(`
+            <h2 class="card-title">Редактирование города</h2>
+            <form id="edit-town-form">
+                <div class="form-group">
+                    <label>ID</label>
+                    <input type="text" value="${id}" disabled>
+                </div>
+                <div class="form-group">
+                    <label>Название *</label>
+                    <input type="text" id="edit-town-name" value="${App.escapeHtml(name)}" required>
+                </div>
+                <div id="form-error" class="alert alert-error hidden"></div>
+                <div style="display: flex; gap: 1rem;">
+                    <button type="submit" class="btn btn-success">Сохранить</button>
+                    <button type="button" class="btn btn-secondary" onclick="App.closeModal()">Отмена</button>
+                </div>
+            </form>
+        `);
+
+        document.getElementById('edit-town-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            try {
+                await API.updateTown({
+                    id: id,
+                    name: document.getElementById('edit-town-name').value
+                });
+                App.closeModal();
+                App.showAlert('Город обновлен', 'success');
+                await this.loadTowns();
+            } catch (error) {
+                const errorDiv = document.getElementById('form-error');
+                errorDiv.textContent = error.message;
+                errorDiv.classList.remove('hidden');
+            }
+        });
     }
 };

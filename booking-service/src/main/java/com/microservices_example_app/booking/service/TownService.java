@@ -2,6 +2,7 @@ package com.microservices_example_app.booking.service;
 
 import com.microservices_example_app.booking.dto.TownCreateRequestDto;
 import com.microservices_example_app.booking.dto.TownResponseDto;
+import com.microservices_example_app.booking.dto.TownUpdateRequestDto;
 import com.microservices_example_app.booking.exceptions.NotFoundException;
 import com.microservices_example_app.booking.model.Town;
 import com.microservices_example_app.booking.repository.TownRepository;
@@ -39,6 +40,15 @@ public class TownService {
                 .stream()
                 .map(this::toResponseDto)
                 .toList();
+    }
+
+    public TownResponseDto updateTownById(TownUpdateRequestDto requestDto) {
+        log.info("Updating town with id: {}", requestDto.getId());
+        Town town = townRepository.findById(requestDto.getId())
+                .orElseThrow(() -> new NotFoundException("Town not found"));
+        
+        town.setName(requestDto.getName());
+        return toResponseDto(townRepository.save(town));
     }
 
     public void delete(Integer id) {

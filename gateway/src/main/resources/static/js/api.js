@@ -226,6 +226,10 @@ const API = {
         return this.put(`/booking/venues/${data.id}`, data);
     },
 
+    async updateTown(data) {
+        return this.put(`/booking/towns/${data.id}`, data);
+    },
+
     async deleteVenue(id) {
         return this.delete(`/booking/venues/${id}`);
     },

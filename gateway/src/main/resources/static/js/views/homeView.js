@@ -13,8 +13,8 @@ export const HomeView = {
                 <input type="text" id="search-title" placeholder="Поиск по названию...">
                 <select id="search-admission">
                     <option value="">Все типы входа</option>
-                    <option value="FREE">Бесплатный</option>
-                    <option value="PAID">Платный</option>
+                    <option value="SEATABLE">Размещенные места</option>
+                    <option value="GENERAL">Общий вход</option>
                 </select>
                 <select id="search-venue">
                     <option value="">Все площадки</option>
@@ -96,12 +96,12 @@ export const HomeView = {
             <div class="card event-card" data-id="${event.id}">
                 <h3>${App.escapeHtml(event.title)}</h3>
                 <div class="event-meta">
-                    <span>📍 ${App.escapeHtml(event.venuePlace || '-')}</span>
-                    <span>📅 ${App.formatDate(event.startsAt)}</span>
+                    <span>${event.venuePlace || '-'}</span>
+                    <span>${App.formatDate(event.startsAt)}</span>
                 </div>
                 <div class="event-meta" style="margin-top: 0.5rem;">
-                    <span class="badge ${event.admissionMode === 'FREE' ? 'badge-customer' : 'badge-manager'}">
-                        ${event.admissionMode === 'FREE' ? 'Бесплатный' : 'Платный'}
+                    <span class="badge ${event.admissionMode === 'GENERAL' ? 'badge-customer' : 'badge-manager'}">
+                        ${event.admissionMode === 'SEATABLE' ? 'Размещенные места' : 'Общий вход'}
                     </span>
                 </div>
             </div>
@@ -127,18 +127,26 @@ export const HomeView = {
         let end = Math.min(this.totalPages, start + maxVisible - 1);
 
         if (this.currentPage > 1) {
-            buttons += `<button onclick="HomeView.goToPage(${this.currentPage - 1})">← Назад</button>`;
+            buttons += `<button class="page-btn" data-page="${this.currentPage - 1}">← Назад</button>`;
         }
 
         for (let i = start; i <= end; i++) {
-            buttons += `<button class="${i === this.currentPage ? 'active' : ''}" onclick="HomeView.goToPage(${i})">${i}</button>`;
+            buttons += `<button class="${i === this.currentPage ? 'active' : ''} page-btn" data-page="${i}">${i}</button>`;
         }
 
         if (this.currentPage < this.totalPages) {
-            buttons += `<button onclick="HomeView.goToPage(${this.currentPage + 1})">Вперед →</button>`;
+            buttons += `<button class="page-btn" data-page="${this.currentPage + 1}">Вперед →</button>`;
         }
 
         pagination.innerHTML = buttons;
+
+        // Attach event listeners for pagination buttons
+        pagination.querySelectorAll('.page-btn').forEach(button => {
+            button.addEventListener('click', () => {
+                const page = parseInt(button.dataset.page);
+                this.goToPage(page);
+            });
+        });
     },
 
     goToPage(page) {
