@@ -134,7 +134,11 @@ const API = {
     },
 
     async searchUsers(filter) {
-        return this.post('/users/search', filter);
+        const params = new URLSearchParams();
+        if (filter.email) params.append('email', filter.email);
+        if (filter.username) params.append('username', filter.username);
+        if (filter.role) params.append('role', filter.role);
+        return this.get(`/users/search?${params}`);
     },
 
     async updateUser(data) {
