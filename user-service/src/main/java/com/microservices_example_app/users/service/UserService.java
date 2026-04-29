@@ -14,6 +14,7 @@ import com.microservices_example_app.users.utils.JwtUtil;
 import lombok.AllArgsConstructor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.common.protocol.types.Field;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -38,7 +39,7 @@ public  class UserService {
     private String serviceName;
 
     @Transactional
-    public UserRegistrationDto register(String email, String password, String role, String username) {
+    public UserRegistrationDto register(String email, String password, String role, String username, Boolean isSystem) {
         log.info("Registering new user: email={}, username={}, role={}", email, username, role);
 
         Role customerRole = roleRepository.findByName(role)
@@ -54,6 +55,7 @@ public  class UserService {
                 .email(email)
                 .passwordHash(hash)
                 .userRole(customerRole)
+                .isSystem(isSystem)
                 .build();
 
         User saved = userDao.save(user);
@@ -64,7 +66,7 @@ public  class UserService {
         }catch(Exception e){
             log.warn("Exception during successful registration email forming process:{}",e.getMessage());
         }
-        return new UserRegistrationDto(saved.getId(), saved.getUsername(), saved.getEmail());
+        return new UserRegistrationDto(saved.getId(), saved.getUsername(), saved.getEmail(),saved.getIsSystem());
     }
 
     @Transactional(readOnly = true)
@@ -163,7 +165,8 @@ public  class UserService {
                 user.getId(),
                 user.getUsername(),
                 user.getEmail(),
-                user.getUserRole().getName()
+                user.getUserRole().getName(),
+                user.getIsSystem()
         );
     }
 

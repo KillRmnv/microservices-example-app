@@ -48,12 +48,10 @@ export const MyTicketsView = {
         loading.classList.add('hidden');
         content.classList.remove('hidden');
 
-        const allTickets = [
-            ...tickets.map(t => ({ ...t, type: 'regular' })),
-            ...seatableTickets.map(t => ({ ...t, type: 'seatable' }))
-        ];
+        const regularTickets = tickets || [];
+        const seatableTicketsList = seatableTickets || [];
 
-        if (allTickets.length === 0) {
+        if (regularTickets.length === 0 && seatableTicketsList.length === 0) {
             content.innerHTML = `
                 <div class="empty-state">
                     <p>У вас пока нет забронированных билетов.</p>
@@ -63,11 +61,56 @@ export const MyTicketsView = {
             return;
         }
 
-        content.innerHTML = `
-            <div class="tickets-list">
-                ${allTickets.map(ticket => this.renderTicketCard(ticket)).join('')}
-            </div>
-        `;
+        let ticketsHTML = '';
+
+        // Секция обычных билетов
+        if (regularTickets.length > 0) {
+            ticketsHTML += `
+                <div class="ticket-section">
+                    <h3 class="section-title">🎟️ Свободный вход</h3>
+                    <div class="tickets-list">
+                        ${regularTickets.map(ticket => this.renderTicketCard({ ...ticket, type: 'regular' })).join('')}
+                    </div>
+                </div>
+            `;
+        } else {
+            ticketsHTML += `
+                <div class="ticket-section">
+                    <h3 class="section-title">🎟️ Свободный вход</h3>
+                    <p class="empty-section">Нет билетов общего входа.</p>
+                </div>
+            `;
+        }
+
+        // Секция билетов с местами
+        if (seatableTicketsList.length > 0) {
+            ticketsHTML += `
+                <div class="ticket-section">
+                    <h3 class="section-title">💺 С местами</h3>
+                    <div class="tickets-list">
+                        ${seatableTicketsList.map(ticket => this.renderTicketCard({ ...ticket, type: 'seatable' })).join('')}
+                    </div>
+                </div>
+            `;
+        } else {
+            ticketsHTML += `
+                <div class="ticket-section">
+                    <h3 class="section-title">💺 С местами</h3>
+                    <p class="empty-section">Нет билетов с фиксированными местами.</p>
+                </div>
+            `;
+        }
+
+        content.innerHTML = ticketsHTML;
+
+        // Добавляем обработчики для кнопок возврата
+        content.querySelectorAll('.refund-ticket').forEach(button => {
+            button.addEventListener('click', () => {
+                const ticketId = button.dataset.ticketId;
+                const ticketType = button.dataset.ticketType;
+                MyTicketsView.refundTicket(ticketId, ticketType);
+            });
+        });
     },
 
     renderTicketCard(ticket) {
@@ -112,7 +155,7 @@ export const MyTicketsView = {
                 await API.deleteTicket(ticketId);
             }
             App.showAlert('Билет успешно возвращен', 'success');
-            await this.render();
+            await MyTicketsView.render();
         } catch (error) {
             App.showAlert('Ошибка возврата: ' + error.message, 'error');
         }

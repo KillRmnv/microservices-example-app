@@ -276,6 +276,14 @@ const API = {
 
     async deleteSeatableTicket(id) {
         return this.delete(`/booking/seatable-tickets/${id}`);
+    },
+
+    async updateTicket(data) {
+        return this.put(`/booking/tickets/${data.id}`, data);
+    },
+
+    async updateSeatableTicket(data) {
+        return this.put(`/booking/seatable-tickets/${data.id}`, data);
     }
 };
 

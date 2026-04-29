@@ -94,7 +94,8 @@ public class TicketService {
                 and(TicketSpecification.hasZone(filter.getZone())).
                 and(TicketSpecification.hasActive(filter.getActive())).
                 and(TicketSpecification.hasPriceGreaterThanOrEqual(filter.getMinPrice())).
-                and(TicketSpecification.hasPriceLessThanOrEqual(filter.getMaxPrice()));
+                and(TicketSpecification.hasPriceLessThanOrEqual(filter.getMaxPrice())).
+                and(TicketSpecification.isNotSeatable());
 
 
         log.debug("Search by filter: {}", spec);
@@ -165,38 +166,30 @@ public class TicketService {
         Ticket ticket = ticketRepository.findById(request.getId())
                 .orElseThrow(() -> new NotFoundException("No ticket with id=" + request.getId()));
 
-        var builder = Ticket.builder().id(ticket.getId());
-
         if (request.getEventId() != null) {
             Event event = eventRepository.findById(request.getEventId())
                     .orElseThrow(() -> new NotFoundException("Event not found: " + request.getEventId()));
-            builder.event(event);
-        } else {
-            builder.event(ticket.getEvent());
+            ticket.setEvent(event);
         }
 
         if (request.getZone() != null) {
-            builder.zone(request.getZone());
-        } else {
-            builder.zone(ticket.getZone());
+            ticket.setZone(request.getZone());
         }
 
         if (request.getPrice() != null) {
-            builder.price(request.getPrice());
-        } else {
-            builder.price(ticket.getPrice());
+            ticket.setPrice(request.getPrice());
         }
 
         if (request.getActive() != null) {
-            builder.active(request.getActive());
-        } else {
-            builder.active(ticket.isActive());
+            ticket.setActive(request.getActive());
         }
 
-        builder.userId(ticket.getUserId());
+        if (request.getUserId() != null) {
+            ticket.setUserId(request.getUserId());
+        }
 
         log.info("Update ticket with id: {}", ticket.getId());
-        Ticket saved = ticketRepository.save(builder.build());
+        Ticket saved = ticketRepository.save(ticket);
         return toResponseDto(saved);
     }
 

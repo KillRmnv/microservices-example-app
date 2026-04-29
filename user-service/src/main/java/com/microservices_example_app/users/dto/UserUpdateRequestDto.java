@@ -5,14 +5,15 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-@AllArgsConstructor
 @Getter
-@NoArgsConstructor
 @Setter
+@AllArgsConstructor
+@NoArgsConstructor
 public class UserUpdateRequestDto {
     private int id;
     private String username;
     private String email;
     private String role;
     private String password;
+    private Boolean isSystem;
 }

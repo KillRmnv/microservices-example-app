@@ -5,6 +5,7 @@ import com.microservices_example_app.users.service.UserService;
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -100,5 +101,22 @@ public class UserController {
         long deletedCount = userService.deleteByFilter(request);
         log.info("Delete by filter completed: deleted {} users", deletedCount);
         return ResponseEntity.ok(deletedCount);
+    }
+
+    @PostMapping("/admin/create")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<UserResponseDto> createUserByAdmin(@Valid @RequestBody UserRegistrationRequestDto request) {
+        log.info("Admin creating new user: email={}, username={}, role={}, isSystem={}",
+                request.getEmail(), request.getUsername(), request.getRole(), request.getIsSystem());
+        UserRegistrationDto registration = userService.register(
+                request.getEmail(),
+                request.getPassword(),
+                request.getRole(),
+                request.getUsername(),
+                request.getIsSystem() != null ? request.getIsSystem() : false
+        );
+        UserResponseDto response = userService.getById(registration.getId());
+        log.info("Admin successfully created user with id={}", registration.getId());
+        return ResponseEntity.ok(response);
     }
 }

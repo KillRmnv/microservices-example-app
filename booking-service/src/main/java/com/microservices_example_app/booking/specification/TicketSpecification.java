@@ -1,11 +1,13 @@
 package com.microservices_example_app.booking.specification;
 
+import com.microservices_example_app.booking.model.SeatableTicket;
 import com.microservices_example_app.booking.model.Ticket;
 import com.microservices_example_app.booking.model.Zone;
 import jakarta.persistence.criteria.CriteriaBuilder;
 import jakarta.persistence.criteria.CriteriaQuery;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Root;
+import jakarta.persistence.criteria.Subquery;
 import org.jspecify.annotations.Nullable;
 import org.springframework.data.jpa.domain.Specification;
 
@@ -76,6 +78,16 @@ public class TicketSpecification {
                     return criteriaBuilder.lessThanOrEqualTo(root.get("price"), price);
                 return null;
             }
+        };
+    }
+
+    public static Specification<Ticket> isNotSeatable() {
+        return (root, query, criteriaBuilder) -> {
+            Subquery<SeatableTicket> subquery = query.subquery(SeatableTicket.class);
+            Root<SeatableTicket> subRoot = subquery.from(SeatableTicket.class);
+            subquery.select(subRoot)
+                    .where(criteriaBuilder.equal(subRoot.get("id"), root.get("id")));
+            return criteriaBuilder.not(criteriaBuilder.exists(subquery));
         };
     }
 }

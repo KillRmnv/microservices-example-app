@@ -76,7 +76,7 @@ class UserServiceTest {
         when(passwordService.hash("123456")).thenReturn("hashed");
         when(userDao.save(any(User.class))).thenReturn(savedUser);
 
-        UserRegistrationDto result = userService.register("alex@test.com", "123456", "CUSTOMER", "alex");
+        UserRegistrationDto result = userService.register("alex@test.com", "123456", "CUSTOMER", "alex",false);
 
         assertThat(result).isNotNull();
         assertThat(result.getId()).isEqualTo(10);
@@ -99,7 +99,7 @@ class UserServiceTest {
     void register_shouldThrowWhenRoleNotFound() {
         when(roleRepository.findByName("CUSTOMER")).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> userService.register("alex@test.com", "123456", "CUSTOMER", "alex"))
+        assertThatThrownBy(() -> userService.register("alex@test.com", "123456", "CUSTOMER", "alex",false))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("Role not found");
 
@@ -130,7 +130,7 @@ class UserServiceTest {
                 .when(authenticationProducer)
                 .sendSuccessfulRegistrationEmail(any(SuccessfulRegistrationEmailEvent.class));
 
-        UserRegistrationDto result = userService.register("alex@test.com", "123456", "CUSTOMER", "alex");
+        UserRegistrationDto result = userService.register("alex@test.com", "123456", "CUSTOMER", "alex",false);
 
         assertThat(result.getId()).isEqualTo(10);
         assertThat(result.getEmail()).isEqualTo("alex@test.com");

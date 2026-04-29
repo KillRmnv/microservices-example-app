@@ -40,11 +40,13 @@ public class AuthenticationController {
         log.info("                 REGISTRATION REQUEST RECEIVED                 ");
         log.info("Registration attempt for email: {}", request.getEmail());
         log.info("Request details - username: {}, role: {}", request.getUsername(), request.getRole());
+
         UserRegistrationDto response = userService.register(
                 request.getEmail(),
                 request.getPassword(),
                 request.getRole(),
-                request.getUsername()
+                request.getUsername(),
+                false
         );
         log.info("Registration successful for email: {}", request.getEmail());
         return ResponseEntity.ok(response);

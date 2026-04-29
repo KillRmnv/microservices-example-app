@@ -68,32 +68,55 @@ export const EventView = {
     },
 
     renderTickets() {
-        const allTickets = [...this.tickets, ...this.seatableTickets];
+        const regular = this.tickets || [];
+        const seatable = this.seatableTickets || [];
 
-        if (allTickets.length === 0) {
+        if (regular.length === 0 && seatable.length === 0) {
             return '<p style="text-align: center; color: var(--text-secondary);">Билеты не найдены</p>';
         }
 
-        return `
-            <div class="tickets-list">
-                ${allTickets.map(ticket => this.renderTicketItem(ticket)).join('')}
-            </div>
-        `;
+        let html = '';
+
+        // Секция обычных билетов
+        if (regular.length > 0) {
+            html += `
+                <div class="ticket-section">
+                    <h4 class="section-title">🎟️ Свободный вход</h4>
+                    <div class="tickets-list">
+                        ${regular.map(ticket => this.renderTicketItem(ticket, 'regular')).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        // Секция билетов с местами
+        if (seatable.length > 0) {
+            html += `
+                <div class="ticket-section">
+                    <h4 class="section-title">💺 С местами</h4>
+                    <div class="tickets-list">
+                        ${seatable.map(ticket => this.renderTicketItem(ticket, 'seatable')).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        return html;
     },
 
-    renderTicketItem(ticket) {
-        const isSeatable = !!ticket.seatRow;
+    renderTicketItem(ticket, type) {
+        const isSeatable = type === 'seatable';
         const isBooked = !!ticket.userId;
 
         return `
-            <div class="ticket-card ${isBooked ? 'ticket-booked' : 'ticket-available'}" data-id="${ticket.id}" data-type="${isSeatable ? 'seatable' : 'regular'}">
+            <div class="ticket-card ${isBooked ? 'ticket-booked' : 'ticket-available'}" data-id="${ticket.id}" data-type="${type}">
                 <div class="ticket-info">
                     <strong>${isSeatable ? `Место: ${ticket.seatRow}-${ticket.seatNumber}` : 'Свободный вход'}</strong>
                     ${ticket.price ? `<br><small>Цена: ${ticket.price}₽</small>` : ''}
                     ${isBooked ? '<br><small style="color: var(--danger);">Уже забронирован</small>' : ''}
                 </div>
                 ${!isBooked && Auth.isLoggedIn() ? `
-                    <button class="btn btn-success btn-sm book-btn" data-id="${ticket.id}" data-type="${isSeatable ? 'seatable' : 'regular'}">
+                    <button class="btn btn-success btn-sm book-btn" data-id="${ticket.id}" data-type="${type}">
                         Забронировать
                     </button>
                 ` : ''}
@@ -127,8 +150,8 @@ export const EventView = {
                         });
                     }
                     App.showAlert('Билет успешно забронирован!', 'success');
-                    await this.loadTickets();
-                    this.renderContent();
+                    await EventView.loadTickets();
+                    EventView.renderContent();
                 } catch (error) {
                     App.showAlert('Ошибка бронирования: ' + error.message, 'error');
                 }

@@ -22,8 +22,8 @@ export const AdminView = {
             <div id="users-container"></div>
         `;
 
-        document.getElementById('create-user-btn').addEventListener('click', () => this.showCreateUserModal());
-        document.getElementById('search-btn').addEventListener('click', () => this.loadUsers());
+        document.getElementById('create-user-btn').addEventListener('click', () => AdminView.showCreateUserModal());
+        document.getElementById('search-btn').addEventListener('click', () => AdminView.loadUsers());
         await this.loadUsers();
     },
 
@@ -86,14 +86,14 @@ export const AdminView = {
                 const id = parseInt(button.dataset.id);
                 const username = button.dataset.username;
                 const role = button.dataset.role;
-                this.showEditUserModal(id, username, role);
+                AdminView.showEditUserModal(id, username, role);
             });
         });
 
         container.querySelectorAll('.delete-user').forEach(button => {
             button.addEventListener('click', () => {
                 const id = parseInt(button.dataset.id);
-                this.deleteUser(id);
+                AdminView.deleteUser(id);
             });
         });
     },
@@ -136,7 +136,66 @@ export const AdminView = {
                 });
                 App.closeModal();
                 App.showAlert('Пользователь обновлен', 'success');
-                await this.loadUsers();
+                await AdminView.loadUsers();
+            } catch (error) {
+                const errorDiv = document.getElementById('form-error');
+                errorDiv.textContent = error.message;
+                errorDiv.classList.remove('hidden');
+            }
+        });
+    },
+
+    showCreateUserModal() {
+        App.showModal(`
+            <h2 class="card-title">Создание пользователя</h2>
+            <form id="create-user-form">
+                <div class="form-group">
+                    <label>Email *</label>
+                    <input type="email" id="create-email" required placeholder="user@example.com">
+                </div>
+                <div class="form-group">
+                    <label>Имя пользователя *</label>
+                    <input type="text" id="create-username" required placeholder="username">
+                </div>
+                <div class="form-group">
+                    <label>Пароль *</label>
+                    <input type="password" id="create-password" required placeholder="минимум 6 символов">
+                </div>
+                <div class="form-group">
+                    <label>Роль</label>
+                    <select id="create-role">
+                        <option value="CUSTOMER">CUSTOMER</option>
+                        <option value="EVENT_MANAGER">EVENT_MANAGER</option>
+                        <option value="ADMIN">ADMIN</option>
+                    </select>
+                </div>
+                <div id="form-error" class="alert alert-error hidden"></div>
+                <div style="display: flex; gap: 1rem;">
+                    <button type="submit" class="btn btn-success">Создать</button>
+                    <button type="button" class="btn btn-secondary" onclick="App.closeModal()">Отмена</button>
+                </div>
+            </form>
+        `);
+
+        document.getElementById('create-user-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('create-email').value;
+            const username = document.getElementById('create-username').value;
+            const password = document.getElementById('create-password').value;
+            const role = document.getElementById('create-role').value;
+
+            if (!email || !username || !password) {
+                const errorDiv = document.getElementById('form-error');
+                errorDiv.textContent = 'Заполните все обязательные поля';
+                errorDiv.classList.remove('hidden');
+                return;
+            }
+
+            try {
+                await API.register(email, password, username, role);
+                App.closeModal();
+                App.showAlert('Пользователь создан', 'success');
+                await AdminView.loadUsers();
             } catch (error) {
                 const errorDiv = document.getElementById('form-error');
                 errorDiv.textContent = error.message;
@@ -166,8 +225,8 @@ export const AdminView = {
             <div id="towns-container"></div>
         `;
 
-        document.getElementById('create-town-btn').addEventListener('click', () => this.showTownModal());
-        await this.loadTowns();
+        document.getElementById('create-town-btn').addEventListener('click', () => AdminView.showTownModal());
+        await AdminView.loadTowns();
     },
 
     async loadTowns() {
@@ -219,14 +278,14 @@ export const AdminView = {
             button.addEventListener('click', () => {
                 const id = parseInt(button.dataset.id);
                 const name = button.dataset.name;
-                this.showEditTownModal(id, name);
+                AdminView.showEditTownModal(id, name);
             });
         });
 
         container.querySelectorAll('.delete-town').forEach(button => {
             button.addEventListener('click', () => {
                 const id = parseInt(button.dataset.id);
-                this.deleteTown(id);
+                AdminView.deleteTown(id);
             });
         });
     },
@@ -262,7 +321,7 @@ export const AdminView = {
                 await API.createTown({ name });
                 App.closeModal();
                 App.showAlert('Город создан', 'success');
-                await this.loadTowns();
+                await AdminView.loadTowns();
             } catch (error) {
                 const errorDiv = document.getElementById('form-error');
                 errorDiv.textContent = error.message;
@@ -311,7 +370,7 @@ export const AdminView = {
                 });
                 App.closeModal();
                 App.showAlert('Город обновлен', 'success');
-                await this.loadTowns();
+                await AdminView.loadTowns();
             } catch (error) {
                 const errorDiv = document.getElementById('form-error');
                 errorDiv.textContent = error.message;

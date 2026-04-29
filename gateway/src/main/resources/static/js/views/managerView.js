@@ -25,10 +25,10 @@ export const ManagerView = {
         });
 
         document.getElementById('search-btn').addEventListener('click', () => {
-            this.loadEvents();
+            ManagerView.loadEvents();
         });
 
-        await this.loadEvents();
+        await ManagerView.loadEvents();
     },
 
     async loadEvents() {
@@ -41,7 +41,7 @@ export const ManagerView = {
                 admissionMode: document.getElementById('search-admission')?.value || ''
             };
             const events = await API.searchEvents(filter, 1, 100);
-            this.renderEventsTable(events);
+            ManagerView.renderEventsTable(events);
         } catch (error) {
             container.innerHTML = `<div class="alert alert-error">Ошибка: ${error.message}</div>`;
         }
@@ -90,13 +90,13 @@ export const ManagerView = {
             const editButton = e.target.closest('.edit-event');
             if (editButton) {
                 const id = parseInt(editButton.dataset.id);
-                this.renderEventForm(id);
+                ManagerView.renderEventForm(id);
                 return;
             }
             const deleteButton = e.target.closest('.delete-event');
             if (deleteButton) {
                 const id = parseInt(deleteButton.dataset.id);
-                this.deleteEvent(id);
+                ManagerView.deleteEvent(id);
             }
         };
     },
@@ -142,11 +142,11 @@ export const ManagerView = {
                     <div class="form-row">
                         <div class="form-group">
                             <label for="startsAt">Начало *</label>
-                            <input type="datetime-local" id="startsAt" required value="${this.formatDateTimeLocal(event?.startsAt)}">
+                            <input type="datetime-local" id="startsAt" required value="${ManagerView.formatDateTimeLocal(event?.startsAt)}">
                         </div>
                         <div class="form-group">
                             <label for="endsAt">Окончание *</label>
-                            <input type="datetime-local" id="endsAt" required value="${this.formatDateTimeLocal(event?.endsAt)}">
+                            <input type="datetime-local" id="endsAt" required value="${ManagerView.formatDateTimeLocal(event?.endsAt)}">
                         </div>
                     </div>
                     <div class="form-group">
@@ -158,13 +158,19 @@ export const ManagerView = {
                     </div>
                     <div id="form-error" class="alert alert-error hidden"></div>
                     <div style="display: flex; gap: 1rem;">
-                        <button type="submit" class="btn btn-success">Сохранить</button>
-                        <button type="button" class="btn btn-secondary" onclick="App.navigate('/manager/events')">Отмена</button>
+                        <button type="submit" class="btn btn-success" id="save-event-btn">Сохранить</button>
+                        <button type="button" class="btn btn-secondary" id="cancel-event-btn">Отмена</button>
                     </div>
                 </form>
             </div>
         `;
 
+        // Cancel button - directly render events list
+        document.getElementById('cancel-event-btn').addEventListener('click', () => {
+            ManagerView.renderEvents();
+        });
+
+        // Form submission - save and navigate back
         document.getElementById('event-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             const data = {
@@ -191,7 +197,8 @@ export const ManagerView = {
                     await API.createEvent(data);
                     App.showAlert('Событие создано!', 'success');
                 }
-                App.navigate('/manager/events');
+                // Directly render events list
+                await ManagerView.renderEvents();
             } catch (error) {
                 const errorDiv = document.getElementById('form-error');
                 errorDiv.textContent = error.message;
@@ -205,7 +212,7 @@ export const ManagerView = {
         try {
             await API.deleteEvent(id);
             App.showAlert('Событие удалено', 'success');
-            await this.loadEvents();
+            await ManagerView.loadEvents();
         } catch (error) {
             App.showAlert('Ошибка: ' + error.message);
         }
@@ -225,7 +232,7 @@ export const ManagerView = {
             App.navigate('/manager/venue/new');
         });
 
-        await this.loadVenues();
+        await ManagerView.loadVenues();
     },
 
     async loadVenues() {
@@ -234,7 +241,7 @@ export const ManagerView = {
 
         try {
             const venues = await API.getVenues();
-            this.renderVenuesTable(venues);
+            ManagerView.renderVenuesTable(venues);
         } catch (error) {
             container.innerHTML = `<div class="alert alert-error">Ошибка: ${error.message}</div>`;
         }
@@ -280,14 +287,14 @@ export const ManagerView = {
         container.querySelectorAll('.edit-venue').forEach(button => {
             button.addEventListener('click', () => {
                 const id = parseInt(button.dataset.id);
-                this.renderVenueForm(id);
+                ManagerView.renderVenueForm(id);
             });
         });
 
         container.querySelectorAll('.delete-venue').forEach(button => {
             button.addEventListener('click', () => {
                 const id = parseInt(button.dataset.id);
-                this.deleteVenue(id);
+                ManagerView.deleteVenue(id);
             });
         });
     },
@@ -331,11 +338,16 @@ export const ManagerView = {
                     <div id="form-error" class="alert alert-error hidden"></div>
                     <div style="display: flex; gap: 1rem;">
                         <button type="submit" class="btn btn-success">Сохранить</button>
-                        <button type="button" class="btn btn-secondary" onclick="App.navigate('/manager/venues')">Отмена</button>
+                        <button type="button" class="btn btn-secondary" id="cancel-venue-btn">Отмена</button>
                     </div>
                 </form>
             </div>
         `;
+
+        // Add event listener for cancel button
+        document.getElementById('cancel-venue-btn').addEventListener('click', () => {
+            window.location.hash = '/manager/venues';
+        });
 
         document.getElementById('venue-form').addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -361,7 +373,8 @@ export const ManagerView = {
                     await API.createVenue(data);
                     App.showAlert('Площадка создана!', 'success');
                 }
-                App.navigate('/manager/venues');
+                // Directly render venues list
+                await ManagerView.renderVenues();
             } catch (error) {
                 const errorDiv = document.getElementById('form-error');
                 errorDiv.textContent = error.message;
@@ -375,7 +388,7 @@ export const ManagerView = {
         try {
             await API.deleteVenue(id);
             App.showAlert('Площадка удалена', 'success');
-            await this.loadVenues();
+            await ManagerView.loadVenues();
         } catch (error) {
             App.showAlert('Ошибка: ' + error.message);
         }
