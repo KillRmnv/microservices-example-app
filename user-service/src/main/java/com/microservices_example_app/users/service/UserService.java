@@ -372,6 +372,12 @@ public  class UserService {
         } else {
             builder.passwordHash(user.getPasswordHash());
         }
+        //TODO:fix hardcode
+        if(request.getRole().equals("ADMIN")){
+            builder.isSystem(request.getIsSystem());
+        }else{
+            builder.isSystem(user.getIsSystem());
+        }
 
         User saved = userDao.save(builder.build());
         log.info("User updated successfully: id={}", saved.getId());

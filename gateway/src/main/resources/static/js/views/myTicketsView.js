@@ -67,7 +67,7 @@ export const MyTicketsView = {
         if (regularTickets.length > 0) {
             ticketsHTML += `
                 <div class="ticket-section">
-                    <h3 class="section-title">🎟️ Свободный вход</h3>
+                    <h3 class="section-title">Свободный вход</h3>
                     <div class="tickets-list">
                         ${regularTickets.map(ticket => this.renderTicketCard({ ...ticket, type: 'regular' })).join('')}
                     </div>
@@ -76,7 +76,7 @@ export const MyTicketsView = {
         } else {
             ticketsHTML += `
                 <div class="ticket-section">
-                    <h3 class="section-title">🎟️ Свободный вход</h3>
+                    <h3 class="section-title">Свободный вход</h3>
                     <p class="empty-section">Нет билетов общего входа.</p>
                 </div>
             `;
@@ -86,7 +86,7 @@ export const MyTicketsView = {
         if (seatableTicketsList.length > 0) {
             ticketsHTML += `
                 <div class="ticket-section">
-                    <h3 class="section-title">💺 С местами</h3>
+                    <h3 class="section-title">С местами</h3>
                     <div class="tickets-list">
                         ${seatableTicketsList.map(ticket => this.renderTicketCard({ ...ticket, type: 'seatable' })).join('')}
                     </div>
@@ -95,7 +95,7 @@ export const MyTicketsView = {
         } else {
             ticketsHTML += `
                 <div class="ticket-section">
-                    <h3 class="section-title">💺 С местами</h3>
+                    <h3 class="section-title">С местами</h3>
                     <p class="empty-section">Нет билетов с фиксированными местами.</p>
                 </div>
             `;
@@ -118,9 +118,11 @@ export const MyTicketsView = {
         const title = ticket.eventTitle || 'Событие';
         const venue = ticket.venuePlace || '-';
         const eventDate = App.formatDate(ticket.eventStartsAt);
+        const eventId = ticket.eventId;
 
         return `
-            <div class="ticket-card ${isSeatable ? 'ticket-seatable' : 'ticket-regular'}">
+            <div class="ticket-card ${isSeatable ? 'ticket-seatable' : 'ticket-regular'}" 
+                 onclick="App.navigate('/event/${eventId}')" style="cursor: pointer;">
                 <div class="ticket-header">
                     <h3>${App.escapeHtml(title)}</h3>
                     <span class="badge ${isSeatable ? 'badge-manager' : 'badge-customer'}">
@@ -131,12 +133,12 @@ export const MyTicketsView = {
                     <p>${App.escapeHtml(venue)}</p>
                     <p>${eventDate}</p>
                     ${isSeatable ? `
-                        <p>🎫 Место: ${ticket.seatRow}-${ticket.seatNumber}</p>
-                        ${ticket.price ? `<p>💰 Цена: ${ticket.price}₽</p>` : ''}
+                        <p>Место: ${ticket.row || ticket.seatRow}-${ticket.number || ticket.seatNumber}</p>
+                        ${ticket.price ? `<p>Цена: ${ticket.price} у.е.</p>` : ''}
                     ` : ''}
-                    ${!isSeatable && ticket.price ? `<p>💰 Цена: ${ticket.price}₽</p>` : ''}
+                    ${!isSeatable && ticket.price ? `<p>Цена: ${ticket.price} у.е.</p>` : ''}
                 </div>
-                <div class="ticket-actions">
+                <div class="ticket-actions" onclick="event.stopPropagation()">
                     <button class="btn btn-sm btn-danger refund-ticket" data-ticket-id="${ticket.id}" data-ticket-type="${ticket.type}">
                         Вернуть билет
                     </button>

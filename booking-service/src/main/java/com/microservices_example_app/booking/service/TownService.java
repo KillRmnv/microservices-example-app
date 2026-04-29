@@ -36,6 +36,7 @@ public class TownService {
     }
 
     public List<TownResponseDto> getAll() {
+        log.info("Fetching all towns");
         return townRepository.findAll()
                 .stream()
                 .map(this::toResponseDto)
@@ -52,6 +53,7 @@ public class TownService {
     }
 
     public void delete(Integer id) {
+        log.info("Deleting town with id: {}", id);
         townRepository.deleteById(id);
     }
 

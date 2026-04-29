@@ -31,6 +31,7 @@ public class EventController {
 
     @GetMapping
     public List<EventResponseDto> getAll() {
+        log.info("Fetching all events");
         return eventService.getAll();
     }
 
@@ -38,12 +39,14 @@ public class EventController {
     public List<EventResponseDto> searchByFilter(@Valid @ModelAttribute EventSearchRequestDto filter,
                                                  @RequestParam(defaultValue = "1") int page,
                                                  @RequestParam(defaultValue = "10") int size) {
+        log.info("Fetching by filter page:{} , dto:{}",page,filter);
         return eventService.searchByFilter(filter, page, size);
     }
 
     @PutMapping("/{id}")
     public EventResponseDto updateById(@PathVariable Integer id,
                                        @Valid @RequestBody EventUpdateRequestDto requestDto) {
+        log.info("Update by id:{} , dto:{}",id,requestDto);
         requestDto.setId(id);
         return eventService.updateEventById(requestDto);
     }
@@ -56,6 +59,7 @@ public class EventController {
 
     @DeleteMapping("/search")
     public long deleteByFilter(@Valid @RequestBody EventDeleteRequestDto requestDto) {
+        log.info("Delete by filter:{}",requestDto);
         return eventService.deleteByFilter(requestDto);
     }
 }

@@ -56,7 +56,6 @@ export const AdminView = {
             <table>
                 <thead>
                     <tr>
-                        <th>ID</th>
                         <th>Имя</th>
                         <th>Email</th>
                         <th>Роль</th>
@@ -66,12 +65,11 @@ export const AdminView = {
                 <tbody>
                     ${users.map(u => `
                         <tr>
-                            <td>${u.id}</td>
                             <td>${App.escapeHtml(u.username)}</td>
                             <td>${App.escapeHtml(u.email)}</td>
-                            <td><span class="badge badge-${u.userRole?.name?.toLowerCase() || 'customer'}">${u.userRole?.name || '-'}</span></td>
+                            <td><span class="badge badge-${(u.role || 'customer').toLowerCase()}">${u.role || '-'}</span></td>
                             <td class="actions">
-                                <button class="btn btn-secondary btn-sm edit-user" data-id="${u.id}" data-username="${App.escapeHtml(u.username)}" data-role="${u.userRole?.name}">Ред.</button>
+                                <button class="btn btn-secondary btn-sm edit-user" data-id="${u.id}" data-username="${App.escapeHtml(u.username)}" data-role="${u.role}">Ред.</button>
                                 <button class="btn btn-danger btn-sm delete-user" data-id="${u.id}">Удалить</button>
                             </td>
                         </tr>
@@ -102,10 +100,6 @@ export const AdminView = {
         App.showModal(`
             <h2 class="card-title">Редактирование пользователя</h2>
             <form id="edit-user-form">
-                <div class="form-group">
-                    <label>ID</label>
-                    <input type="text" value="${id}" disabled>
-                </div>
                 <div class="form-group">
                     <label>Имя</label>
                     <input type="text" id="edit-username" value="${App.escapeHtml(username)}">
@@ -253,7 +247,6 @@ export const AdminView = {
             <table>
                 <thead>
                     <tr>
-                        <th>ID</th>
                         <th>Название</th>
                         <th>Действия</th>
                     </tr>
@@ -261,7 +254,6 @@ export const AdminView = {
                 <tbody>
                     ${towns.map(t => `
                         <tr>
-                            <td>${t.id}</td>
                             <td>${App.escapeHtml(t.name)}</td>
                             <td class="actions">
                                 <button class="btn btn-secondary btn-sm edit-town" data-id="${t.id}" data-name="${App.escapeHtml(t.name)}">Ред.</button>
@@ -345,10 +337,6 @@ export const AdminView = {
         App.showModal(`
             <h2 class="card-title">Редактирование города</h2>
             <form id="edit-town-form">
-                <div class="form-group">
-                    <label>ID</label>
-                    <input type="text" value="${id}" disabled>
-                </div>
                 <div class="form-group">
                     <label>Название *</label>
                     <input type="text" id="edit-town-name" value="${App.escapeHtml(name)}" required>

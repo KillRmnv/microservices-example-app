@@ -33,12 +33,15 @@ public class SeatController {
     public List<SeatResponseDto> searchByFilter(@Valid @ModelAttribute SeatSearchRequestDto filter,
                                                 @RequestParam(defaultValue = "1") int page,
                                                 @RequestParam(defaultValue = "10") int size) {
+        log.info("Searching seats by filter: venueId={}, sector={}, row={}, number={}",
+                filter.getVenueId(), filter.getSector(), filter.getRow(), filter.getNumber());
         return seatService.searchByFilter(filter, page, size);
     }
 
     @PutMapping("/{id}")
     public SeatResponseDto updateById(@PathVariable Integer id,
                                       @Valid @RequestBody SeatUpdateRequestDto requestDto) {
+        log.info("Updating seat with id: {}", id);
         requestDto.setId(id);
         return seatService.updateSeatById(requestDto);
     }
@@ -51,6 +54,8 @@ public class SeatController {
 
     @DeleteMapping("/search")
     public long deleteByFilter(@Valid @RequestBody SeatDeleteRequestDto requestDto) {
+        log.info("Deleting seats by filter: venueId={}, sector={}", 
+                requestDto.getVenueId(), requestDto.getSector());
         return seatService.deleteByFilter(requestDto);
     }
 }

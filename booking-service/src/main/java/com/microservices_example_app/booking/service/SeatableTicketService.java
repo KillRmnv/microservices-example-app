@@ -151,12 +151,12 @@ public class SeatableTicketService {
             throw new IllegalArgumentException("Size must be >= 1");
         }
 
-        Integer currentUserId = jwtRequestUserExtractor.extractUserId();
+
 
         Specification<SeatableTicket> spec = Specification
                 .where(SeatableTicketSpecification.hasEventId(filter.getEventId()))
                 .and(SeatableTicketSpecification.hasSeatId(filter.getSeatId()))
-                .and(SeatableTicketSpecification.hasUserId(currentUserId))
+                .and(SeatableTicketSpecification.hasUserId(filter.getUserId()))
                 .and(SeatableTicketSpecification.hasZone(filter.getZone()))
                 .and(SeatableTicketSpecification.hasActive(filter.getActive()))
                 .and(SeatableTicketSpecification.hasPriceGreaterThanOrEqual(filter.getMinPrice()))
@@ -166,12 +166,13 @@ public class SeatableTicketService {
                 .and(SeatableTicketSpecification.hasNumber(filter.getNumber()));
 
         Pageable pageable = PageRequest.of(page - 1, size);
-        log.debug("Search by filter for userId={}: {}", currentUserId, spec);
 
-        return seatableTicketRepository.findAll(spec, pageable)
+        var list=seatableTicketRepository.findAll(spec, pageable)
                 .stream()
                 .map(this::toResponseDto)
                 .toList();
+        log.info("Search by filter for list size={}: {}", list.size(), spec);
+        return list;
     }
 
     @Transactional

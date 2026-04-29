@@ -213,6 +213,8 @@ const API = {
         const params = new URLSearchParams();
         if (filter.townId) params.append('townId', filter.townId);
         if (filter.place) params.append('place', filter.place);
+        if (filter.minCapacity) params.append('minCapacity', filter.minCapacity);
+        if (filter.maxCapacity) params.append('maxCapacity', filter.maxCapacity);
         params.append('page', page);
         params.append('size', size);
         return this.get(`/booking/venues/search?${params}`);

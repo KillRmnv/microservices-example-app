@@ -33,12 +33,14 @@ public class TownController {
 
     @GetMapping
     public List<TownResponseDto> getAll() {
+        log.info("Fetching all towns");
         return townService.getAll();
     }
 
     @PutMapping("/{id}")
     public TownResponseDto updateById(@PathVariable Integer id,
                                       @Valid @RequestBody TownUpdateRequestDto requestDto) {
+        log.info("Updating town with id: {}", id);
         requestDto.setId(id);
         return townService.updateTownById(requestDto);
     }

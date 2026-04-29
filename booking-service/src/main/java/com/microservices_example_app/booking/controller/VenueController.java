@@ -39,12 +39,15 @@ public class VenueController {
     public List<VenueResponseDto> searchByFilter(@Valid @ModelAttribute VenueSearchRequestDto filter,
                                                  @RequestParam(defaultValue = "1") int page,
                                                  @RequestParam(defaultValue = "10") int size) {
+        log.info("Searching venues by filter: townId={}, place={}, minCapacity={}, maxCapacity={}", 
+                filter.getTownId(), filter.getPlace(), filter.getMinCapacity(), filter.getMaxCapacity());
         return venueService.searchByFilter(filter, page, size);
     }
 
     @PutMapping("/{id}")
     public VenueResponseDto updateById(@PathVariable Integer id,
                                        @Valid @RequestBody VenueUpdateRequestDto requestDto) {
+        log.info("Updating venue with id: {}", id);
         requestDto.setId(id);
         return venueService.updateVenueById(requestDto);
     }
@@ -57,6 +60,7 @@ public class VenueController {
 
     @DeleteMapping("/search")
     public long deleteByFilter(@Valid @RequestBody VenueDeleteRequestDto requestDto) {
+        log.info("Deleting venues by filter: townId={}, place={}", requestDto.getTownId(), requestDto.getPlace());
         return venueService.deleteByFilter(requestDto);
     }
 }

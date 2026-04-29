@@ -15,10 +15,18 @@ export const ManagerView = {
                     <option value="SEATABLE">Размещенные места</option>
                     <option value="GENERAL">Общий вход</option>
                 </select>
+                <select id="search-venue">
+                    <option value="">Все площадки</option>
+                </select>
+                <input type="date" id="search-starts-from" placeholder="Начало с...">
+                <input type="date" id="search-starts-to" placeholder="Начало по...">
                 <button class="btn btn-primary" id="search-btn">Найти</button>
+                <button class="btn btn-secondary" id="reset-btn">Сбросить</button>
             </div>
             <div id="events-container"></div>
         `;
+
+        await this.loadVenuesForFilter();
 
         document.getElementById('create-event-btn').addEventListener('click', () => {
             App.navigate('/manager/event/new');
@@ -28,7 +36,31 @@ export const ManagerView = {
             ManagerView.loadEvents();
         });
 
+        document.getElementById('reset-btn').addEventListener('click', () => {
+            document.getElementById('search-title').value = '';
+            document.getElementById('search-admission').value = '';
+            document.getElementById('search-venue').value = '';
+            document.getElementById('search-starts-from').value = '';
+            document.getElementById('search-starts-to').value = '';
+            ManagerView.loadEvents();
+        });
+
         await ManagerView.loadEvents();
+    },
+
+    async loadVenuesForFilter() {
+        try {
+            const venues = await API.getVenues();
+            const select = document.getElementById('search-venue');
+            venues.forEach(venue => {
+                const opt = document.createElement('option');
+                opt.value = venue.id;
+                opt.textContent = venue.place;
+                select.appendChild(opt);
+            });
+        } catch (e) {
+            console.error('Failed to load venues:', e);
+        }
     },
 
     async loadEvents() {
@@ -38,7 +70,10 @@ export const ManagerView = {
         try {
             const filter = {
                 title: document.getElementById('search-title')?.value || '',
-                admissionMode: document.getElementById('search-admission')?.value || ''
+                admissionMode: document.getElementById('search-admission')?.value || '',
+                venueId: document.getElementById('search-venue')?.value || null,
+                startsFrom: document.getElementById('search-starts-from')?.value || null,
+                startsTo: document.getElementById('search-starts-to')?.value || null
             };
             const events = await API.searchEvents(filter, 1, 100);
             ManagerView.renderEventsTable(events);
@@ -59,7 +94,6 @@ export const ManagerView = {
             <table>
                 <thead>
                     <tr>
-                        <th>ID</th>
                         <th>Название</th>
                         <th>Площадка</th>
                         <th>Начало</th>
@@ -70,7 +104,6 @@ export const ManagerView = {
                 <tbody>
                     ${events.map(e => `
                         <tr>
-                            <td>${e.id}</td>
                             <td>${App.escapeHtml(e.title)}</td>
                             <td>${App.escapeHtml(e.venuePlace || '-')}</td>
                             <td>${App.formatDate(e.startsAt)}</td>
@@ -225,14 +258,53 @@ export const ManagerView = {
                 <h2>Управление площадками</h2>
                 <button class="btn btn-success" id="create-venue-btn">+ Создать площадку</button>
             </div>
+            <div class="search-bar">
+                <input type="text" id="search-place" placeholder="Поиск по названию...">
+                <select id="search-town">
+                    <option value="">Все города</option>
+                </select>
+                <input type="number" id="search-min-capacity" placeholder="Вместимость от..." min="0">
+                <input type="number" id="search-max-capacity" placeholder="Вместимость до..." min="0">
+                <button class="btn btn-primary" id="search-btn">Найти</button>
+                <button class="btn btn-secondary" id="reset-btn">Сбросить</button>
+            </div>
             <div id="venues-container"></div>
         `;
+
+        await this.loadTownsForFilter();
 
         document.getElementById('create-venue-btn').addEventListener('click', () => {
             App.navigate('/manager/venue/new');
         });
 
+        document.getElementById('search-btn').addEventListener('click', () => {
+            ManagerView.loadVenues();
+        });
+
+        document.getElementById('reset-btn').addEventListener('click', () => {
+            document.getElementById('search-place').value = '';
+            document.getElementById('search-town').value = '';
+            document.getElementById('search-min-capacity').value = '';
+            document.getElementById('search-max-capacity').value = '';
+            ManagerView.loadVenues();
+        });
+
         await ManagerView.loadVenues();
+    },
+
+    async loadTownsForFilter() {
+        try {
+            const towns = await API.getTowns();
+            const select = document.getElementById('search-town');
+            towns.forEach(town => {
+                const opt = document.createElement('option');
+                opt.value = town.id;
+                opt.textContent = town.name;
+                select.appendChild(opt);
+            });
+        } catch (e) {
+            console.error('Failed to load towns:', e);
+        }
     },
 
     async loadVenues() {
@@ -240,7 +312,13 @@ export const ManagerView = {
         container.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
 
         try {
-            const venues = await API.getVenues();
+            const filter = {
+                place: document.getElementById('search-place')?.value || '',
+                townId: document.getElementById('search-town')?.value || null,
+                minCapacity: document.getElementById('search-min-capacity')?.value || null,
+                maxCapacity: document.getElementById('search-max-capacity')?.value || null
+            };
+            const venues = await API.searchVenues(filter, 1, 100);
             ManagerView.renderVenuesTable(venues);
         } catch (error) {
             container.innerHTML = `<div class="alert alert-error">Ошибка: ${error.message}</div>`;
@@ -259,7 +337,6 @@ export const ManagerView = {
             <table>
                 <thead>
                     <tr>
-                        <th>ID</th>
                         <th>Название</th>
                         <th>Город</th>
                         <th>Вместимость</th>
@@ -269,7 +346,6 @@ export const ManagerView = {
                 <tbody>
                     ${venues.map(v => `
                         <tr>
-                            <td>${v.id}</td>
                             <td>${App.escapeHtml(v.place)}</td>
                             <td>${App.escapeHtml(v.townName || '-')}</td>
                             <td>${v.capacity || '-'}</td>

@@ -19,6 +19,8 @@ export const HomeView = {
                 <select id="search-venue">
                     <option value="">Все площадки</option>
                 </select>
+                <input type="date" id="search-starts-from" placeholder="Начало с...">
+                <input type="date" id="search-starts-to" placeholder="Начало по...">
                 <button class="btn btn-primary" id="search-btn">Найти</button>
                 <button class="btn btn-secondary" id="reset-btn">Сбросить</button>
             </div>
@@ -57,6 +59,8 @@ export const HomeView = {
             document.getElementById('search-title').value = '';
             document.getElementById('search-admission').value = '';
             document.getElementById('search-venue').value = '';
+            document.getElementById('search-starts-from').value = '';
+            document.getElementById('search-starts-to').value = '';
             this.filter = {};
             this.currentPage = 1;
             this.loadEvents();
@@ -67,7 +71,9 @@ export const HomeView = {
         return {
             title: document.getElementById('search-title').value,
             admissionMode: document.getElementById('search-admission').value,
-            venueId: document.getElementById('search-venue').value || null
+            venueId: document.getElementById('search-venue').value || null,
+            startsFrom: document.getElementById('search-starts-from').value || null,
+            startsTo: document.getElementById('search-starts-to').value || null
         };
     },
 

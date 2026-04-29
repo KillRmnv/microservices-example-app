@@ -33,12 +33,15 @@ public class SeatableTicketController {
     public List<SeatableTicketResponseDto> searchByFilter(@Valid @ModelAttribute SeatableTicketSearchRequestDto filter,
                                                           @RequestParam(defaultValue = "1") int page,
                                                           @RequestParam(defaultValue = "10") int size) {
+        log.info("Searching seatable tickets by filter: eventId={}, userId={}, sector={}", 
+                filter.getEventId(), filter.getUserId(), filter.getSector());
         return seatableTicketService.searchByFilter(filter, page, size);
     }
 
     @PutMapping("/{id}")
     public SeatableTicketResponseDto updateById(@PathVariable Integer id,
                                                 @Valid @RequestBody SeatableTicketUpdateRequestDto requestDto) {
+        log.info("Updating seatable ticket with id: {}", id);
         requestDto.setId(id);
         return seatableTicketService.updateSeatableTicketById(requestDto);
     }
@@ -51,6 +54,8 @@ public class SeatableTicketController {
 
     @DeleteMapping("/search")
     public long deleteByFilter(@Valid @RequestBody SeatableTicketDeleteRequestDto requestDto) {
+        log.info("Deleting seatable tickets by filter: eventId={}, userId={}", 
+                requestDto.getEventId(), requestDto.getUserId());
         return seatableTicketService.deleteByFilter(requestDto);
     }
 }

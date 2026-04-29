@@ -19,14 +19,23 @@ export const EventView = {
     },
 
     async loadTickets() {
-        try {
-            this.tickets = await API.getTickets(this.event.id);
-        } catch (e) {
+        const admissionMode = this.event?.admissionMode;
+        
+        if (admissionMode === 'SEATABLE') {
+            // Для событий с местами загружаем только seatable билеты
             this.tickets = [];
-        }
-        try {
-            this.seatableTickets = await API.getSeatableTickets(this.event.id);
-        } catch (e) {
+            try {
+                this.seatableTickets = await API.getSeatableTickets(this.event.id);
+            } catch (e) {
+                this.seatableTickets = [];
+            }
+        } else {
+            // Для GENERAL событий загружаем только обычные билеты
+            try {
+                this.tickets = await API.getTickets(this.event.id);
+            } catch (e) {
+                this.tickets = [];
+            }
             this.seatableTickets = [];
         }
     },
@@ -70,6 +79,7 @@ export const EventView = {
     renderTickets() {
         const regular = this.tickets || [];
         const seatable = this.seatableTickets || [];
+        const isSeatableEvent = this.event?.admissionMode === 'SEATABLE';
 
         if (regular.length === 0 && seatable.length === 0) {
             return '<p style="text-align: center; color: var(--text-secondary);">Билеты не найдены</p>';
@@ -77,25 +87,25 @@ export const EventView = {
 
         let html = '';
 
-        // Секция обычных билетов
-        if (regular.length > 0) {
+        // Для событий с местами показываем только seatable билеты
+        if (isSeatableEvent && seatable.length > 0) {
             html += `
                 <div class="ticket-section">
-                    <h4 class="section-title">🎟️ Свободный вход</h4>
+                    <h4 class="section-title">Места</h4>
                     <div class="tickets-list">
-                        ${regular.map(ticket => this.renderTicketItem(ticket, 'regular')).join('')}
+                        ${seatable.map(ticket => this.renderTicketItem(ticket, 'seatable')).join('')}
                     </div>
                 </div>
             `;
         }
 
-        // Секция билетов с местами
-        if (seatable.length > 0) {
+        // Для обычных событий показываем только обычные билеты
+        if (!isSeatableEvent && regular.length > 0) {
             html += `
                 <div class="ticket-section">
-                    <h4 class="section-title">💺 С местами</h4>
+                    <h4 class="section-title">Свободный вход</h4>
                     <div class="tickets-list">
-                        ${seatable.map(ticket => this.renderTicketItem(ticket, 'seatable')).join('')}
+                        ${regular.map(ticket => this.renderTicketItem(ticket, 'regular')).join('')}
                     </div>
                 </div>
             `;
@@ -111,8 +121,8 @@ export const EventView = {
         return `
             <div class="ticket-card ${isBooked ? 'ticket-booked' : 'ticket-available'}" data-id="${ticket.id}" data-type="${type}">
                 <div class="ticket-info">
-                    <strong>${isSeatable ? `Место: ${ticket.seatRow}-${ticket.seatNumber}` : 'Свободный вход'}</strong>
-                    ${ticket.price ? `<br><small>Цена: ${ticket.price}₽</small>` : ''}
+                    <strong>${isSeatable ? `Место: ${ticket.row || '-'}-${ticket.number || '-'}` : 'Свободный вход'}</strong>
+                    ${ticket.price ? `<br><small>Цена: ${ticket.price} у.е.</small>` : ''}
                     ${isBooked ? '<br><small style="color: var(--danger);">Уже забронирован</small>' : ''}
                 </div>
                 ${!isBooked && Auth.isLoggedIn() ? `

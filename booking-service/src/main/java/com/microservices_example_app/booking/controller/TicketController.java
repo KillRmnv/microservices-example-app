@@ -33,12 +33,15 @@ public class TicketController {
     public List<TicketResponseDto> searchByFilter(@Valid @ModelAttribute TicketSearchRequestDto filter,
                                                   @RequestParam(defaultValue = "1") int page,
                                                   @RequestParam(defaultValue = "10") int size) {
+        log.info("Searching tickets by filter: eventId={}, userId={}, zone={}", 
+                filter.getEventId(), filter.getUserId(), filter.getZone());
         return ticketService.searchByFilter(filter, page, size);
     }
 
     @PutMapping("/{id}")
     public TicketResponseDto updateById(@PathVariable Integer id,
                                         @Valid @RequestBody TicketUpdateRequestDto requestDto) {
+        log.info("Updating ticket with id: {}", id);
         requestDto.setId(id);
         return ticketService.updateTicketById(requestDto);
     }
@@ -51,6 +54,7 @@ public class TicketController {
 
     @DeleteMapping("/search")
     public long deleteByFilter(@Valid @RequestBody TicketDeleteRequestDto requestDto) {
+        log.info("Deleting tickets by filter: eventId={}, userId={}", requestDto.getEventId(), requestDto.getUserId());
         return ticketService.deleteByFilter(requestDto);
     }
 }
