@@ -8,7 +8,10 @@ CREATE TABLE venues (
                         town_id INT NOT NULL,
                         place VARCHAR(255) NOT NULL,
                         capacity INT NOT NULL,
-                        CONSTRAINT fk_venues_town FOREIGN KEY (town_id) REFERENCES towns(id)
+                        CONSTRAINT fk_venues_town
+                            FOREIGN KEY (town_id)
+                                REFERENCES towns(id)
+                                ON DELETE CASCADE
 );
 
 CREATE TABLE events (
@@ -18,8 +21,12 @@ CREATE TABLE events (
                         ends_at TIMESTAMP NOT NULL,
                         venue_id INT NOT NULL,
                         admission_mode VARCHAR(50) NOT NULL,
-                        CONSTRAINT fk_events_venue FOREIGN KEY (venue_id) REFERENCES venues(id),
-                        CONSTRAINT chk_events_admission_mode CHECK (admission_mode IN ('SEATABLE', 'GENERAL'))
+                        CONSTRAINT fk_events_venue
+                            FOREIGN KEY (venue_id)
+                                REFERENCES venues(id)
+                                ON DELETE CASCADE,
+                        CONSTRAINT chk_events_admission_mode
+                            CHECK (admission_mode IN ('SEATABLE', 'GENERAL'))
 );
 
 CREATE TABLE seats (
@@ -28,7 +35,10 @@ CREATE TABLE seats (
                        row_label VARCHAR(255) NOT NULL,
                        seat_number VARCHAR(255) NOT NULL,
                        venue_id INT NOT NULL,
-                       CONSTRAINT fk_seats_venue FOREIGN KEY (venue_id) REFERENCES venues(id)
+                       CONSTRAINT fk_seats_venue
+                           FOREIGN KEY (venue_id)
+                               REFERENCES venues(id)
+                               ON DELETE CASCADE
 );
 
 CREATE TABLE tickets (
@@ -38,15 +48,25 @@ CREATE TABLE tickets (
                          price DECIMAL(10, 2) NOT NULL,
                          active BOOLEAN NOT NULL,
                          user_id INT,
-                         CONSTRAINT fk_tickets_event FOREIGN KEY (event_id) REFERENCES events(id),
-                         CONSTRAINT chk_tickets_zone CHECK (zone IN ('VIP', 'FAN_ZONE', 'BASIC'))
+                         CONSTRAINT fk_tickets_event
+                             FOREIGN KEY (event_id)
+                                 REFERENCES events(id)
+                                 ON DELETE CASCADE,
+                         CONSTRAINT chk_tickets_zone
+                             CHECK (zone IN ('VIP', 'FAN_ZONE', 'BASIC'))
 );
 
 CREATE TABLE seatable_tickets (
                                   ticket_id INT PRIMARY KEY,
                                   seat_id INT NOT NULL,
-                                  CONSTRAINT fk_seatable_tickets_ticket FOREIGN KEY (ticket_id) REFERENCES tickets(id),
-                                  CONSTRAINT fk_seatable_tickets_seat FOREIGN KEY (seat_id) REFERENCES seats(id)
+                                  CONSTRAINT fk_seatable_tickets_ticket
+                                      FOREIGN KEY (ticket_id)
+                                          REFERENCES tickets(id)
+                                          ON DELETE CASCADE,
+                                  CONSTRAINT fk_seatable_tickets_seat
+                                      FOREIGN KEY (seat_id)
+                                          REFERENCES seats(id)
+                                          ON DELETE CASCADE
 );
 
 CREATE INDEX idx_venues_town_id ON venues(town_id);
