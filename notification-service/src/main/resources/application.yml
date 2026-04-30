@@ -43,6 +43,7 @@ notification:
       authentication: ${NOTIFICATION_AUTHENTICATION_TOPIC:notification.authentication}
       booking: ${NOTIFICATION_BOOKING_TOPIC:notification.booking}
       ticket-refund: ${TICKET_REFUND:notification.refund}
+      user-lifecycle: ${NOTIFICATION_USER_LIFECYCLE_TOPIC:notification.user-lifecycle}
 
 
 management:

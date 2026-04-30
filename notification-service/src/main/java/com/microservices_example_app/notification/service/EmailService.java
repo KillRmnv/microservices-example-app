@@ -4,6 +4,8 @@ import com.microservices_example_app.notification.dto.ForgetPasswordEvent;
 import com.microservices_example_app.notification.dto.SuccessfulBookingEvent;
 import com.microservices_example_app.notification.dto.SuccessfulRegistrationEmailEvent;
 import com.microservices_example_app.notification.dto.TicketRefundEvent;
+import com.microservices_example_app.notification.dto.UserDeletedEvent;
+import com.microservices_example_app.notification.dto.UserUpdatedEvent;
 import com.microservices_example_app.notification.exceptions.EmailSendingException;
 import lombok.AllArgsConstructor;
 import lombok.RequiredArgsConstructor;
@@ -118,5 +120,46 @@ public class EmailService {
                     emailType, recipientEmail, sourceService, ex.getMessage(), ex);
             throw new EmailSendingException("Failed to send " + emailType + " email to " + recipientEmail, ex);
         }
+    }
+
+    public void sendUserDeletedEmail(UserDeletedEvent event) {
+        log.info("Sending user deleted email: email={}, username={}, sourceService={}",
+                event.getEmail(), event.getUsername(), event.getSourceService());
+
+        SimpleMailMessage message = new SimpleMailMessage();
+        message.setFrom(senderEmail);
+        message.setTo(event.getEmail());
+        message.setSubject("Account deleted");
+        message.setText("""
+                Hello, %s!
+
+                Your account has been deleted successfully.
+
+                Best regards,
+                Microservices Example App
+                """.formatted(event.getUsername()));
+
+        send(message, "user deleted", event.getEmail(), event.getSourceService());
+    }
+
+    public void sendUserUpdatedEmail(UserUpdatedEvent event) {
+        log.info("Sending user updated email: email={}, username={}, role={}, sourceService={}",
+                event.getEmail(), event.getUsername(), event.getRole(), event.getSourceService());
+
+        SimpleMailMessage message = new SimpleMailMessage();
+        message.setFrom(senderEmail);
+        message.setTo(event.getEmail());
+        message.setSubject("Account updated");
+        message.setText("""
+                Hello, %s!
+
+                Your account information has been updated.
+                Your current role: %s
+
+                Best regards,
+                Microservices Example App
+                """.formatted(event.getUsername(), event.getRole()));
+
+        send(message, "user updated", event.getEmail(), event.getSourceService());
     }
 }

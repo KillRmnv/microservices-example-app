@@ -2,6 +2,8 @@ package com.microservices_example_app.notification.listeners;
 
 import com.microservices_example_app.notification.dto.ForgetPasswordEvent;
 import com.microservices_example_app.notification.dto.SuccessfulRegistrationEmailEvent;
+import com.microservices_example_app.notification.dto.UserDeletedEvent;
+import com.microservices_example_app.notification.dto.UserUpdatedEvent;
 import com.microservices_example_app.notification.service.EmailService;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validator;
@@ -67,6 +69,54 @@ public class NotificationKafkaListener {
             emailService.sendForgetPasswordEmail(event);
         } catch (Exception e) {
             log.error("Failed to send forget password email to {}: {}", event.getEmail(), e.getMessage(), e);
+        }
+    }
+
+    @KafkaListener(
+            topics = "${notification.kafka.topic.user-lifecycle}",
+            groupId = "${spring.kafka.consumer.group-id}",
+            containerFactory = "userDeletedKafkaListenerContainerFactory"
+    )
+    public void handleUserDeleted(UserDeletedEvent event) {
+        log.info("Received user deleted event: userId={}, email={}, username={}, sourceService={}",
+                event.getUserId(), event.getEmail(), event.getUsername(), event.getSourceService());
+
+        Set<ConstraintViolation<UserDeletedEvent>> violations = validator.validate(event);
+        if (!violations.isEmpty()) {
+            log.warn("Invalid user deleted event received: userId={}, violations={}",
+                    event.getUserId(),
+                    violations.stream().map(ConstraintViolation::getMessage).toList());
+            return;
+        }
+
+        try {
+            emailService.sendUserDeletedEmail(event);
+        } catch (Exception e) {
+            log.error("Failed to process user deleted event for {}: {}", event.getEmail(), e.getMessage(), e);
+        }
+    }
+
+    @KafkaListener(
+            topics = "${notification.kafka.topic.user-lifecycle}",
+            groupId = "${spring.kafka.consumer.group-id}",
+            containerFactory = "userUpdatedKafkaListenerContainerFactory"
+    )
+    public void handleUserUpdated(UserUpdatedEvent event) {
+        log.info("Received user updated event: userId={}, email={}, username={}, role={}, sourceService={}",
+                event.getUserId(), event.getEmail(), event.getUsername(), event.getRole(), event.getSourceService());
+
+        Set<ConstraintViolation<UserUpdatedEvent>> violations = validator.validate(event);
+        if (!violations.isEmpty()) {
+            log.warn("Invalid user updated event received: userId={}, violations={}",
+                    event.getUserId(),
+                    violations.stream().map(ConstraintViolation::getMessage).toList());
+            return;
+        }
+
+        try {
+            emailService.sendUserUpdatedEmail(event);
+        } catch (Exception e) {
+            log.error("Failed to process user updated event for {}: {}", event.getEmail(), e.getMessage(), e);
         }
     }
 

@@ -7,6 +7,8 @@ import java.util.Map;
 
 import com.microservices_example_app.users.event.ForgetPasswordEvent;
 import com.microservices_example_app.users.event.SuccessfulRegistrationEmailEvent;
+import com.microservices_example_app.users.event.UserDeletedEvent;
+import com.microservices_example_app.users.event.UserUpdatedEvent;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.springframework.beans.factory.annotation.Value;
@@ -50,5 +52,25 @@ public class KafkaProducerConfig {
     @Bean
     public KafkaTemplate<String, SuccessfulRegistrationEmailEvent> registrationKafkaTemplate() {
         return new KafkaTemplate<>(registrationProducerFactory());
+    }
+
+    @Bean
+    public ProducerFactory<String, UserDeletedEvent> userDeletedProducerFactory() {
+        return new DefaultKafkaProducerFactory<>(buildBaseProps());
+    }
+
+    @Bean
+    public KafkaTemplate<String, UserDeletedEvent> userDeletedKafkaTemplate() {
+        return new KafkaTemplate<>(userDeletedProducerFactory());
+    }
+
+    @Bean
+    public ProducerFactory<String, UserUpdatedEvent> userUpdatedProducerFactory() {
+        return new DefaultKafkaProducerFactory<>(buildBaseProps());
+    }
+
+    @Bean
+    public KafkaTemplate<String, UserUpdatedEvent> userUpdatedKafkaTemplate() {
+        return new KafkaTemplate<>(userUpdatedProducerFactory());
     }
 }

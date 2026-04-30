@@ -2,9 +2,10 @@ package com.microservices_example_app.notification.config;
 
 import com.microservices_example_app.notification.dto.ForgetPasswordEvent;
 import com.microservices_example_app.notification.dto.SuccessfulBookingEvent;
-
 import com.microservices_example_app.notification.dto.SuccessfulRegistrationEmailEvent;
 import com.microservices_example_app.notification.dto.TicketRefundEvent;
+import com.microservices_example_app.notification.dto.UserDeletedEvent;
+import com.microservices_example_app.notification.dto.UserUpdatedEvent;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.springframework.beans.factory.annotation.Value;
@@ -136,6 +137,60 @@ public class KafkaConsumerConfig {
         ConcurrentKafkaListenerContainerFactory<String, TicketRefundEvent> factory =
                 new ConcurrentKafkaListenerContainerFactory<>();
         factory.setConsumerFactory(ticketRefundConsumerFactory());
+        return factory;
+    }
+
+    @Bean
+    public ConsumerFactory<String, UserDeletedEvent> userDeletedConsumerFactory() {
+        Map<String, Object> props = buildBaseProps();
+        props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, ErrorHandlingDeserializer.class);
+        props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ErrorHandlingDeserializer.class);
+        props.put(ErrorHandlingDeserializer.KEY_DESERIALIZER_CLASS, StringDeserializer.class);
+        props.put(ErrorHandlingDeserializer.VALUE_DESERIALIZER_CLASS, JacksonJsonDeserializer.class);
+
+        JacksonJsonDeserializer<UserDeletedEvent> jsonDeserializer =
+                new JacksonJsonDeserializer<>(UserDeletedEvent.class, false);
+        jsonDeserializer.addTrustedPackages("com.microservices_example_app.notification.dto");
+
+        return new DefaultKafkaConsumerFactory<>(
+                props,
+                new ErrorHandlingDeserializer<>(new StringDeserializer()),
+                new ErrorHandlingDeserializer<>(jsonDeserializer)
+        );
+    }
+
+    @Bean
+    public ConcurrentKafkaListenerContainerFactory<String, UserDeletedEvent> userDeletedKafkaListenerContainerFactory() {
+        ConcurrentKafkaListenerContainerFactory<String, UserDeletedEvent> factory =
+                new ConcurrentKafkaListenerContainerFactory<>();
+        factory.setConsumerFactory(userDeletedConsumerFactory());
+        return factory;
+    }
+
+    @Bean
+    public ConsumerFactory<String, UserUpdatedEvent> userUpdatedConsumerFactory() {
+        Map<String, Object> props = buildBaseProps();
+        props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, ErrorHandlingDeserializer.class);
+        props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ErrorHandlingDeserializer.class);
+        props.put(ErrorHandlingDeserializer.KEY_DESERIALIZER_CLASS, StringDeserializer.class);
+        props.put(ErrorHandlingDeserializer.VALUE_DESERIALIZER_CLASS, JacksonJsonDeserializer.class);
+
+        JacksonJsonDeserializer<UserUpdatedEvent> jsonDeserializer =
+                new JacksonJsonDeserializer<>(UserUpdatedEvent.class, false);
+        jsonDeserializer.addTrustedPackages("com.microservices_example_app.notification.dto");
+
+        return new DefaultKafkaConsumerFactory<>(
+                props,
+                new ErrorHandlingDeserializer<>(new StringDeserializer()),
+                new ErrorHandlingDeserializer<>(jsonDeserializer)
+        );
+    }
+
+    @Bean
+    public ConcurrentKafkaListenerContainerFactory<String, UserUpdatedEvent> userUpdatedKafkaListenerContainerFactory() {
+        ConcurrentKafkaListenerContainerFactory<String, UserUpdatedEvent> factory =
+                new ConcurrentKafkaListenerContainerFactory<>();
+        factory.setConsumerFactory(userUpdatedConsumerFactory());
         return factory;
     }
 }

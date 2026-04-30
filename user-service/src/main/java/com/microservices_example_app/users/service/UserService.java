@@ -3,6 +3,8 @@ package com.microservices_example_app.users.service;
 import com.microservices_example_app.users.dto.*;
 import com.microservices_example_app.users.event.ForgetPasswordEvent;
 import com.microservices_example_app.users.event.SuccessfulRegistrationEmailEvent;
+import com.microservices_example_app.users.event.UserDeletedEvent;
+import com.microservices_example_app.users.event.UserUpdatedEvent;
 import com.microservices_example_app.users.exceptions.EmailForwardingException;
 import com.microservices_example_app.users.exceptions.UserNotFoundException;
 import com.microservices_example_app.users.model.Role;
@@ -221,7 +223,7 @@ public  class UserService {
     public void deleteUser(UserDeleteRequestDto userToDelete) {
         log.info("Deleting user by id={}", userToDelete.getId());
 
-        userDao.findById(userToDelete.getId())
+        User user = userDao.findById(userToDelete.getId())
                 .orElseThrow(() -> {
                     log.warn("Delete failed: user not found id={}", userToDelete.getId());
                     return new UserNotFoundException("no user with such id");
@@ -229,6 +231,9 @@ public  class UserService {
 
         userDao.deleteById(userToDelete.getId());
         log.info("User deleted successfully: id={}", userToDelete.getId());
+
+        UserDeletedEvent event = new UserDeletedEvent(user.getId(), user.getEmail(), user.getUsername(), serviceName);
+        authenticationProducer.sendUserDeletedEvent(event);
     }
 
     @Transactional
@@ -381,6 +386,9 @@ public  class UserService {
 
         User saved = userDao.save(builder.build());
         log.info("User updated successfully: id={}", saved.getId());
+
+        UserUpdatedEvent event = new UserUpdatedEvent(saved.getId(), saved.getEmail(), saved.getUsername(), saved.getUserRole().getName(), serviceName);
+        authenticationProducer.sendUserUpdatedEvent(event);
 
         return toResponseDto(saved);
     }
