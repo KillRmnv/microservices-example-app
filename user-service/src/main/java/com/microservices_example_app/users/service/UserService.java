@@ -152,6 +152,9 @@ public  class UserService {
                 passwordHash(hashedPassword).
                 userRole(user.getUserRole()).
                 id(user.getId()).
+                username(user.getUsername()).
+                email(user.getEmail()).
+                isSystem(user.getIsSystem()).
                 build();
         userDao.save(withNewPassword);
         

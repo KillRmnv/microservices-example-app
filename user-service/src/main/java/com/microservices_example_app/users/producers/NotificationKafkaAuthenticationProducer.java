@@ -19,6 +19,8 @@ public class NotificationKafkaAuthenticationProducer {
 
     @Value("${topic.user-lifecycle:notification.user-lifecycle}")
     private String userLifecycleTopic;
+    @Value("${topic.forget-password}")
+    private String forgetPasswordTopic;
 
     private final KafkaTemplate<String, ForgetPasswordEvent> resetPasswordKafkaTemplate;
     private final KafkaTemplate<String, SuccessfulRegistrationEmailEvent> registrationKafkaTemplate;
@@ -26,7 +28,7 @@ public class NotificationKafkaAuthenticationProducer {
     private final KafkaTemplate<String, UserUpdatedEvent> userUpdatedKafkaTemplate;
 
     public void sendEmailToRestorePassword(ForgetPasswordEvent forgetPasswordEvent) {
-        resetPasswordKafkaTemplate.send(authenticationClientTopic, forgetPasswordEvent.getEmail(), forgetPasswordEvent);
+        resetPasswordKafkaTemplate.send(forgetPasswordTopic, forgetPasswordEvent.getEmail(), forgetPasswordEvent);
     }
 
     public void sendSuccessfulRegistrationEmail(SuccessfulRegistrationEmailEvent successfulRegistrationEmailEvent) {

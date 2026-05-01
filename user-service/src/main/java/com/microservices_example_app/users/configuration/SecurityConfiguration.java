@@ -35,7 +35,9 @@ public class SecurityConfiguration {
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/users/auth/login", "/users/auth/register").permitAll()
+                        .requestMatchers("/users/auth/**"
+
+                                ).permitAll()
                         .requestMatchers("/admin/**").hasRole("ADMIN")
                         .requestMatchers("/manager/**").hasRole("EVENT_MANAGER")
                         .anyRequest().authenticated())

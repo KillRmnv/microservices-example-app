@@ -27,7 +27,7 @@ public class MassMailingService {
 
         List<UserNotificationDto> users = userRepository.findAllById(event.getUserIds())
                 .stream()
-                .map(u -> new UserNotificationDto(u.getEmail(), u.getUsername()))
+                .map(u -> new UserNotificationDto(u.getUsername(),u.getEmail() ))
                 .toList();
 
         if (users.isEmpty()) {
@@ -51,7 +51,7 @@ public class MassMailingService {
 
         List<UserNotificationDto> users = userRepository.findAllById(event.getUserIds())
                 .stream()
-                .map(u -> new UserNotificationDto(u.getEmail(), u.getUsername()))
+                .map(u -> new UserNotificationDto(u.getUsername(),u.getEmail()))
                 .toList();
 
         if (users.isEmpty()) {

@@ -16,7 +16,7 @@ public class MassMailingUserListener {
     private final MassMailingService massMailingService;
 
     @KafkaListener(
-            topics = "${topic.booking-events}",
+            topics = "${topic.mass-mailing}",
             groupId = "${spring.kafka.consumer.group-id}",
             containerFactory = "deleteEventEventKafkaListenerContainerFactory"
     )
@@ -27,7 +27,7 @@ public class MassMailingUserListener {
     }
 
     @KafkaListener(
-            topics = "${topic.booking-events}",
+            topics = "${topic.mass-mailing}",
             groupId = "${spring.kafka.consumer.group-id}",
             containerFactory = "updateEventEventKafkaListenerContainerFactory"
     )
