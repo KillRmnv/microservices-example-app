@@ -14,6 +14,8 @@ import com.microservices_example_app.booking.repository.TicketRepository;
 import com.microservices_example_app.booking.repository.TownRepository;
 import com.microservices_example_app.booking.repository.VenueRepository;
 import com.microservices_example_app.booking.specification.VenueSpecification;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -33,7 +35,8 @@ import java.util.*;
 @RequiredArgsConstructor
 @Slf4j
 public class VenueService {
-
+    @PersistenceContext
+    private EntityManager entityManager;
     private final VenueRepository venueRepository;
     private final TownRepository townRepository;
     private final EventRepository eventRepository;
@@ -80,6 +83,7 @@ public class VenueService {
                 .toList();
     }
 
+
     @Caching(evict = {
             @CacheEvict(cacheNames = "venuesById", key = "#id"),
             @CacheEvict(cacheNames = "venueSearch", allEntries = true),
@@ -91,20 +95,33 @@ public class VenueService {
         if (id == null || id < 1) {
             throw new IllegalArgumentException("Venue id must be positive");
         }
-        Venue toDelete = venueRepository.findById(id).orElseThrow(() -> new NotFoundException("Venue not found"));
-        var eventList = eventRepository.findByVenueId(id);
-        List<Integer> userIds = ticketRepository.findByEventIdIn(
-                        eventList.stream().map(Event::getId).toList()
-                )
+
+        venueRepository.findById(id)
+                .orElseThrow(() -> new NotFoundException("Venue not found"));
+
+        List<Event> eventList = eventRepository.findByVenueId(id);
+        List<String> eventTitles = eventList.stream().map(Event::getTitle).toList();
+        List<Integer> eventIds = eventList.stream().map(Event::getId).toList();
+
+        List<Integer> userIds = eventIds.isEmpty() ? List.of() :
+                ticketRepository.findByEventIdIn(eventIds)
                 .stream()
                 .map(Ticket::getUserId)
                 .filter(Objects::nonNull)
                 .distinct()
                 .toList();
-        kafkaUserProducer.sendDeleteEventEvent(new DeleteEventEvent(eventList.stream().map(Event::getTitle).toList(), serviceName,userIds));
+
+        entityManager.clear();
 
         log.info("Deleting venue with id: {}", id);
         venueRepository.deleteById(id);
+        venueRepository.flush();
+
+        if (!eventTitles.isEmpty()) {
+            kafkaUserProducer.sendDeleteEventEvent(
+                    new DeleteEventEvent(eventTitles, serviceName, userIds)
+            );
+        }
     }
 
     @Caching(evict = {

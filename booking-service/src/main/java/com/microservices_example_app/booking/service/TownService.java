@@ -3,13 +3,19 @@ package com.microservices_example_app.booking.service;
 import com.microservices_example_app.booking.dto.TownCreateRequestDto;
 import com.microservices_example_app.booking.dto.TownResponseDto;
 import com.microservices_example_app.booking.dto.TownUpdateRequestDto;
+import com.microservices_example_app.booking.event.DeleteEventEvent;
 import com.microservices_example_app.booking.exceptions.NotFoundException;
+import com.microservices_example_app.booking.model.Event;
+import com.microservices_example_app.booking.model.Ticket;
 import com.microservices_example_app.booking.model.Town;
+import com.microservices_example_app.booking.model.Venue;
 import com.microservices_example_app.booking.producers.NotificationKafkaUserProducer;
 import com.microservices_example_app.booking.repository.EventRepository;
 import com.microservices_example_app.booking.repository.TicketRepository;
 import com.microservices_example_app.booking.repository.TownRepository;
 import com.microservices_example_app.booking.repository.VenueRepository;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -23,7 +29,8 @@ import java.util.List;
 @RequiredArgsConstructor
 @Slf4j
 public class TownService {
-
+    @PersistenceContext
+    private EntityManager entityManager;
     private final TownRepository townRepository;
     private final VenueRepository venueRepository;
     private final EventRepository eventRepository;
@@ -64,6 +71,8 @@ public class TownService {
         return toResponseDto(townRepository.save(town));
     }
 
+
+
     @Caching(evict = {
             @CacheEvict(cacheNames = "venueSearch", allEntries = true),
             @CacheEvict(cacheNames = "venuesById", allEntries = true),
@@ -72,9 +81,44 @@ public class TownService {
     })
     @Transactional
     public void delete(Integer id) {
-        // ... твой текущий код без изменений
-    }
+        log.info("Deleting town with id: {}", id);
 
+        townRepository.findById(id)
+                .orElseThrow(() -> new NotFoundException("Town not found"));
+
+        List<Integer> venueIds = venueRepository.findByTownId(id)
+                .stream().map(Venue::getId).toList();
+
+        List<String> eventTitles = List.of();
+        List<Integer> userIds = List.of();
+
+        if (!venueIds.isEmpty()) {
+            List<Event> events = eventRepository.findByVenueIdIn(venueIds);
+
+            if (!events.isEmpty()) {
+                List<Integer> eventIds = events.stream().map(Event::getId).toList();
+                eventTitles = events.stream().map(Event::getTitle).toList();
+                userIds = ticketRepository.findByEventIdInAndUserIdIsNotNull(eventIds)
+                        .stream()
+                        .map(Ticket::getUserId)
+                        .distinct()
+                        .toList();
+            }
+        }
+
+        entityManager.clear();
+
+        townRepository.deleteById(id);
+        townRepository.flush();
+
+        if (!eventTitles.isEmpty()) {
+            kafkaUserProducer.sendDeleteEventEvent(new DeleteEventEvent(
+                    eventTitles, serviceName, userIds
+            ));
+            log.info("DeleteEventEvent sent: {} events, {} users affected",
+                    eventTitles.size(), userIds.size());
+        }
+    }
     private TownResponseDto toResponseDto(Town town) {
         return TownResponseDto.builder()
                 .id(town.getId())

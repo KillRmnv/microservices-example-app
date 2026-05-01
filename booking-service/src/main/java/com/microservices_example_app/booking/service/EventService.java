@@ -14,6 +14,8 @@ import com.microservices_example_app.booking.repository.TicketRepository;
 import com.microservices_example_app.booking.repository.VenueRepository;
 import com.microservices_example_app.booking.specification.EventSpecification;
 import com.microservices_example_app.booking.utils.JwtRequestUserExtractor;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -39,6 +41,8 @@ public class EventService {
     private final VenueRepository venueRepository;
     private final NotificationKafkaUserProducer kafkaUserProducer;
     private final TicketRepository ticketRepository;
+    @PersistenceContext
+    private EntityManager entityManager;
     @Value("${spring.application.name}")
     private String serviceName;
 
@@ -49,7 +53,11 @@ public class EventService {
 
         Venue venue = venueRepository.findById(requestDto.getVenueId()).orElseThrow(() -> new NotFoundException("Venue not found"));
 
-        Event event = Event.builder().title(requestDto.getTitle()).startsAt(requestDto.getStartsAt()).endsAt(requestDto.getEndsAt()).venue(venue).admissionMode(requestDto.getAdmissionMode()).build();
+        Event event = Event.builder().title(requestDto.getTitle()).
+                startsAt(requestDto.getStartsAt()).
+                endsAt(requestDto.getEndsAt()).
+                venue(venue).
+                admissionMode(requestDto.getAdmissionMode()).build();
 
         Event saved = eventRepository.save(event);
         log.info("Created event with id: {}", saved.getId());
@@ -71,7 +79,8 @@ public class EventService {
         return eventRepository.findAll().stream().map(this::toResponseDto).toList();
     }
 
-    @Cacheable(cacheNames = "eventSearch", key = "{#filter.title, #filter.venueId, #filter.admissionMode, #filter.startsFrom, #filter.startsTo, #page, #size}")
+    @Cacheable(cacheNames = "eventSearch", key =
+            "{#filter.title, #filter.venueId, #filter.admissionMode, #filter.startsFrom, #filter.startsTo, #page, #size}")
     @Transactional
     public List<EventResponseDto> searchByFilter(EventSearchRequestDto filter, int page, int size) {
         if (page < 1) {
@@ -90,7 +99,8 @@ public class EventService {
 
 
         Pageable pageable = PageRequest.of(page - 1, size);
-        log.debug("Search by filter: title={}, venueId={}, admissionMode={}, startsFrom={}, startsTo={}, page={}, size={}", filter.getTitle(), filter.getVenueId(), filter.getAdmissionMode(), filter.getStartsFrom(), filter.getStartsTo(), page, size);
+        log.debug("Search by filter: title={}, venueId={}, admissionMode={}, startsFrom={}, startsTo={}, page={}, size={}",
+                filter.getTitle(), filter.getVenueId(), filter.getAdmissionMode(), filter.getStartsFrom(), filter.getStartsTo(), page, size);
 
         return eventRepository.findAll(spec, pageable).stream().map(this::toResponseDto).toList();
     }
@@ -105,21 +115,30 @@ public class EventService {
             throw new NotFoundException("Event not found");
         });
 
-
-        log.info("Deleting event with id: {}", id);
-        DeleteEventEvent deleteEventEvent = new DeleteEventEvent(List.of(event.getTitle()), serviceName, ticketRepository.findByEventId(event.getId()).stream().
+        DeleteEventEvent deleteEventEvent = new DeleteEventEvent(List.of(event.getTitle()), serviceName,
+                ticketRepository.findByEventId(event.getId()).stream().
                 map(Ticket::getUserId).toList());
+        entityManager.clear();
+        log.info("Deleting event with id: {}", id);
         eventRepository.deleteById(id);
+        eventRepository.flush();
 
         kafkaUserProducer.sendDeleteEventEvent(deleteEventEvent);
     }
 
-    @Caching(evict = {@CacheEvict(cacheNames = "eventsById", allEntries = true), @CacheEvict(cacheNames = "eventSearch", allEntries = true)})
+    @Caching(evict = {@CacheEvict(cacheNames = "eventsById", allEntries = true),
+            @CacheEvict(cacheNames = "eventSearch", allEntries = true)})
     @Transactional
     public long deleteByFilter(EventDeleteRequestDto requestDto) {
-        Specification<Event> spec = Specification.where(EventSpecification.hasTitle(requestDto.getTitle())).and(EventSpecification.hasVenueId(requestDto.getVenueId())).and(EventSpecification.hasAdmissionMode(requestDto.getAdmissionMode())).and(EventSpecification.startsAfter(requestDto.getStartsAt())).and(EventSpecification.startsBefore(requestDto.getStartsAt()));
+        Specification<Event> spec = Specification.
+                where(EventSpecification.hasTitle(requestDto.getTitle())).
+                and(EventSpecification.hasVenueId(requestDto.getVenueId())).
+                and(EventSpecification.hasAdmissionMode(requestDto.getAdmissionMode())).
+                and(EventSpecification.startsAfter(requestDto.getStartsAt())).
+                and(EventSpecification.startsBefore(requestDto.getStartsAt()));
 
-        log.debug("Delete by filter: title={}, venueId={}, admissionMode={}, startsAt={}", requestDto.getTitle(), requestDto.getVenueId(), requestDto.getAdmissionMode(), requestDto.getStartsAt());
+        log.debug("Delete by filter: title={}, venueId={}, admissionMode={}, startsAt={}", requestDto.getTitle(),
+                requestDto.getVenueId(), requestDto.getAdmissionMode(), requestDto.getStartsAt());
 
         List<Event> events = eventRepository.findAll(spec);
         long count = events.size();
@@ -132,14 +151,15 @@ public class EventService {
             userIds.addAll(ticketRepository.findByEventId(e.getId()).stream().map(Ticket::getUserId).toList());
         }
         DeleteEventEvent deleteEventEvent = new DeleteEventEvent(titles, serviceName, userIds);
-
+        entityManager.clear();
         eventRepository.deleteAll(events);
-
+        eventRepository.flush();
         kafkaUserProducer.sendDeleteEventEvent(deleteEventEvent);
         return count;
     }
 
-    @Caching(put = {@CachePut(cacheNames = "eventsById", key = "#result.id")}, evict = {@CacheEvict(cacheNames = "eventSearch", allEntries = true)})
+    @Caching(put = {@CachePut(cacheNames = "eventsById", key = "#result.id")},
+            evict = {@CacheEvict(cacheNames = "eventSearch", allEntries = true)})
     @Transactional
     public EventResponseDto updateEventById(EventUpdateRequestDto request) {
         if (request.getId() == null || request.getId() < 1) {
@@ -175,7 +195,8 @@ public class EventService {
         }
 
         if (request.getVenueId() != null) {
-            Venue venue = venueRepository.findById(request.getVenueId()).orElseThrow(() -> new NotFoundException("Venue not found: " + request.getVenueId()));
+            Venue venue = venueRepository.findById(request.getVenueId()).orElseThrow(
+                    () -> new NotFoundException("Venue not found: " + request.getVenueId()));
             builder.venue(venue);
             stringBuilder.append("Venue:").append(venue.getPlace()).append("\n");
         } else {
@@ -192,7 +213,7 @@ public class EventService {
         }
 
         log.info("Updating event with id: {}", event.getId());
-        Event toSave=builder.build();
+        Event toSave = builder.build();
         UpdateEventEvent updateEventEvent = new UpdateEventEvent(
                 List.of(toSave.getTitle()), serviceName, stringBuilder.toString(),
                 ticketRepository.findByEventId(toSave.getId()).stream().map(Ticket::getUserId).toList());
@@ -204,6 +225,14 @@ public class EventService {
     }
 
     private EventResponseDto toResponseDto(Event event) {
-        return EventResponseDto.builder().id(event.getId()).title(event.getTitle()).startsAt(event.getStartsAt()).endsAt(event.getEndsAt()).venueId(event.getVenue().getId()).venuePlace(event.getVenue().getPlace()).admissionMode(event.getAdmissionMode()).build();
+        return EventResponseDto.builder().
+                id(event.getId()).
+                title(event.getTitle()).
+                startsAt(event.getStartsAt()).
+                endsAt(event.getEndsAt()).
+                venueId(event.getVenue().getId()).
+                venuePlace(event.getVenue().getPlace()).
+                admissionMode(event.getAdmissionMode()).
+                build();
     }
 }
