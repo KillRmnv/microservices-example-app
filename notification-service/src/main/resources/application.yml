@@ -44,6 +44,7 @@ notification:
       booking: ${NOTIFICATION_BOOKING_TOPIC:notification.booking}
       ticket-refund: ${TICKET_REFUND:notification.refund}
       user-lifecycle: ${NOTIFICATION_USER_LIFECYCLE_TOPIC:notification.user-lifecycle}
+      mass-mailing: ${NOTIFICATION_MASS_MAILING_TOPIC:notification.mass-mailing}
 
 
 management:
