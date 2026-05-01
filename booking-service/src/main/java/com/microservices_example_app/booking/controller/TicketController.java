@@ -57,4 +57,9 @@ public class TicketController {
         log.info("Deleting tickets by filter: eventId={}, userId={}", requestDto.getEventId(), requestDto.getUserId());
         return ticketService.deleteByFilter(requestDto);
     }
+    @PostMapping("/{id}/refund")
+    public TicketResponseDto refund(@PathVariable Integer id) {
+        log.info("Refunding ticket with id: {}", id);
+        return ticketService.refund(id);
+    }
 }

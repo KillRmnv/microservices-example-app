@@ -1,12 +1,14 @@
 package com.microservices_example_app.booking.service;
 
 import com.microservices_example_app.booking.dto.*;
+import com.microservices_example_app.booking.event.DeleteEventEvent;
 import com.microservices_example_app.booking.event.SuccessfulBookingEvent;
 import com.microservices_example_app.booking.event.SuccessfulTicketRefundEvent;
 import com.microservices_example_app.booking.exceptions.NotFoundException;
 import com.microservices_example_app.booking.model.Event;
 import com.microservices_example_app.booking.model.Ticket;
 import com.microservices_example_app.booking.producers.NotificationKafkaBookingProducer;
+import com.microservices_example_app.booking.producers.NotificationKafkaUserProducer;
 import com.microservices_example_app.booking.repository.EventRepository;
 import com.microservices_example_app.booking.repository.TicketRepository;
 import com.microservices_example_app.booking.specification.TicketSpecification;
@@ -31,7 +33,7 @@ public class TicketService {
     private final EventRepository eventRepository;
     private final NotificationKafkaBookingProducer notificationKafkaBookingProducer;
     private final JwtRequestUserExtractor jwtRequestUserExtractor;
-
+    private final NotificationKafkaUserProducer kafkaUserProducer;
     @Value("${spring.application.name}")
     private String serviceName;
 
@@ -126,14 +128,14 @@ public class TicketService {
         }
 
         log.info("Deleting ticket with id={}, userId={}", id, currentUserId);
-        ticketRepository.delete(ticket);
-
         SuccessfulTicketRefundEvent refundEvent = new SuccessfulTicketRefundEvent(
                 email,
                 username,
                 ticket.getEvent().getTitle(),
                 serviceName
         );
+
+        ticketRepository.delete(ticket);
 
         notificationKafkaBookingProducer.sendSuccessfulTicketRefundEvent(refundEvent);
         log.info("Successful ticket refund event sent for ticket id={}, email={}", id, email);
@@ -153,7 +155,21 @@ public class TicketService {
         List<Ticket> tickets = ticketRepository.findAll(spec);
         long count = tickets.size();
         log.info("Delete by filter amount: {}", count);
+
         ticketRepository.deleteAll(tickets);
+
+        tickets.stream()
+                .filter(t -> t.getUserId() != null)
+                .forEach(t -> {
+                    DeleteEventEvent refundEvent = new DeleteEventEvent(
+                            List.of(t.getEvent().getTitle()),
+                            serviceName,
+                            List.of(t.getUserId())
+                    );
+                    kafkaUserProducer.sendDeleteEventEvent(refundEvent);
+                    log.info("Refund notification sent for ticket id={}, userId={}", t.getId(), t.getUserId());
+                });
+
         return count;
     }
 
@@ -162,37 +178,78 @@ public class TicketService {
         if (request.getId() == null || request.getId() < 1) {
             throw new IllegalArgumentException("Ticket id must be positive");
         }
-
+        Integer currentUserId = jwtRequestUserExtractor.extractUserId();
         Ticket ticket = ticketRepository.findById(request.getId())
                 .orElseThrow(() -> new NotFoundException("No ticket with id=" + request.getId()));
 
+        Integer previousUserId = ticket.getUserId();
+        log.info("previous userid:{}",previousUserId);
         if (request.getEventId() != null) {
             Event event = eventRepository.findById(request.getEventId())
                     .orElseThrow(() -> new NotFoundException("Event not found: " + request.getEventId()));
             ticket.setEvent(event);
         }
-
-        if (request.getZone() != null) {
-            ticket.setZone(request.getZone());
-        }
-
-        if (request.getPrice() != null) {
-            ticket.setPrice(request.getPrice());
-        }
-
-        if (request.getActive() != null) {
-            ticket.setActive(request.getActive());
-        }
-
-        if (request.getUserId() != null) {
-            ticket.setUserId(request.getUserId());
-        }
+        if (request.getZone() != null)   ticket.setZone(request.getZone());
+        if (request.getPrice() != null)  ticket.setPrice(request.getPrice());
+        if (request.getActive() != null) ticket.setActive(request.getActive());
+        if (currentUserId != null) ticket.setUserId(currentUserId);
 
         log.info("Update ticket with id: {}", ticket.getId());
         Ticket saved = ticketRepository.save(ticket);
+
+
+        String email = jwtRequestUserExtractor.extractEmail();
+        String username = jwtRequestUserExtractor.extractUsername();
+
+        if (currentUserId!=null&&((previousUserId != null && !currentUserId.equals(previousUserId))||(previousUserId==null))) {
+            notificationKafkaBookingProducer.sendSuccessfulTicketRefundEvent(
+                    new SuccessfulTicketRefundEvent(email, username, saved.getEvent().getTitle(), serviceName)
+            );
+            log.info("Refund event sent: ticket id={}, userId={}", saved.getId(), currentUserId);
+
+            notificationKafkaBookingProducer.sendSuccessfulBookingEvent(
+                    new SuccessfulBookingEvent(email, username, saved.getEvent().getTitle(), serviceName)
+            );
+            log.info("Booking event sent: ticket id={}, userId={}", saved.getId(), request.getUserId());
+        }else{
+            log.info("2");
+        }
+
         return toResponseDto(saved);
     }
+    @Transactional
+    public TicketResponseDto refund(Integer id) {
+        if (id == null || id < 1) {
+            throw new IllegalArgumentException("Ticket id must be positive");
+        }
 
+        Ticket ticket = ticketRepository.findById(id)
+                .orElseThrow(() -> new NotFoundException("Ticket not found"));
+
+        Integer currentUserId = jwtRequestUserExtractor.extractUserId();
+        String email = jwtRequestUserExtractor.extractEmail();
+        String username = jwtRequestUserExtractor.extractUsername();
+
+        if (!ticket.getUserId().equals(currentUserId)) {
+            log.warn("User id={} attempted to refund foreign ticket id={}", currentUserId, id);
+            throw new IllegalArgumentException("You can refund only your own ticket");
+        }
+
+        if (!ticket.isActive()) {
+            throw new IllegalArgumentException("Ticket is already inactive");
+        }
+
+
+        ticket.setUserId(null);
+        Ticket saved = ticketRepository.save(ticket);
+
+        notificationKafkaBookingProducer.sendSuccessfulTicketRefundEvent(
+                new SuccessfulTicketRefundEvent(email, username, saved.getEvent().getTitle(), serviceName)
+        );
+        log.info("Ticket refund completed: id={}, userId={}", id, currentUserId);
+
+        return toResponseDto(saved);
+    }
     private TicketResponseDto toResponseDto(Ticket ticket) {
         return TicketResponseDto.builder()
                 .id(ticket.getId())

@@ -118,29 +118,6 @@ public class SeatableTicketService {
         log.info("Successful seatable refund event sent for ticket id={}, email={}", id, email);
     }
 
-    @Transactional
-    public long deleteByFilter(SeatableTicketDeleteRequestDto requestDto) {
-        Integer currentUserId = jwtRequestUserExtractor.extractUserId();
-
-        Specification<SeatableTicket> spec = Specification
-                .where(SeatableTicketSpecification.hasEventId(requestDto.getEventId()))
-                .and(SeatableTicketSpecification.hasSeatId(requestDto.getSeatId()))
-                .and(SeatableTicketSpecification.hasUserId(currentUserId))
-                .and(SeatableTicketSpecification.hasZone(requestDto.getZone()))
-                .and(SeatableTicketSpecification.hasActive(requestDto.getActive()))
-                .and(SeatableTicketSpecification.hasPriceGreaterThanOrEqual(requestDto.getMinPrice()))
-                .and(SeatableTicketSpecification.hasPriceLessThanOrEqual(requestDto.getMaxPrice()))
-                .and(SeatableTicketSpecification.hasSector(requestDto.getSector()))
-                .and(SeatableTicketSpecification.hasRow(requestDto.getRow()))
-                .and(SeatableTicketSpecification.hasNumber(requestDto.getNumber()));
-
-        log.debug("Delete by filter for userId={}: {}", currentUserId, spec);
-        List<SeatableTicket> tickets = seatableTicketRepository.findAll(spec);
-        long count = tickets.size();
-        log.info("Delete by filter amount for userId={}: {}", currentUserId, count);
-        seatableTicketRepository.deleteAll(tickets);
-        return count;
-    }
 
     @Transactional
     public List<SeatableTicketResponseDto> searchByFilter(SeatableTicketSearchRequestDto filter, int page, int size) {
@@ -220,13 +197,86 @@ public class SeatableTicketService {
             builder.active(ticket.isActive());
         }
 
-        builder.userId(ticket.getUserId());
+        if (request.getUserId() != null) {
+            builder.userId(request.getUserId());
+        } else {
+            builder.userId(ticket.getUserId());
+        }
 
         log.info("Update seatable ticket with id: {}", ticket.getId());
         SeatableTicket saved = seatableTicketRepository.save(builder.build());
         return toResponseDto(saved);
     }
+    @Transactional
+    public SeatableTicketResponseDto refund(Integer id) {
+        if (id == null || id < 1) {
+            throw new IllegalArgumentException("SeatableTicket id must be positive");
+        }
 
+        SeatableTicket ticket = seatableTicketRepository.findById(id)
+                .orElseThrow(() -> new NotFoundException("Seatable ticket not found"));
+
+        Integer currentUserId = jwtRequestUserExtractor.extractUserId();
+        String email = jwtRequestUserExtractor.extractEmail();
+        String username = jwtRequestUserExtractor.extractUsername();
+
+        if (!ticket.getUserId().equals(currentUserId)) {
+            log.warn("User id={} attempted to refund foreign seatable ticket id={}", currentUserId, id);
+            throw new IllegalArgumentException("You can refund only your own seatable ticket");
+        }
+
+        if (!ticket.isActive()) {
+            throw new IllegalArgumentException("Seatable ticket is already inactive");
+        }
+
+        ticket.setActive(false);
+        ticket.setUserId(null);
+        SeatableTicket saved = seatableTicketRepository.save(ticket);
+
+        notificationKafkaBookingProducer.sendSuccessfulTicketRefundEvent(
+                new SuccessfulTicketRefundEvent(email, username, saved.getEvent().getTitle(), serviceName)
+        );
+        log.info("Seatable ticket refund completed: id={}, userId={}", id, currentUserId);
+
+        return toResponseDto(saved);
+    }
+    @Transactional
+    public long deleteByFilter(SeatableTicketDeleteRequestDto requestDto) {
+        Integer currentUserId = jwtRequestUserExtractor.extractUserId();
+
+        Specification<SeatableTicket> spec = Specification
+                .where(SeatableTicketSpecification.hasEventId(requestDto.getEventId()))
+                .and(SeatableTicketSpecification.hasSeatId(requestDto.getSeatId()))
+                .and(SeatableTicketSpecification.hasUserId(currentUserId))
+                .and(SeatableTicketSpecification.hasZone(requestDto.getZone()))
+                .and(SeatableTicketSpecification.hasActive(requestDto.getActive()))
+                .and(SeatableTicketSpecification.hasPriceGreaterThanOrEqual(requestDto.getMinPrice()))
+                .and(SeatableTicketSpecification.hasPriceLessThanOrEqual(requestDto.getMaxPrice()))
+                .and(SeatableTicketSpecification.hasSector(requestDto.getSector()))
+                .and(SeatableTicketSpecification.hasRow(requestDto.getRow()))
+                .and(SeatableTicketSpecification.hasNumber(requestDto.getNumber()));
+
+        log.debug("Delete by filter for userId={}: {}", currentUserId, spec);
+        List<SeatableTicket> tickets = seatableTicketRepository.findAll(spec);
+        long count = tickets.size();
+        log.info("Delete by filter amount for userId={}: {}", currentUserId, count);
+
+        seatableTicketRepository.deleteAll(tickets);
+
+        String email = jwtRequestUserExtractor.extractEmail();
+        String username = jwtRequestUserExtractor.extractUsername();
+
+        tickets.stream()
+                .filter(t -> t.getUserId() != null)
+                .forEach(t -> {
+                    notificationKafkaBookingProducer.sendSuccessfulTicketRefundEvent(
+                            new SuccessfulTicketRefundEvent(email, username, t.getEvent().getTitle(), serviceName)
+                    );
+                    log.info("Refund notification sent for seatable ticket id={}, userId={}", t.getId(), t.getUserId());
+                });
+
+        return count;
+    }
     private SeatableTicketResponseDto toResponseDto(SeatableTicket ticket) {
         return SeatableTicketResponseDto.builder()
                 .id(ticket.getId())

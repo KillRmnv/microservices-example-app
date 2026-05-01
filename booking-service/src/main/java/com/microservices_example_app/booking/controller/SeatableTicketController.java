@@ -45,7 +45,11 @@ public class SeatableTicketController {
         requestDto.setId(id);
         return seatableTicketService.updateSeatableTicketById(requestDto);
     }
-
+    @PostMapping("/{id}/refund")
+    public SeatableTicketResponseDto refund(@PathVariable Integer id) {
+        log.info("Refunding seatable ticket with id: {}", id);
+        return seatableTicketService.refund(id);
+    }
     @DeleteMapping("/{id}")
     public void deleteById(@PathVariable Integer id) {
         log.info("Deleting seatable ticket with id: {}", id);
