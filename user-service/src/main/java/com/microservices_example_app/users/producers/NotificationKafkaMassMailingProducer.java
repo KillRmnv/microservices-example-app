@@ -13,7 +13,7 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class NotificationKafkaMassMailingProducer {
 
-    @Value("${topic.mass-mailing}")
+    @Value("${topic.notification.mass-mailing}")
     private String massMailingTopic;
 
     private final KafkaTemplate<String, MassDeleteEventMailingEvent> massDeleteKafkaTemplate;

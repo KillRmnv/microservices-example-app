@@ -49,7 +49,7 @@ public class NotificationKafkaListener {
     }
 
     @KafkaListener(
-            topics = "${notification.kafka.topic.authentication}",
+            topics = "${notification.kafka.topic.forget-password}",
             groupId = "${spring.kafka.consumer.group-id}",
             containerFactory = "forgetPasswordKafkaListenerContainerFactory"
     )

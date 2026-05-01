@@ -57,11 +57,11 @@ public class EmailService {
         message.setText("""
                 Hello, %s!
                 
-                Your booking was completed successfully.
+                Your %s booking was completed successfully.
                 
                 Best regards,
                 Microservices Example App
-                """.formatted(event.getUsername()));
+                """.formatted(event.getUsername(),event.getEvent()));
 
         send(message, "booking success", event.getEmail(), event.getSourceService());
     }

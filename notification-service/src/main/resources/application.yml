@@ -45,6 +45,7 @@ notification:
       ticket-refund: ${TICKET_REFUND:notification.refund}
       user-lifecycle: ${NOTIFICATION_USER_LIFECYCLE_TOPIC:notification.user-lifecycle}
       mass-mailing: ${NOTIFICATION_MASS_MAILING_TOPIC:notification.mass-mailing}
+      forget-password: ${FORGET_PASSWORD:notification.forget-password}
 
 
 management:

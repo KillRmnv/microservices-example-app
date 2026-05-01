@@ -47,7 +47,7 @@ public class BookingKafkaListener {
     @KafkaListener(
             topics = "${notification.kafka.topic.ticket-refund}",
             groupId = "${spring.kafka.consumer.group-id}",
-            containerFactory = "bookingKafkaListenerContainerFactory"
+            containerFactory = "ticketRefundKafkaListenerContainerFactory"
     )
     public void handleTicketRefund(TicketRefundEvent event) {
         log.info("Refund booking event: email={}, username={}, event={}, sourceService={}",
