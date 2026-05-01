@@ -8,6 +8,7 @@ import com.microservices_example_app.booking.model.Town;
 import com.microservices_example_app.booking.repository.TownRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -51,7 +52,7 @@ public class TownService {
         town.setName(requestDto.getName());
         return toResponseDto(townRepository.save(town));
     }
-
+    @CacheEvict(cacheNames = "venueSearch", allEntries = true)
     public void delete(Integer id) {
         log.info("Deleting town with id: {}", id);
         townRepository.deleteById(id);

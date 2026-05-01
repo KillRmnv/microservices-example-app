@@ -69,7 +69,9 @@ public class VenueService {
 
     @Caching(evict = {
             @CacheEvict(cacheNames = "venuesById", key = "#id"),
-            @CacheEvict(cacheNames = "venueSearch", allEntries = true)
+            @CacheEvict(cacheNames = "venueSearch", allEntries = true),
+            @CacheEvict(cacheNames = "eventsById", allEntries = true),
+            @CacheEvict(cacheNames = "eventSearch", allEntries = true)
     })
     @Transactional
     public void deleteById(Integer id) {
@@ -87,7 +89,9 @@ public class VenueService {
 
     @Caching(evict = {
             @CacheEvict(cacheNames = "venuesById", allEntries = true),
-            @CacheEvict(cacheNames = "venueSearch", allEntries = true)
+            @CacheEvict(cacheNames = "venueSearch", allEntries = true),
+            @CacheEvict(cacheNames = "eventsById", allEntries = true),
+            @CacheEvict(cacheNames = "eventSearch", allEntries = true)
     })
     @Transactional
     public long deleteByFilter(VenueDeleteRequestDto requestDto) {
