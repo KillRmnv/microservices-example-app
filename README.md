@@ -11,8 +11,8 @@ A fully functional microservices-based event ticketing platform built with Java 
 - [Configuration](#configuration)
 - [API Overview](#api-overview)
 - [Frontend](#frontend)
-- [Testing](#testing)
 - [Key Features](#key-features)
+- [Kafka Event Flow](#kafka-event-flow)
 - [Local Development](#local-development)
 - [Possible Improvements](#possible-improvements)
 
@@ -30,25 +30,24 @@ The system follows a microservice architecture with 4 core services behind an AP
 | **Notification Service** | 8083 | Asynchronous email notifications for authentication and booking events | Spring Boot, Spring Mail, Kafka Consumer |
 
 ### Infrastructure Components
-- **PostgreSQL 16**: Two separate databases (`user_service`, `booking_service`) with Flyway migrations
-- **Redis 7**: Caching and rate limiting
-- **Apache Kafka 7.5 + Zookeeper**: Event-driven communication between services
+- **PostgreSQL 16**: Two separate databases (`user_service`, `booking_service`) with Flyway migrations (see `user-service/src/main/resources/db/migration/` and `booking-service/src/main/resources/db/migration/`)
+- **Redis 7**: Caching (booking-service) and rate limiting (user-service)
+- **Apache Kafka 7.5 + Zookeeper**: Event-driven communication between services (cp-kafka:7.5.0 in Docker, apache/kafka-native:latest in tests)
 - **Docker Compose**: Orchestration of all services and infrastructure
 
 ## Tech Stack
 
 ### Backend
-- **Java 25** 
+- **Java 25** (uncommon version—requires verification before building)
 - **Spring Boot 4.0.5**: Core framework
-- **Spring Cloud Gateway**: API gateway
-- **Spring Security**: Authentication and authorization
-- **Spring Data JPA**: Database access
-- **Spring Kafka**: Kafka integration
-- **JJWT 0.12.3**: JSON Web Token implementation
-- **Flyway**: Database migrations
-- **Redisson**: Redis client with Spring integration
-- **Lombok**: Boilerplate code reduction
-- **Password4j**: Password hashing (bcrypt)
+- **Spring Cloud Gateway**: API gateway (gateway service, uses WebFlux)
+- **Spring Security**: Authentication and authorization (JWT via JJWT 0.12.3)
+- **Spring Data JPA**: Database access (PostgreSQL)
+- **Spring Kafka**: Kafka integration for event-driven communication
+- **Flyway**: Database migrations (auto-runs on service startup)
+- **Redisson 4.3.0**: Redis client with Spring integration (booking-service)
+- **Lombok 1.18.42**: Boilerplate code reduction
+- **Password4j 1.8.2**: Password hashing (bcrypt)
 
 
 ### Testing
@@ -78,8 +77,7 @@ microservices-example-app/
 │   └── version.gradle                # Centralized version management
 ├── docker-compose.yml                # Infrastructure orchestration
 ├── init-postgres.sql                 # Database initialization
-├── .env.example                      # Example environment variables
-└── AGENTS.md                         # Developer guidelines
+└── .env.example                      # Example environment variables
 ```
 
 ## Prerequisites
@@ -157,28 +155,44 @@ All API endpoints are accessed through the Gateway at `http://localhost:8080`.
 
 1. **JWT Authentication**: Stateless authentication with JWT tokens containing user roles
 2. **Event-Driven Architecture**: Kafka-based async communication for decoupled services
-3. **Role-Based Access Control**: Three-tier role system with permission mapping
-4**Caching**: Redis caching for frequently accessed data
-5**Database Migrations**: Flyway for versioned database schema management
-6**Global Error Handling**: Consistent error responses across services
-7**Containerized Deployment**: Multi-stage Docker builds for optimized images
+3. **Role-Based Access Control**: Three-tier role system (CUSTOMER → EVENT_MANAGER → ADMIN) with permission mapping
+4. **Caching**: Redis caching for frequently accessed data (booking-service)
+5. **Database Migrations**: Flyway for versioned database schema management per service
+6. **Global Error Handling**: Consistent error responses across services
+7. **Containerized Deployment**: Multi-stage Docker builds (JDK for build, JRE for runtime)
+
+## Kafka Event Flow
+
+Services communicate asynchronously via Kafka topics. All events are consumed by the notification-service for email notifications.
+
+| Topic | Producer | Event | Purpose |
+|-------|----------|-------|---------|
+| `notification.authentication` | user-service | `SuccessfulRegistrationEmailEvent` | Welcome email on registration |
+| `notification.forget-password` | user-service | `ForgetPasswordEvent` | Password reset link email |
+| `notification.user-lifecycle` | user-service | `UserDeletedEvent`, `UserUpdatedEvent` | Notify on account changes |
+| `notification.booking` | booking-service | `SuccessfulBookingEvent` | Booking confirmation email |
+| `notification.refund` | booking-service | `SuccessfulTicketRefundEvent` | Refund confirmation email |
+| `notification.mass-mailing` | user-service | `MassDeleteEventMailingEvent`, `MassUpdateEventMailingEvent` | Bulk email notifications |
+| `user.mass-mail` | booking-service | `DeleteEventEvent`, `UpdateEventEvent` | Trigger mass mailing on event changes |
+
+**Configuration**: Topic names are configurable via properties in each service's `application.properties` / `application.yml`.
 
 ## Local Development
 
-To run individual services locally (requires infrastructure to be running):
+Each service has its own `./gradlew` — there is no root Gradle build.
 
 ```bash
-# Start infrastructure only
+# Start infrastructure only (required for local service runs and tests)
 docker compose up -d postgres redis zookeeper kafka
 
-# Run user-service locally
+# Run individual services locally
 cd user-service && ./gradlew bootRun
-
-# Run booking-service locally
 cd booking-service && ./gradlew bootRun
+cd gateway && ./gradlew bootRun   # serves frontend at http://localhost:8080
 
-# Run gateway locally (serves frontend)
-cd gateway && ./gradlew bootRun
+# Run all tests in a service (requires Docker for Testcontainers)
+cd <service> && ./gradlew test
+
+# Run a single test class
+cd <service> && ./gradlew test --tests "*.TestClassName"
 ```
-
-
