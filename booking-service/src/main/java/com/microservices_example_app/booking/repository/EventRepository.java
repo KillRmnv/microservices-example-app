@@ -18,4 +18,7 @@ public interface EventRepository extends JpaRepository<Event, Integer>, JpaSpeci
     List<Event> findByAdmissionMode(EventAdmissionMode admissionMode);
 
     List<Event> findByStartsAtBetween(LocalDateTime from, LocalDateTime to);
+
+    List<Event> findByVenueIdIn(List<Integer> venueIds);
+
 }

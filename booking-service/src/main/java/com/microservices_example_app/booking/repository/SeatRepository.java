@@ -7,9 +7,11 @@ import org.springframework.stereotype.Repository;
 
 import java.util.List;
 import java.util.Optional;
+
 @Repository
 public interface SeatRepository extends JpaRepository<Seat, Integer>, JpaSpecificationExecutor<Seat> {
     List<Seat> findByVenueId(Integer venueId);
+
     List<Seat> findByVenueIdAndSectorIgnoreCase(Integer venueId, String sector);
 
     Optional<Seat> findByVenueIdAndSectorIgnoreCaseAndRowIgnoreCaseAndNumber(

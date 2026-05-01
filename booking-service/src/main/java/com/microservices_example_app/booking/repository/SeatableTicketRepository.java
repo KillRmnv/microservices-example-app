@@ -7,10 +7,14 @@ import org.springframework.stereotype.Repository;
 
 import java.util.List;
 import java.util.Optional;
+
 @Repository
 public interface SeatableTicketRepository extends JpaRepository<SeatableTicket, Integer>, JpaSpecificationExecutor<SeatableTicket> {
     List<SeatableTicket> findByEventId(Integer eventId);
+
     List<SeatableTicket> findBySeatId(Integer seatId);
+
     Optional<SeatableTicket> findByEventIdAndSeatId(Integer eventId, Integer seatId);
+
     boolean existsByEventIdAndSeatId(Integer eventId, Integer seatId);
 }

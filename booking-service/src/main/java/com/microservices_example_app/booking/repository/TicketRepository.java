@@ -7,12 +7,24 @@ import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.stereotype.Repository;
 
 import java.math.BigDecimal;
+import java.util.Arrays;
 import java.util.List;
+
 @Repository
 public interface TicketRepository extends JpaRepository<Ticket, Integer>, JpaSpecificationExecutor<Ticket> {
     List<Ticket> findByEventId(Integer eventId);
+
     List<Ticket> findByUserId(Integer userId);
+
     List<Ticket> findByActive(boolean active);
+
     List<Ticket> findByEventIdAndZone(Integer eventId, Zone zone);
+
     List<Ticket> findByEventIdAndPriceLessThanEqual(Integer eventId, BigDecimal price);
+
+    List<Ticket> findByEventIdInAndUserIdIsNotNull(List<Integer> eventIds);
+
+    List<Ticket> findByEventIdInAndUserIdIsNotNullOrderByIdDesc(List<Integer> eventIds);
+
+    List<Ticket> findByEventIdIn(List<Integer> list);
 }

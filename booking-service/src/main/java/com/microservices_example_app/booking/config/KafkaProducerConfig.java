@@ -4,8 +4,10 @@ import java.util.HashMap;
 import java.util.Map;
 
 
+import com.microservices_example_app.booking.event.DeleteEventEvent;
 import com.microservices_example_app.booking.event.SuccessfulBookingEvent;
 import com.microservices_example_app.booking.event.SuccessfulTicketRefundEvent;
+import com.microservices_example_app.booking.event.UpdateEventEvent;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.springframework.beans.factory.annotation.Value;
@@ -49,5 +51,26 @@ public class KafkaProducerConfig {
     @Bean
     public KafkaTemplate<String, SuccessfulTicketRefundEvent> ticketRefundKafkaTemplate() {
         return new KafkaTemplate<>(ticketRefundProducerFactory());
+    }
+
+
+    @Bean
+    public ProducerFactory<String, DeleteEventEvent> deleteEventProducerFactory() {
+        return new DefaultKafkaProducerFactory<>(buildBaseProps());
+    }
+
+    @Bean
+    public KafkaTemplate<String, DeleteEventEvent> deleteEventKafkaTemplate() {
+        return new KafkaTemplate<>(deleteEventProducerFactory());
+    }
+
+    @Bean
+    public ProducerFactory<String, UpdateEventEvent> updateEventEventProducerFactory() {
+        return new DefaultKafkaProducerFactory<>(buildBaseProps());
+    }
+
+    @Bean
+    public KafkaTemplate<String, UpdateEventEvent> updateEventEventKafkaTemplate() {
+        return new KafkaTemplate<>(updateEventEventProducerFactory());
     }
 }

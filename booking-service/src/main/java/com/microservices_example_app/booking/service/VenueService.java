@@ -1,15 +1,23 @@
 package com.microservices_example_app.booking.service;
 
 import com.microservices_example_app.booking.dto.*;
+import com.microservices_example_app.booking.event.DeleteEventEvent;
+import com.microservices_example_app.booking.event.UpdateEventEvent;
 import com.microservices_example_app.booking.exceptions.NotFoundException;
+import com.microservices_example_app.booking.model.Event;
+import com.microservices_example_app.booking.model.Ticket;
 import com.microservices_example_app.booking.model.Town;
 import com.microservices_example_app.booking.model.Venue;
+import com.microservices_example_app.booking.producers.NotificationKafkaUserProducer;
+import com.microservices_example_app.booking.repository.EventRepository;
+import com.microservices_example_app.booking.repository.TicketRepository;
 import com.microservices_example_app.booking.repository.TownRepository;
 import com.microservices_example_app.booking.repository.VenueRepository;
 import com.microservices_example_app.booking.specification.VenueSpecification;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.annotation.Caching;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.CachePut;
@@ -19,7 +27,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 
-import java.util.List;
+import java.util.*;
 
 @Service
 @RequiredArgsConstructor
@@ -28,6 +36,11 @@ public class VenueService {
 
     private final VenueRepository venueRepository;
     private final TownRepository townRepository;
+    private final EventRepository eventRepository;
+    private final TicketRepository ticketRepository;
+    private final NotificationKafkaUserProducer kafkaUserProducer;
+    @Value("${spring.application.name}")
+    private String serviceName;
 
     @CacheEvict(cacheNames = "venueSearch", allEntries = true)
     @Transactional
@@ -78,10 +91,17 @@ public class VenueService {
         if (id == null || id < 1) {
             throw new IllegalArgumentException("Venue id must be positive");
         }
-
-        if (!venueRepository.existsById(id)) {
-            throw new NotFoundException("Venue not found");
-        }
+        Venue toDelete = venueRepository.findById(id).orElseThrow(() -> new NotFoundException("Venue not found"));
+        var eventList = eventRepository.findByVenueId(id);
+        List<Integer> userIds = ticketRepository.findByEventIdIn(
+                        eventList.stream().map(Event::getId).toList()
+                )
+                .stream()
+                .map(Ticket::getUserId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        kafkaUserProducer.sendDeleteEventEvent(new DeleteEventEvent(eventList.stream().map(Event::getTitle).toList(), serviceName,userIds));
 
         log.info("Deleting venue with id: {}", id);
         venueRepository.deleteById(id);
@@ -108,10 +128,23 @@ public class VenueService {
                 requestDto.getMaxCapacity());
 
         List<Venue> venues = venueRepository.findAll(spec);
+        Set<Event> eventList = new HashSet<>();
+        for (var v : venues) {
+            eventList.addAll(eventRepository.findByVenueId(v.getId()));
+        }
         long count = venues.size();
-
+        List<Integer> userIds = ticketRepository.findByEventIdIn(
+                        eventList.stream().map(Event::getId).toList()
+                )
+                .stream()
+                .map(Ticket::getUserId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
         log.info("Delete by filter amount: {}", count);
         venueRepository.deleteAll(venues);
+
+        kafkaUserProducer.sendDeleteEventEvent(new DeleteEventEvent(eventList.stream().map(Event::getTitle).toList(), serviceName,userIds));
 
         return count;
     }
@@ -151,13 +184,14 @@ public class VenueService {
                 .map(this::toResponseDto)
                 .toList();
     }
-
     @Caching(
             put = {
                     @CachePut(cacheNames = "venuesById", key = "#result.id")
             },
             evict = {
-                    @CacheEvict(cacheNames = "venueSearch", allEntries = true)
+                    @CacheEvict(cacheNames = "venueSearch", allEntries = true),
+                    @CacheEvict(cacheNames = "eventsById", allEntries = true),
+                    @CacheEvict(cacheNames = "eventSearch", allEntries = true)
             }
     )
     @Transactional
@@ -185,17 +219,80 @@ public class VenueService {
             builder.place(venue.getPlace());
         }
 
+        boolean capacityReduced = false;
+        int newCapacity = venue.getCapacity();
+
         if (request.getCapacity() != null) {
-            builder.capacity(request.getCapacity());
+            newCapacity = request.getCapacity();
+            capacityReduced = newCapacity < venue.getCapacity();
+            builder.capacity(newCapacity);
         } else {
             builder.capacity(venue.getCapacity());
         }
 
         log.info("Updating venue with id: {}", venue.getId());
         Venue saved = venueRepository.save(builder.build());
+
+        List<Event> events = eventRepository.findByVenueId(venue.getId());
+        if (!events.isEmpty()) {
+            String changesDescription = buildChangesDescription(request, venue);
+
+            kafkaUserProducer.sendUpdateEventEvent(new UpdateEventEvent(
+                    events.stream().map(Event::getTitle).toList(),
+                    serviceName,
+                    changesDescription,
+                    ticketRepository.findByEventIdIn(events.stream().map(Event::getId).toList()).stream().map(Ticket::getUserId).toList()
+            ));
+            log.info("UpdateEventEvent sent for {} events of venue id={}", events.size(), venue.getId());
+        }
+
+        if (capacityReduced) {
+            List<Integer> eventIds = events.stream().map(Event::getId).toList();
+
+            List<Ticket> soldTickets = ticketRepository
+                    .findByEventIdInAndUserIdIsNotNullOrderByIdDesc(eventIds);
+
+            int totalSold = soldTickets.size();
+            int excessCount = totalSold - newCapacity;
+
+            if (excessCount > 0) {
+                List<Ticket> ticketsToRefund = soldTickets.subList(0, excessCount);
+
+                List<Integer> userIds = ticketsToRefund.stream()
+                        .map(Ticket::getUserId)
+                        .distinct()
+                        .toList();
+
+                ticketsToRefund.forEach(t -> t.setActive(false));
+                ticketRepository.saveAll(ticketsToRefund);
+
+                kafkaUserProducer.sendDeleteEventEvent(new DeleteEventEvent(
+                        ticketsToRefund.stream()
+                                .map(t -> t.getEvent().getTitle())
+                                .distinct()
+                                .toList(),
+                        serviceName,
+                        userIds
+                ));
+
+                log.info("Capacity reduced: {} tickets refunded for venue id={}", excessCount, venue.getId());
+            }
+        }
+
         return toResponseDto(saved);
     }
 
+    private String buildChangesDescription(VenueUpdateRequestDto request, Venue current) {
+        StringBuilder sb = new StringBuilder("Venue updated:\\n");
+        sb.append("Place: ").append(
+                request.getPlace() != null && !request.getPlace().isBlank()
+                        ? request.getPlace() : current.getPlace()
+        ).append("\\n");
+        if (request.getCapacity() != null) {
+            sb.append("Capacity: ").append(request.getCapacity()).append("\\n");
+        }
+        return sb.toString();
+    }
     private VenueResponseDto toResponseDto(Venue venue) {
         return VenueResponseDto.builder()
                 .id(venue.getId())

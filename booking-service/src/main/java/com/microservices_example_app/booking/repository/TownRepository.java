@@ -6,8 +6,10 @@ import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.stereotype.Repository;
 
 import java.util.Optional;
+
 @Repository
 public interface TownRepository extends JpaRepository<Town, Integer> {
     Optional<Town> findByNameIgnoreCase(String name);
+
     boolean existsByNameIgnoreCase(String name);
 }

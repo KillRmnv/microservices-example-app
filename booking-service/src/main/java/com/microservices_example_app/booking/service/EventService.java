@@ -1,15 +1,23 @@
 package com.microservices_example_app.booking.service;
 
 import com.microservices_example_app.booking.dto.*;
+import com.microservices_example_app.booking.event.DeleteEventEvent;
+import com.microservices_example_app.booking.event.UpdateEventEvent;
 import com.microservices_example_app.booking.exceptions.NotFoundException;
 import com.microservices_example_app.booking.model.Event;
+import com.microservices_example_app.booking.model.Ticket;
 import com.microservices_example_app.booking.model.Venue;
+import com.microservices_example_app.booking.producers.NotificationKafkaBookingProducer;
+import com.microservices_example_app.booking.producers.NotificationKafkaUserProducer;
 import com.microservices_example_app.booking.repository.EventRepository;
+import com.microservices_example_app.booking.repository.TicketRepository;
 import com.microservices_example_app.booking.repository.VenueRepository;
 import com.microservices_example_app.booking.specification.EventSpecification;
+import com.microservices_example_app.booking.utils.JwtRequestUserExtractor;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.annotation.Caching;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.CachePut;
@@ -19,6 +27,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
@@ -28,6 +37,10 @@ public class EventService {
 
     private final EventRepository eventRepository;
     private final VenueRepository venueRepository;
+    private final NotificationKafkaUserProducer kafkaUserProducer;
+    private final TicketRepository ticketRepository;
+    @Value("${spring.application.name}")
+    private String serviceName;
 
     @CacheEvict(cacheNames = "eventSearch", allEntries = true)
     @Transactional
@@ -88,13 +101,17 @@ public class EventService {
         if (id == null || id < 1) {
             throw new IllegalArgumentException("Event id must be positive");
         }
-
-        if (!eventRepository.existsById(id)) {
+        Event event = eventRepository.findById(id).orElseThrow(() -> {
             throw new NotFoundException("Event not found");
-        }
+        });
+
 
         log.info("Deleting event with id: {}", id);
+        DeleteEventEvent deleteEventEvent = new DeleteEventEvent(List.of(event.getTitle()), serviceName, ticketRepository.findByEventId(event.getId()).stream().
+                map(Ticket::getUserId).toList());
         eventRepository.deleteById(id);
+
+        kafkaUserProducer.sendDeleteEventEvent(deleteEventEvent);
     }
 
     @Caching(evict = {@CacheEvict(cacheNames = "eventsById", allEntries = true), @CacheEvict(cacheNames = "eventSearch", allEntries = true)})
@@ -108,8 +125,17 @@ public class EventService {
         long count = events.size();
 
         log.info("Delete by filter amount: {}", count);
+        List<String> titles = new ArrayList<>();
+        List<Integer> userIds = new ArrayList<>();
+        for (var e : events) {
+            titles.add(e.getTitle());
+            userIds.addAll(ticketRepository.findByEventId(e.getId()).stream().map(Ticket::getUserId).toList());
+        }
+        DeleteEventEvent deleteEventEvent = new DeleteEventEvent(titles, serviceName, userIds);
+
         eventRepository.deleteAll(events);
 
+        kafkaUserProducer.sendDeleteEventEvent(deleteEventEvent);
         return count;
     }
 
@@ -123,41 +149,58 @@ public class EventService {
         Event event = eventRepository.findById(request.getId()).orElseThrow(() -> new NotFoundException("No event with id=" + request.getId()));
 
         var builder = Event.builder().id(event.getId());
-
+        StringBuilder stringBuilder = new StringBuilder("Actual info:\n");
         if (request.getTitle() != null && !request.getTitle().isBlank()) {
             builder.title(request.getTitle());
+            stringBuilder.append("Title:").append(request.getTitle()).append("\n");
         } else {
             builder.title(event.getTitle());
+            stringBuilder.append("Title:").append(event.getTitle()).append("\n");
         }
 
         if (request.getStartsAt() != null) {
             builder.startsAt(request.getStartsAt());
+            stringBuilder.append("Date:").append(request.getStartsAt()).append("\n");
         } else {
             builder.startsAt(event.getStartsAt());
+            stringBuilder.append("Date:").append(event.getStartsAt()).append("\n");
         }
 
         if (request.getEndsAt() != null) {
             builder.endsAt(request.getEndsAt());
+            stringBuilder.append("Ends:").append(request.getEndsAt()).append("\n");
         } else {
             builder.endsAt(event.getEndsAt());
+            stringBuilder.append("Ends:").append(event.getEndsAt()).append("\n");
         }
 
         if (request.getVenueId() != null) {
             Venue venue = venueRepository.findById(request.getVenueId()).orElseThrow(() -> new NotFoundException("Venue not found: " + request.getVenueId()));
             builder.venue(venue);
+            stringBuilder.append("Venue:").append(venue.getPlace()).append("\n");
         } else {
             builder.venue(event.getVenue());
+            stringBuilder.append("Venue:").append(event.getVenue().getPlace()).append("\n");
         }
 
         if (request.getAdmissionMode() != null) {
             builder.admissionMode(request.getAdmissionMode());
+            stringBuilder.append("Admission:").append(request.getAdmissionMode()).append("\n");
         } else {
             builder.admissionMode(event.getAdmissionMode());
+            stringBuilder.append("Admission:").append(event.getAdmissionMode()).append("\n");
         }
 
         log.info("Updating event with id: {}", event.getId());
-        Event saved = eventRepository.save(builder.build());
-        return toResponseDto(saved);
+        Event toSave=builder.build();
+        UpdateEventEvent updateEventEvent = new UpdateEventEvent(
+                List.of(toSave.getTitle()), serviceName, stringBuilder.toString(),
+                ticketRepository.findByEventId(toSave.getId()).stream().map(Ticket::getUserId).toList());
+        toSave = eventRepository.save(toSave);
+
+        kafkaUserProducer.sendUpdateEventEvent(updateEventEvent);
+
+        return toResponseDto(toSave);
     }
 
     private EventResponseDto toResponseDto(Event event) {
