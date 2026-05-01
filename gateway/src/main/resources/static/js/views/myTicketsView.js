@@ -152,9 +152,9 @@ export const MyTicketsView = {
 
         try {
             if (ticketType === 'seatable') {
-                await API.deleteSeatableTicket(ticketId);
+                await API.refundSeatableTicket(ticketId);
             } else {
-                await API.deleteTicket(ticketId);
+                await API.refundTicket(ticketId);
             }
             App.showAlert('Билет успешно возвращен', 'success');
             await MyTicketsView.render();

@@ -286,6 +286,12 @@ const API = {
 
     async updateSeatableTicket(data) {
         return this.put(`/booking/seatable-tickets/${data.id}`, data);
+    },
+    async refundTicket(id) {
+        return this.post(`/booking/tickets/${id}/refund`);
+    },
+    async refundSeatableTicket(id) {
+        return this.post(`/booking/seatable-tickets/${id}/refund`);
     }
 };
 

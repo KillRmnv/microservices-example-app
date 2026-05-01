@@ -43,13 +43,12 @@ const App = {
         const body = document.body;
         const authSection = document.getElementById('auth-section');
 
-        // Clear existing role classes
         body.classList.remove('logged-in', 'role-admin', 'role-event_manager', 'role-customer');
 
         if (Auth.isLoggedIn()) {
             const role = Auth.getUserRole();
             console.log('[App] updateAuthUI - User role from storage:', role);
-            
+
             body.classList.add('logged-in');
             body.classList.add(`role-${role.toLowerCase()}`);
             console.log('[App] updateAuthUI - Applied CSS class: role-' + role.toLowerCase());
@@ -75,10 +74,14 @@ const App = {
     },
 
     async handleRoute() {
-        const hash = window.location.hash.slice(1) || '/';
+        const fullHash = window.location.hash.slice(1) || '/';
+        // Отделяем path от query string
+        const [path] = fullHash.split('?');
+        const hash = path || '/';
+
         const content = document.getElementById('content');
         const loading = document.getElementById('loading');
-        
+
         content.innerHTML = '';
         loading.classList.remove('hidden');
 
@@ -178,5 +181,4 @@ const App = {
 
 document.addEventListener('DOMContentLoaded', () => App.init());
 
-// Make App globally accessible to dynamically imported modules
 window.App = App;
