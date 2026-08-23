@@ -86,7 +86,7 @@ export const HomeView = {
             this.renderEvents(events);
             this.renderPagination();
         } catch (error) {
-            grid.innerHTML = `<div class="alert alert-error">Ошибка загрузки: ${error.message}</div>`;
+            grid.innerHTML = `<div class="alert alert-error">Ошибка загрузки: ${App.escapeHtml(error.message)}</div>`;
         }
     },
 

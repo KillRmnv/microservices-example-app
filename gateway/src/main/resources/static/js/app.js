@@ -100,7 +100,7 @@ const App = {
             }
         } catch (error) {
             console.error('Route error:', error);
-            content.innerHTML = `<div class="alert alert-error">Ошибка загрузки: ${error.message}</div>`;
+            content.innerHTML = `<div class="alert alert-error">Ошибка загрузки: ${App.escapeHtml(error.message)}</div>`;
         } finally {
             loading.classList.add('hidden');
         }

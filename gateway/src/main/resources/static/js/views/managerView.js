@@ -78,7 +78,7 @@ export const ManagerView = {
             const events = await API.searchEvents(filter, 1, 100);
             ManagerView.renderEventsTable(events);
         } catch (error) {
-            container.innerHTML = `<div class="alert alert-error">Ошибка: ${error.message}</div>`;
+            container.innerHTML = `<div class="alert alert-error">Ошибка: ${App.escapeHtml(error.message)}</div>`;
         }
     },
 
@@ -321,7 +321,7 @@ export const ManagerView = {
             const venues = await API.searchVenues(filter, 1, 100);
             ManagerView.renderVenuesTable(venues);
         } catch (error) {
-            container.innerHTML = `<div class="alert alert-error">Ошибка: ${error.message}</div>`;
+            container.innerHTML = `<div class="alert alert-error">Ошибка: ${App.escapeHtml(error.message)}</div>`;
         }
     },
 

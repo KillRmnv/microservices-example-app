@@ -36,7 +36,7 @@ export const MyTicketsView = {
             this.renderTickets(tickets, seatableTickets);
         } catch (error) {
             document.getElementById('tickets-loading').innerHTML = `
-                <div class="alert alert-error">Ошибка загрузки: ${error.message}</div>
+                <div class="alert alert-error">Ошибка загрузки: ${App.escapeHtml(error.message)}</div>
             `;
         }
     },

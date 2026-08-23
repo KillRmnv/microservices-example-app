@@ -40,7 +40,7 @@ export const AdminView = {
             const users = await API.searchUsers(filter);
             this.renderUsersTable(users);
         } catch (error) {
-            container.innerHTML = `<div class="alert alert-error">Ошибка: ${error.message}</div>`;
+            container.innerHTML = `<div class="alert alert-error">Ошибка: ${App.escapeHtml(error.message)}</div>`;
         }
     },
 
@@ -231,7 +231,7 @@ export const AdminView = {
             const towns = await API.getTowns();
             this.renderTownsTable(towns);
         } catch (error) {
-            container.innerHTML = `<div class="alert alert-error">Ошибка: ${error.message}</div>`;
+            container.innerHTML = `<div class="alert alert-error">Ошибка: ${App.escapeHtml(error.message)}</div>`;
         }
     },
 
