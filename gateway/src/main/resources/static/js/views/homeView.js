@@ -82,8 +82,15 @@ export const HomeView = {
         grid.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
 
         try {
-            const events = await API.searchEvents(this.filter, this.currentPage, this.pageSize);
-            this.renderEvents(events);
+            const events = await API.searchEvents(this.filter, this.currentPage, this.pageSize + 1);
+            const hasMore = events.length > this.pageSize;
+            const pageEvents = hasMore ? events.slice(0, this.pageSize) : events;
+            this.renderEvents(pageEvents);
+            if (hasMore) {
+                this.totalPages = Math.max(this.totalPages, this.currentPage + 1);
+            } else if (this.currentPage === 1) {
+                this.totalPages = 1;
+            }
             this.renderPagination();
         } catch (error) {
             grid.innerHTML = `<div class="alert alert-error">Ошибка загрузки: ${App.escapeHtml(error.message)}</div>`;
