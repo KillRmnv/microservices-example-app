@@ -49,7 +49,7 @@ public class UserSpecification {
             @Override
             public @Nullable Predicate toPredicate(Root<User> root, CriteriaQuery<?> query, CriteriaBuilder criteriaBuilder) {
                 if(role!=null)
-                    return criteriaBuilder.equal(root.get("role"),role);
+                    return criteriaBuilder.equal(root.get("userRole"),role);
                 return null;
             }
         };

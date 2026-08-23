@@ -300,13 +300,13 @@ public class VenueService {
     }
 
     private String buildChangesDescription(VenueUpdateRequestDto request, Venue current) {
-        StringBuilder sb = new StringBuilder("Venue updated:\\n");
+        StringBuilder sb = new StringBuilder("Venue updated:\n");
         sb.append("Place: ").append(
                 request.getPlace() != null && !request.getPlace().isBlank()
                         ? request.getPlace() : current.getPlace()
-        ).append("\\n");
+        ).append("\n");
         if (request.getCapacity() != null) {
-            sb.append("Capacity: ").append(request.getCapacity()).append("\\n");
+            sb.append("Capacity: ").append(request.getCapacity()).append("\n");
         }
         return sb.toString();
     }
