@@ -122,7 +122,7 @@ public class TicketService {
         String email = jwtRequestUserExtractor.extractEmail();
         String username = jwtRequestUserExtractor.extractUsername();
 
-        if (!ticket.getUserId().equals(currentUserId)) {
+        if (ticket.getUserId() == null || !ticket.getUserId().equals(currentUserId)) {
             log.warn("User id={} attempted to delete foreign ticket id={}", currentUserId, id);
             throw new IllegalArgumentException("You can delete only your own ticket");
         }
@@ -212,7 +212,7 @@ public class TicketService {
             );
             log.info("Booking event sent: ticket id={}, userId={}", saved.getId(), request.getUserId());
         }else{
-            log.info("2");
+            log.debug("No user change for ticket id={}", saved.getId());
         }
 
         return toResponseDto(saved);
@@ -230,7 +230,7 @@ public class TicketService {
         String email = jwtRequestUserExtractor.extractEmail();
         String username = jwtRequestUserExtractor.extractUsername();
 
-        if (!ticket.getUserId().equals(currentUserId)) {
+        if (ticket.getUserId() == null || !ticket.getUserId().equals(currentUserId)) {
             log.warn("User id={} attempted to refund foreign ticket id={}", currentUserId, id);
             throw new IllegalArgumentException("You can refund only your own ticket");
         }
@@ -240,6 +240,7 @@ public class TicketService {
         }
 
 
+        ticket.setActive(false);
         ticket.setUserId(null);
         Ticket saved = ticketRepository.save(ticket);
 
