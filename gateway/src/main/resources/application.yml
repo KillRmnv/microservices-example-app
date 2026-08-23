@@ -44,7 +44,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,gateway,env,configprops
+        include: health,info,gateway
 logging:
   level:
     org.springframework.cloud.gateway: INFO
