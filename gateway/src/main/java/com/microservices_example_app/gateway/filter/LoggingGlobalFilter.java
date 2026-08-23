@@ -22,7 +22,6 @@ public class LoggingGlobalFilter implements GlobalFilter, Ordered {
         
         log.info("                      GATEWAY REQUEST                      ");
         log.info("Method: {}, Path: {}", method, path);
-        log.info("Headers: {}", exchange.getRequest().getHeaders());
         
         return chain.filter(exchange).then(
                 Mono.fromRunnable(() -> {
