@@ -23,16 +23,17 @@ public class AuthenticationController {
     private RoleRepository roleDao;
 
 
-    @GetMapping("/forget-password")
-    public int forgetPassword(@RequestParam @Email String email){
+    @PostMapping("/forget-password")
+    public ResponseEntity<Void> forgetPassword(@RequestParam @Email String email){
          userService.restorePassword(email);
-        return HttpServletResponse.SC_OK;
+        return ResponseEntity.ok().build();
     }
 
     @PostMapping("/reset-password")
-    public void resetPassword(@RequestParam String token, @RequestParam String newPassword) {
+    public ResponseEntity<Void> resetPassword(@RequestBody PasswordResetRequestDto request) {
         log.info("Password reset request with token");
-        userService.resetPassword(token, newPassword);
+        userService.resetPassword(request.getToken(), request.getNewPassword());
+        return ResponseEntity.ok().build();
     }
 
     @PostMapping("/register")
