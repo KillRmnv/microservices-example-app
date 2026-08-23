@@ -1,7 +1,7 @@
 ext {
     set('springBootVersion', '4.0.5')
     set('springDependencyManagementVersion', '1.1.7')
-    set('javaVersion', 25)
+    set('javaVersion', 21)
 
     set('lombokVersion', '1.18.42')
     set('jackson3Version', '3.1.0')
