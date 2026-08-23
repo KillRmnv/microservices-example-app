@@ -99,7 +99,7 @@ public class SeatableTicketService {
         String email = jwtRequestUserExtractor.extractEmail();
         String username = jwtRequestUserExtractor.extractUsername();
 
-        if (!ticket.getUserId().equals(currentUserId)) {
+        if (currentUserId == null || !currentUserId.equals(ticket.getUserId())) {
             log.warn("User id={} attempted to delete foreign seatable ticket id={}", currentUserId, id);
             throw new IllegalArgumentException("You can delete only your own seatable ticket");
         }
@@ -220,7 +220,7 @@ public class SeatableTicketService {
         String email = jwtRequestUserExtractor.extractEmail();
         String username = jwtRequestUserExtractor.extractUsername();
 
-        if (!ticket.getUserId().equals(currentUserId)) {
+        if (currentUserId == null || !currentUserId.equals(ticket.getUserId())) {
             log.warn("User id={} attempted to refund foreign seatable ticket id={}", currentUserId, id);
             throw new IllegalArgumentException("You can refund only your own seatable ticket");
         }
