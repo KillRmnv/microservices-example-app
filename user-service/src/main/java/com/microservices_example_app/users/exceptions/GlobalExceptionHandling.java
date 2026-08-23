@@ -59,6 +59,14 @@ public class GlobalExceptionHandling {
                         "errors", errors
                 ));
     }
+    @ExceptionHandler(UserNotFoundException.class)
+    public ResponseEntity<Map<String,Object>> userNotFoundException(UserNotFoundException ex){
+        log.warn("UserNotFoundException:{}",ex.getMessage());
+        return ResponseEntity.
+                status(HttpStatus.NOT_FOUND).
+                body(Map.of("message",ex.getMessage(),
+                        "status",HttpStatus.NOT_FOUND));
+    }
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String,Object>> unexpectedException(Exception ex){
         log.warn("Unknown exception:{}",ex.getMessage());
