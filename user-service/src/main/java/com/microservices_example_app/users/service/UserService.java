@@ -13,10 +13,8 @@ import com.microservices_example_app.users.producers.NotificationKafkaAuthentica
 import com.microservices_example_app.users.repository.RoleRepository;
 import com.microservices_example_app.users.repository.UserRepository;
 import com.microservices_example_app.users.utils.JwtUtil;
-import lombok.AllArgsConstructor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.kafka.common.protocol.types.Field;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -47,7 +45,7 @@ public  class UserService {
         Role customerRole = roleRepository.findByName(role)
                 .orElseThrow(() -> {
                     log.warn("Registration failed: role not found, role={}", role);
-                    return new IllegalStateException("Role not found");
+                    return new IllegalArgumentException("Role not found: " + role);
                 });
 
         String hash = passwordService.hash(password);
@@ -265,7 +263,7 @@ public  class UserService {
     }
 
     @Transactional(readOnly = true)
-    public List<UserResponseDto> searchByFilter(UserSerchRequestDto filter) {
+    public List<UserResponseDto> searchByFilter(UserSearchRequestDto filter) {
         log.debug("Searching users by filter: email={}, username={}, role={}",
                 filter.getEmail(), filter.getUsername(), filter.getRole());
 
@@ -291,7 +289,7 @@ public  class UserService {
     }
 
     @Transactional(readOnly = true)
-    public List<UserResponseDto> searchByFilter(UserSerchRequestDto filter, int page, int size) {
+    public List<UserResponseDto> searchByFilter(UserSearchRequestDto filter, int page, int size) {
         log.debug("Searching users by filter with page: email={}, username={}, role={}, page={}, size={}",
                 filter.getEmail(), filter.getUsername(), filter.getRole(), page, size);
 
@@ -381,7 +379,7 @@ public  class UserService {
             builder.passwordHash(user.getPasswordHash());
         }
         //TODO:fix hardcode
-        if(request.getRole().equals("ADMIN")){
+        if("ADMIN".equals(request.getRole())){
             builder.isSystem(request.getIsSystem());
         }else{
             builder.isSystem(user.getIsSystem());
