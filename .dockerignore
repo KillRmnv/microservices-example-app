@@ -1,0 +1,7 @@
+.git
+.idea
+**/build
+**/.gradle
+**/*.iml
+**/.env
+**/.env.example
