@@ -68,6 +68,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      kafka:
+        condition: service_started
     ports:
       - "${USER_APPLICATION_PORT:-8081}"
 
@@ -83,6 +85,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      kafka:
+        condition: service_started
     ports:
       - "${BOOKING_APPLICATION_PORT:-8082}"
 
