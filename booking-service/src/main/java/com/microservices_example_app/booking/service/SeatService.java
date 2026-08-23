@@ -136,7 +136,7 @@ public class SeatService {
         } else {
             builder.venue(seat.getVenue());
         }
-        log.info("Update user with id:{}", seat.getId());
+        log.info("Update seat with id:{}", seat.getId());
         Seat saved = seatRepository.save(builder.build());
         return toResponseDto(saved);
     }
