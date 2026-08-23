@@ -74,7 +74,7 @@ public class NotificationKafkaListener {
 
     @KafkaListener(
             topics = "${notification.kafka.topic.user-lifecycle}",
-            groupId = "${spring.kafka.consumer.group-id}",
+            groupId = "${spring.kafka.consumer.group-id}-deleted",
             containerFactory = "userDeletedKafkaListenerContainerFactory"
     )
     public void handleUserDeleted(UserDeletedEvent event) {
@@ -98,7 +98,7 @@ public class NotificationKafkaListener {
 
     @KafkaListener(
             topics = "${notification.kafka.topic.user-lifecycle}",
-            groupId = "${spring.kafka.consumer.group-id}",
+            groupId = "${spring.kafka.consumer.group-id}-updated",
             containerFactory = "userUpdatedKafkaListenerContainerFactory"
     )
     public void handleUserUpdated(UserUpdatedEvent event) {
@@ -120,12 +120,5 @@ public class NotificationKafkaListener {
         }
     }
 
-//    @KafkaListener(
-//            topics = "${notification.kafka.topic.authentication}",
-//            groupId = "${spring.kafka.consumer.group-id}",
-//            containerFactory = "authenticationKafkaListenerContainerFactory"
-//    )
-//    public void handleUnknown(Object event) {
-//        log.warn("Received unknown authentication event type: {}", event);
-//    }
+
 }

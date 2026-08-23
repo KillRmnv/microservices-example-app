@@ -17,23 +17,31 @@ public class MassMailingListener {
 
     @KafkaListener(
             topics = "${notification.kafka.topic.mass-mailing}",
-            groupId = "${spring.kafka.consumer.group-id}",
+            groupId = "${spring.kafka.consumer.group-id}-delete",
             containerFactory = "massDeleteKafkaListenerContainerFactory"
     )
     public void handleMassDeleteEvent(MassDeleteEventMailingEvent event) {
         log.info("Received MassDeleteEventMailingEvent: {} users, sourceService={}",
                 event.getUsers().size(), event.getSourceService());
-        massMailingEmailService.sendMassDeleteEventMailing(event);
+        try {
+            massMailingEmailService.sendMassDeleteEventMailing(event);
+        } catch (Exception e) {
+            log.error("Failed to send mass delete mailing: {}", e.getMessage(), e);
+        }
     }
 
     @KafkaListener(
             topics = "${notification.kafka.topic.mass-mailing}",
-            groupId = "${spring.kafka.consumer.group-id}",
+            groupId = "${spring.kafka.consumer.group-id}-update",
             containerFactory = "massUpdateKafkaListenerContainerFactory"
     )
     public void handleMassUpdateEvent(MassUpdateEventMailingEvent event) {
         log.info("Received MassUpdateEventMailingEvent: {} users, sourceService={}",
                 event.getUsers().size(), event.getSourceService());
-        massMailingEmailService.sendMassUpdateEventMailing(event);
+        try {
+            massMailingEmailService.sendMassUpdateEventMailing(event);
+        } catch (Exception e) {
+            log.error("Failed to send mass update mailing: {}", e.getMessage(), e);
+        }
     }
 }
