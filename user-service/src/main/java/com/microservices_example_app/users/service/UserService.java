@@ -218,6 +218,9 @@ public  class UserService {
 
         userDao.save(updatedUser);
         log.info("User entity updated successfully: id={}", updatedUser.getId());
+
+        UserUpdatedEvent event = new UserUpdatedEvent(updatedUser.getId(), updatedUser.getEmail(), updatedUser.getUsername(), updatedUser.getUserRole().getName(), serviceName);
+        authenticationProducer.sendUserUpdatedEvent(event);
     }
 
     @Transactional
@@ -257,6 +260,12 @@ public  class UserService {
         List<User> users = userDao.findAll(spec);
         long count = users.size();
         userDao.deleteAll(users);
+
+        users.forEach(u -> {
+            authenticationProducer.sendUserDeletedEvent(
+                    new UserDeletedEvent(u.getId(), u.getEmail(), u.getUsername(), serviceName)
+            );
+        });
 
         log.info("Delete by filter completed: deleted {} users", count);
         return count;
