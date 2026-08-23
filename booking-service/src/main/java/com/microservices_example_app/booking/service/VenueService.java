@@ -145,10 +145,8 @@ public class VenueService {
                 requestDto.getMaxCapacity());
 
         List<Venue> venues = venueRepository.findAll(spec);
-        Set<Event> eventList = new HashSet<>();
-        for (var v : venues) {
-            eventList.addAll(eventRepository.findByVenueId(v.getId()));
-        }
+        List<Integer> venueIds = venues.stream().map(Venue::getId).toList();
+        Set<Event> eventList = new HashSet<>(eventRepository.findByVenueIdIn(venueIds));
         long count = venues.size();
         List<Integer> userIds = ticketRepository.findByEventIdIn(
                         eventList.stream().map(Event::getId).toList()

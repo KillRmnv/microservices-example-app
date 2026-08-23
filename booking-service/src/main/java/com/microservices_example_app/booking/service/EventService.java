@@ -31,6 +31,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 @Service
 @RequiredArgsConstructor
@@ -144,12 +145,13 @@ public class EventService {
         long count = events.size();
 
         log.info("Delete by filter amount: {}", count);
-        List<String> titles = new ArrayList<>();
-        List<Integer> userIds = new ArrayList<>();
-        for (var e : events) {
-            titles.add(e.getTitle());
-            userIds.addAll(ticketRepository.findByEventId(e.getId()).stream().map(Ticket::getUserId).toList());
-        }
+        List<String> titles = events.stream().map(Event::getTitle).toList();
+        List<Integer> userIds = ticketRepository.findByEventIdIn(events.stream().map(Event::getId).toList())
+                .stream()
+                .map(Ticket::getUserId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
         DeleteEventEvent deleteEventEvent = new DeleteEventEvent(titles, serviceName, userIds);
         entityManager.clear();
         eventRepository.deleteAll(events);

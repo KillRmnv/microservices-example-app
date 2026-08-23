@@ -1,6 +1,6 @@
 # Microservices Example App - Event Ticket Sales System
 
-A fully functional microservices-based event ticketing platform built with Java 25, Spring Boot 4.0.5, and Vanilla JavaScript. This project demonstrates modern microservice architecture patterns including event-driven communication, JWT authentication, role-based access control, and containerized deployment with Docker Compose.
+A fully functional microservices-based event ticketing platform built with Java 21, Spring Boot 4.0.5, and Vanilla JavaScript. This project demonstrates modern microservice architecture patterns including event-driven communication, JWT authentication, role-based access control, and containerized deployment with Docker Compose.
 
 ## Table of Contents
 - [Architecture Overview](#architecture-overview)
@@ -38,7 +38,7 @@ The system follows a microservice architecture with 4 core services behind an AP
 ## Tech Stack
 
 ### Backend
-- **Java 25** (uncommon version—requires verification before building)
+- **Java 21** (set in `gradle/version.gradle`)
 - **Spring Boot 4.0.5**: Core framework
 - **Spring Cloud Gateway**: API gateway (gateway service, uses WebFlux)
 - **Spring Security**: Authentication and authorization (JWT via JJWT 0.12.3)
@@ -82,7 +82,7 @@ microservices-example-app/
 
 ## Prerequisites
 
-- Java 25 JDK (for local development)
+- Java 21 JDK (for local development)
 - Docker & Docker Compose
 - Gradle 8+ (or use included wrappers `./gradlew`)
 - (Optional) PostgreSQL 16, Redis 7, Kafka 7.5 for local development without Docker
