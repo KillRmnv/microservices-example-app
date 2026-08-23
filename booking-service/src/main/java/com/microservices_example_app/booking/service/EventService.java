@@ -135,7 +135,7 @@ public class EventService {
                 and(EventSpecification.hasVenueId(requestDto.getVenueId())).
                 and(EventSpecification.hasAdmissionMode(requestDto.getAdmissionMode())).
                 and(EventSpecification.startsAfter(requestDto.getStartsAt())).
-                and(EventSpecification.startsBefore(requestDto.getStartsAt()));
+                and(EventSpecification.startsBefore(requestDto.getEndsAt()));
 
         log.debug("Delete by filter: title={}, venueId={}, admissionMode={}, startsAt={}", requestDto.getTitle(),
                 requestDto.getVenueId(), requestDto.getAdmissionMode(), requestDto.getStartsAt());
