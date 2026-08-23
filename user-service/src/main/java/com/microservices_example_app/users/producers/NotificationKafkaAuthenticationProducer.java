@@ -28,18 +28,34 @@ public class NotificationKafkaAuthenticationProducer {
     private final KafkaTemplate<String, UserUpdatedEvent> userUpdatedKafkaTemplate;
 
     public void sendEmailToRestorePassword(ForgetPasswordEvent forgetPasswordEvent) {
-        resetPasswordKafkaTemplate.send(forgetPasswordTopic, forgetPasswordEvent.getEmail(), forgetPasswordEvent);
+        resetPasswordKafkaTemplate.send(forgetPasswordTopic, forgetPasswordEvent.getEmail(), forgetPasswordEvent)
+                .whenComplete((result, ex) -> {
+                    if (ex != null) log.error("Failed to send forget-password event: {}", ex.getMessage());
+                    else log.debug("Forget-password event sent to partition={}", result.getRecordMetadata().partition());
+                });
     }
 
     public void sendSuccessfulRegistrationEmail(SuccessfulRegistrationEmailEvent successfulRegistrationEmailEvent) {
-        registrationKafkaTemplate.send(authenticationClientTopic, successfulRegistrationEmailEvent.getEmail(), successfulRegistrationEmailEvent);
+        registrationKafkaTemplate.send(authenticationClientTopic, successfulRegistrationEmailEvent.getEmail(), successfulRegistrationEmailEvent)
+                .whenComplete((result, ex) -> {
+                    if (ex != null) log.error("Failed to send registration event: {}", ex.getMessage());
+                    else log.debug("Registration event sent to partition={}", result.getRecordMetadata().partition());
+                });
     }
 
     public void sendUserDeletedEvent(UserDeletedEvent event) {
-        userDeletedKafkaTemplate.send(userLifecycleTopic, event.getUserId().toString(), event);
+        userDeletedKafkaTemplate.send(userLifecycleTopic, event.getUserId().toString(), event)
+                .whenComplete((result, ex) -> {
+                    if (ex != null) log.error("Failed to send user-deleted event: {}", ex.getMessage());
+                    else log.debug("User-deleted event sent to partition={}", result.getRecordMetadata().partition());
+                });
     }
 
     public void sendUserUpdatedEvent(UserUpdatedEvent event) {
-        userUpdatedKafkaTemplate.send(userLifecycleTopic, event.getUserId().toString(), event);
+        userUpdatedKafkaTemplate.send(userLifecycleTopic, event.getUserId().toString(), event)
+                .whenComplete((result, ex) -> {
+                    if (ex != null) log.error("Failed to send user-updated event: {}", ex.getMessage());
+                    else log.debug("User-updated event sent to partition={}", result.getRecordMetadata().partition());
+                });
     }
 }
