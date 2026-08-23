@@ -243,6 +243,9 @@ public class SeatableTicketService {
     @Transactional
     public long deleteByFilter(SeatableTicketDeleteRequestDto requestDto) {
         Integer currentUserId = jwtRequestUserExtractor.extractUserId();
+        if (currentUserId == null) {
+            throw new IllegalArgumentException("Cannot delete by filter: user ID not available from token");
+        }
 
         Specification<SeatableTicket> spec = Specification
                 .where(SeatableTicketSpecification.hasEventId(requestDto.getEventId()))
