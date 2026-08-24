@@ -40,6 +40,7 @@ public class TownService {
     @Value("${spring.application.name}")
     private String serviceName;
 
+    @Transactional
     public TownResponseDto create(TownCreateRequestDto requestDto) {
         log.info("Creating town: {}", requestDto.getName());
         Town town = Town.builder()
@@ -48,6 +49,7 @@ public class TownService {
         return toResponseDto(townRepository.save(town));
     }
 
+    @Transactional
     public TownResponseDto getById(Integer id) {
         log.info("Fetching town with id: {}", id);
         Town town = townRepository.findById(id)
@@ -55,6 +57,7 @@ public class TownService {
         return toResponseDto(town);
     }
 
+    @Transactional
     public List<TownResponseDto> getAll() {
         log.info("Fetching all towns");
         return townRepository.findAll()
@@ -63,6 +66,7 @@ public class TownService {
                 .toList();
     }
 
+    @Transactional
     public TownResponseDto updateTownById(TownUpdateRequestDto requestDto) {
         log.info("Updating town with id: {}", requestDto.getId());
         Town town = townRepository.findById(requestDto.getId())
