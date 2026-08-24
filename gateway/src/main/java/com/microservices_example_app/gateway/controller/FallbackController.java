@@ -12,7 +12,7 @@ import java.util.Map;
 @RequestMapping("/fallback")
 public class FallbackController {
 
-    @GetMapping("/users")
+    @RequestMapping("/users")
     public ResponseEntity<?> usersFallback() {
         log.warn("Users service is unavailable, triggering fallback");
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
@@ -23,7 +23,7 @@ public class FallbackController {
                 ));
     }
 
-    @GetMapping("/booking")
+    @RequestMapping("/booking")
     public ResponseEntity<?> bookingFallback() {
         log.warn("Booking service is unavailable, triggering fallback");
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)

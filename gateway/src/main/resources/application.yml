@@ -17,11 +17,39 @@ spring:
               uri: http://user-service:8081
               predicates:
                 - Path=/users/**
+              filters:
+                - name: CircuitBreaker
+                  args:
+                    name: userServiceCircuitBreaker
+                    fallbackUri: forward:/fallback/users
+                - name: Retry
+                  args:
+                    retries: 2
+                    backoff:
+                      firstBackoff: 500ms
+                      maxBackoff: 1s
+              metadata:
+                connect-timeout: 3000
+                response-timeout: 5s
 
             - id: booking-service
               uri: http://booking-service:8082
               predicates:
                 - Path=/booking/**
+              filters:
+                - name: CircuitBreaker
+                  args:
+                    name: bookingServiceCircuitBreaker
+                    fallbackUri: forward:/fallback/booking
+                - name: Retry
+                  args:
+                    retries: 2
+                    backoff:
+                      firstBackoff: 500ms
+                      maxBackoff: 1s
+              metadata:
+                connect-timeout: 3000
+                response-timeout: 5s
           globalcors:
             add-to-simple-url-handler-mapping: true
             cors-configurations:
@@ -35,7 +63,12 @@ spring:
                   - DELETE
                   - OPTIONS
                 allowedHeaders:
-                  - "*"
+                  - Authorization
+                  - Content-Type
+                  - Accept
+                  - X-User-Name
+                  - X-User-Role
+                  - X-User-Email
                 allowCredentials: true
                 maxAge: 3600
 jwt:
@@ -44,7 +77,35 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,gateway
+        include: health,info
+  health:
+    circuitbreakers:
+      enabled: true
+resilience4j:
+  circuitbreaker:
+    instances:
+      userServiceCircuitBreaker:
+        register-health-indicator: true
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
+        automatic-transition-from-open-to-half-open-enabled: true
+      bookingServiceCircuitBreaker:
+        register-health-indicator: true
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
+        automatic-transition-from-open-to-half-open-enabled: true
+  timelimiter:
+    instances:
+      userServiceCircuitBreaker:
+        timeout-duration: 5s
+      bookingServiceCircuitBreaker:
+        timeout-duration: 5s
 logging:
   level:
     org.springframework.cloud.gateway: INFO
