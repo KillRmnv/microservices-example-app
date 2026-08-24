@@ -22,6 +22,7 @@ public class UserController {
     }
 
     @GetMapping
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<List<UserResponseDto>> getAll() {
         log.info("Request received: get all users");
         List<UserResponseDto> users = userService.getAll();
@@ -30,6 +31,7 @@ public class UserController {
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<UserResponseDto> getById(@PathVariable int id) {
         log.info("Request received: get user by id={}", id);
         UserResponseDto user = userService.getById(id);
@@ -38,6 +40,7 @@ public class UserController {
     }
 
     @GetMapping("/by-email")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<UserResponseDto> getByEmail(@RequestParam String email) {
         log.info("Request received: get user by email={}", email);
         UserResponseDto user = userService.getByEmail(email);
@@ -46,6 +49,7 @@ public class UserController {
     }
 
     @GetMapping("/page")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<List<UserResponseDto>> getUsersByPage(
             @RequestParam int page,
             @RequestParam int size
@@ -57,7 +61,8 @@ public class UserController {
     }
 
     @GetMapping("/search")
-    public ResponseEntity<List<UserResponseDto>> searchByFilter(@Valid @ModelAttribute UserSerchRequestDto filter) {
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<List<UserResponseDto>> searchByFilter(@Valid @ModelAttribute UserSearchRequestDto filter) {
         log.info("Request received: search users by filter, email={}, username={}, role={}",
                 filter.getEmail(), filter.getUsername(), filter.getRole());
         List<UserResponseDto> users = userService.searchByFilter(filter);
@@ -66,8 +71,9 @@ public class UserController {
     }
 
     @GetMapping("/search/page")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<List<UserResponseDto>> searchByFilterWithPage(
-            @Valid @ModelAttribute UserSerchRequestDto filter,
+            @Valid @ModelAttribute UserSearchRequestDto filter,
             @RequestParam int page,
             @RequestParam int size
     ) {
@@ -79,6 +85,7 @@ public class UserController {
     }
 
     @PutMapping
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<UserResponseDto> updateUser(@Valid @RequestBody UserUpdateRequestDto request) {
         log.info("Request received: update user id={}", request.getId());
         UserResponseDto updated = userService.updateUserById(request);
@@ -87,6 +94,7 @@ public class UserController {
     }
 
     @DeleteMapping
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Void> deleteUser(@Valid @RequestBody UserDeleteRequestDto request) {
         log.info("Request received: delete user id={}", request.getId());
         userService.deleteUser(request);
@@ -95,6 +103,7 @@ public class UserController {
     }
 
     @DeleteMapping("/search")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Long> deleteByFilter(@Valid @RequestBody UserDeleteRequestDto request) {
         log.info("Request received: delete users by filter, email={}, username={}, role={}",
                 request.getEmail(), request.getUsername(), request.getRole());
