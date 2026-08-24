@@ -69,10 +69,10 @@ public class GlobalExceptionHandling {
     }
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String,Object>> unexpectedException(Exception ex){
-        log.warn("Unknown exception:{}",ex.getMessage());
+        log.error("Unexpected exception:{}", ex.getMessage(), ex);
         return ResponseEntity.
                 status(HttpStatus.INTERNAL_SERVER_ERROR).
-                body(Map.of("message",ex.getMessage(),
+                body(Map.of("message","An unexpected error occurred",
                         "status",HttpStatus.INTERNAL_SERVER_ERROR));
     }
 

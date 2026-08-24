@@ -185,6 +185,12 @@ public  class UserService {
 
     @Transactional(readOnly = true)
     public List<UserResponseDto> getUsersByPage(int page, int size) {
+        if (page < 1) {
+            throw new IllegalArgumentException("Page must be >= 1");
+        }
+        if (size < 1) {
+            throw new IllegalArgumentException("Size must be >= 1");
+        }
         log.debug("Fetching users page: page={}, size={}", page, size);
         Pageable pageable = PageRequest.of(page - 1, size);
         List<UserResponseDto> result = userDao.findAll(pageable).stream()

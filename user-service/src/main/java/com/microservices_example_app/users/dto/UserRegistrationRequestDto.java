@@ -19,6 +19,7 @@ public class UserRegistrationRequestDto {
     @NotBlank(message = "Email must not be blank")
     @Email(message = "Email must be valid")
     private String email;
+    @NotBlank(message = "Role must not be blank")
     private String role;
     private Boolean isSystem;
 }
