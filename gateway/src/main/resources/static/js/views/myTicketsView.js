@@ -29,10 +29,13 @@ export const MyTicketsView = {
             const userId = Auth.getUserId();
             if (!userId) {
                 console.warn('[MyTickets] No user ID found, skipping updateUserInfo');
-                // await Auth.updateUserInfo(); // Removed to prevent role overwrite
+                document.getElementById('tickets-loading').innerHTML = `
+                    <div class="alert alert-error">Не удалось определить пользователя. Пожалуйста, войдите заново.</div>
+                `;
+                return;
             }
 
-            const { tickets, seatableTickets } = await API.getMyTickets(Auth.getUserId());
+            const { tickets, seatableTickets } = await API.getMyTickets(userId);
             this.renderTickets(tickets, seatableTickets);
         } catch (error) {
             document.getElementById('tickets-loading').innerHTML = `

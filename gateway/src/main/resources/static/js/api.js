@@ -1,5 +1,5 @@
 const API = {
-    baseUrl: 'http://localhost:8080',
+    baseUrl: window.location.origin,
 
     async request(endpoint, options = {}) {
         const token = localStorage.getItem('token');
