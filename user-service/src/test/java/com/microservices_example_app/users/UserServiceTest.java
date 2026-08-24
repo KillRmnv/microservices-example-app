@@ -430,7 +430,7 @@ class UserServiceTest {
 
     @Test
     void searchByFilter_shouldReturnUsers() {
-        UserSerchRequestDto filter = new UserSerchRequestDto();
+        UserSearchRequestDto filter = new UserSearchRequestDto();
         filter.setEmail("alex@test.com");
         filter.setUsername("alex");
         filter.setRole("CUSTOMER");
@@ -449,7 +449,7 @@ class UserServiceTest {
 
     @Test
     void searchByFilter_shouldThrowWhenRoleNotFound() {
-        UserSerchRequestDto filter = new UserSerchRequestDto();
+        UserSearchRequestDto filter = new UserSearchRequestDto();
         filter.setRole("CUSTOMER");
 
         when(roleRepository.findByName("CUSTOMER")).thenReturn(Optional.empty());
@@ -461,7 +461,7 @@ class UserServiceTest {
 
     @Test
     void searchByFilterPaged_shouldReturnUsers() {
-        UserSerchRequestDto filter = new UserSerchRequestDto();
+        UserSearchRequestDto filter = new UserSearchRequestDto();
         filter.setEmail("alex@test.com");
         filter.setUsername("alex");
         filter.setRole("CUSTOMER");
@@ -481,7 +481,7 @@ class UserServiceTest {
 
     @Test
     void searchByFilterPaged_shouldThrowWhenPageInvalid() {
-        UserSerchRequestDto filter = new UserSerchRequestDto();
+        UserSearchRequestDto filter = new UserSearchRequestDto();
 
         assertThatThrownBy(() -> userService.searchByFilter(filter, 0, 10))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -490,7 +490,7 @@ class UserServiceTest {
 
     @Test
     void searchByFilterPaged_shouldThrowWhenSizeInvalid() {
-        UserSerchRequestDto filter = new UserSerchRequestDto();
+        UserSearchRequestDto filter = new UserSearchRequestDto();
 
         assertThatThrownBy(() -> userService.searchByFilter(filter, 1, 0))
                 .isInstanceOf(IllegalArgumentException.class)

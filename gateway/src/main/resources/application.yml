@@ -77,10 +77,20 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,prometheus,metrics
   health:
     circuitbreakers:
       enabled: true
+  endpoint:
+    health:
+      show-details: when_authorized
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+  tracing:
+    sampling:
+      probability: 1.0
 resilience4j:
   circuitbreaker:
     instances:
@@ -113,3 +123,5 @@ logging:
     com.microservices_example_app.gateway: DEBUG
     org.springframework.http.server.reactive: INFO
     org.springframework.web.server: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} [traceId=%X{traceId}, spanId=%X{spanId}] - %msg%n"
