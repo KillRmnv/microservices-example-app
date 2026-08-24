@@ -2,10 +2,13 @@ package com.microservices_example_app.booking.controller;
 
 import com.microservices_example_app.booking.dto.*;
 import com.microservices_example_app.booking.service.VenueService;
+import com.microservices_example_app.booking.utils.JwtRequestUserExtractor;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 
@@ -16,9 +19,11 @@ import java.util.List;
 public class VenueController {
 
     private final VenueService venueService;
+    private final JwtRequestUserExtractor jwtRequestUserExtractor;
 
     @PostMapping
     public VenueResponseDto create(@Valid @RequestBody VenueCreateRequestDto requestDto) {
+        requireEventManagerOrAdmin();
         log.info("Creating new venue in town id: {}", requestDto.getTownId());
         return venueService.create(requestDto);
     }
@@ -47,6 +52,7 @@ public class VenueController {
     @PutMapping("/{id}")
     public VenueResponseDto updateById(@PathVariable Integer id,
                                        @Valid @RequestBody VenueUpdateRequestDto requestDto) {
+        requireEventManagerOrAdmin();
         log.info("Updating venue with id: {}", id);
         requestDto.setId(id);
         return venueService.updateVenueById(requestDto);
@@ -54,13 +60,21 @@ public class VenueController {
 
     @DeleteMapping("/{id}")
     public void deleteById(@PathVariable Integer id) {
+        requireEventManagerOrAdmin();
         log.info("Deleting venue with id: {}", id);
         venueService.deleteById(id);
     }
 
     @DeleteMapping("/search")
     public long deleteByFilter(@Valid @RequestBody VenueDeleteRequestDto requestDto) {
+        requireEventManagerOrAdmin();
         log.info("Deleting venues by filter: townId={}, place={}", requestDto.getTownId(), requestDto.getPlace());
         return venueService.deleteByFilter(requestDto);
+    }
+
+    private void requireEventManagerOrAdmin() {
+        if (!jwtRequestUserExtractor.isEventManagerOrAdmin()) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Requires EVENT_MANAGER or ADMIN role");
+        }
     }
 }
