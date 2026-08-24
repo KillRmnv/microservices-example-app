@@ -26,10 +26,8 @@ public class RouteValidator {
     public final Predicate<ServerHttpRequest> isSecured =
             request -> {
                 String path = request.getURI().getPath();
-                boolean isOpen = OPEN_API_ENDPOINTS.stream()
-                        .anyMatch(uri -> path.startsWith(uri));
+                boolean isOpen = OPEN_API_ENDPOINTS.contains(path);
                 log.info("RouteValidator: path={}, isOpenEndpoint={}, isSecured={}", path, isOpen, !isOpen);
-                return OPEN_API_ENDPOINTS.stream()
-                        .noneMatch(uri -> path.startsWith(uri));
+                return !isOpen;
             };
 }
