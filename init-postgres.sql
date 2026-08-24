@@ -1,2 +1,2 @@
-CREATE DATABASE IF NOT EXISTS user_service;
-CREATE DATABASE IF NOT EXISTS booking_service;
+CREATE DATABASE user_service;
+CREATE DATABASE booking_service;
