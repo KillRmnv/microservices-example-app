@@ -4,7 +4,7 @@ import com.microservices_example_app.booking.event.DeleteEventEvent;
 import com.microservices_example_app.booking.event.SuccessfulBookingEvent;
 import com.microservices_example_app.booking.event.SuccessfulTicketRefundEvent;
 import com.microservices_example_app.booking.event.UpdateEventEvent;
-import lombok.AllArgsConstructor;
+import com.microservices_example_app.booking.utils.TransactionalEventPublisher;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.core.KafkaTemplate;
@@ -22,14 +22,14 @@ public class NotificationKafkaBookingProducer {
 
     private final KafkaTemplate<String, SuccessfulBookingEvent> bookingKafkaTemplate;
     private final KafkaTemplate<String, SuccessfulTicketRefundEvent> ticketRefundKafkaTemplate;
-
+    private final TransactionalEventPublisher transactionalEventPublisher;
 
     public void sendSuccessfulBookingEvent(SuccessfulBookingEvent event) {
-        bookingKafkaTemplate.send(bookingClientTopic, event.getEmail(), event);
+        transactionalEventPublisher.sendAfterCommit(bookingKafkaTemplate, bookingClientTopic, event.getEmail(), event);
     }
 
     public void sendSuccessfulTicketRefundEvent(SuccessfulTicketRefundEvent event) {
-        ticketRefundKafkaTemplate.send(ticketRefundTopic, event.getEmail(), event);
+        transactionalEventPublisher.sendAfterCommit(ticketRefundKafkaTemplate, ticketRefundTopic, event.getEmail(), event);
     }
 
 }

@@ -30,4 +30,21 @@ public class JwtRequestUserExtractor {
     public Integer extractUserId() {
         return getClaims().get("id", Integer.class);
     }
+
+    public String extractRole() {
+        String headerRole = request.getHeader("X-User-Role");
+        if (headerRole != null && !headerRole.isBlank()) {
+            return headerRole;
+        }
+        return getClaims().get("role", String.class);
+    }
+
+    public boolean isEventManagerOrAdmin() {
+        String role = extractRole();
+        return "EVENT_MANAGER".equals(role) || "ADMIN".equals(role);
+    }
+
+    public boolean isAdmin() {
+        return "ADMIN".equals(extractRole());
+    }
 }

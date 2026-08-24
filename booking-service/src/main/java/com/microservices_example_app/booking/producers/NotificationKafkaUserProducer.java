@@ -2,6 +2,7 @@ package com.microservices_example_app.booking.producers;
 
 import com.microservices_example_app.booking.event.DeleteEventEvent;
 import com.microservices_example_app.booking.event.UpdateEventEvent;
+import com.microservices_example_app.booking.utils.TransactionalEventPublisher;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.core.KafkaTemplate;
@@ -14,11 +15,13 @@ public class NotificationKafkaUserProducer {
     private String userExtractingClientTopic;
     private final KafkaTemplate<String, DeleteEventEvent> deleteKafkaTemplate;
     private final KafkaTemplate<String, UpdateEventEvent> updateRefundKafkaTemplate;
+    private final TransactionalEventPublisher transactionalEventPublisher;
+
     public void sendDeleteEventEvent(DeleteEventEvent event) {
-        deleteKafkaTemplate.send(userExtractingClientTopic, event.getEvents().getFirst(), event);
+        transactionalEventPublisher.sendAfterCommit(deleteKafkaTemplate, userExtractingClientTopic, event.getEvents().getFirst(), event);
     }
 
     public void sendUpdateEventEvent(UpdateEventEvent event) {
-        updateRefundKafkaTemplate.send(userExtractingClientTopic,event.getEvents().getFirst(), event);
+        transactionalEventPublisher.sendAfterCommit(updateRefundKafkaTemplate, userExtractingClientTopic, event.getEvents().getFirst(), event);
     }
 }
