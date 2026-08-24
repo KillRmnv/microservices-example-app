@@ -9,6 +9,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import lombok.AllArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import lombok.extern.slf4j.Slf4j;
 
@@ -18,6 +19,7 @@ import java.util.List;
 @AllArgsConstructor
 @RestController
 @RequestMapping("/users/auth")
+@Validated
 public class AuthenticationController {
     private UserService userService;
     private RoleRepository roleDao;
@@ -30,7 +32,7 @@ public class AuthenticationController {
     }
 
     @PostMapping("/reset-password")
-    public ResponseEntity<Void> resetPassword(@RequestBody PasswordResetRequestDto request) {
+    public ResponseEntity<Void> resetPassword(@Valid @RequestBody PasswordResetRequestDto request) {
         log.info("Password reset request with token");
         userService.resetPassword(request.getToken(), request.getNewPassword());
         return ResponseEntity.ok().build();
