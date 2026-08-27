@@ -6,11 +6,18 @@ import com.microservices_example_app.booking.dto.VenueResponseDto;
 import com.microservices_example_app.booking.dto.VenueSearchRequestDto;
 import com.microservices_example_app.booking.dto.VenueUpdateRequestDto;
 import com.microservices_example_app.booking.exceptions.NotFoundException;
+import com.microservices_example_app.booking.model.Event;
+import com.microservices_example_app.booking.model.Ticket;
 import com.microservices_example_app.booking.model.Town;
 import com.microservices_example_app.booking.model.Venue;
+import com.microservices_example_app.booking.producers.NotificationKafkaUserProducer;
+import com.microservices_example_app.booking.repository.EventRepository;
+import com.microservices_example_app.booking.repository.TicketRepository;
 import com.microservices_example_app.booking.repository.TownRepository;
 import com.microservices_example_app.booking.repository.VenueRepository;
 import com.microservices_example_app.booking.service.VenueService;
+import jakarta.persistence.EntityManager;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -19,6 +26,7 @@ import org.mockito.Mock;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
 import java.util.Optional;
@@ -36,8 +44,26 @@ class VenueServiceTest {
     @Mock
     private TownRepository townRepository;
 
+    @Mock
+    private EventRepository eventRepository;
+
+    @Mock
+    private TicketRepository ticketRepository;
+
+    @Mock
+    private NotificationKafkaUserProducer kafkaUserProducer;
+
+    @Mock
+    private EntityManager entityManager;
+
     @InjectMocks
     private VenueService venueService;
+
+    @BeforeEach
+    void setUp() {
+        ReflectionTestUtils.setField(venueService, "entityManager", entityManager);
+        ReflectionTestUtils.setField(venueService, "serviceName", "booking-service");
+    }
 
     @Test
     void create_shouldCreateVenue() {
@@ -129,12 +155,19 @@ class VenueServiceTest {
 
     @Test
     void deleteById_shouldDeleteVenue() {
-        when(venueRepository.existsById(100)).thenReturn(true);
+        Venue venue = Venue.builder()
+                .id(100)
+                .place("Main Hall")
+                .build();
+
+        when(venueRepository.findById(100)).thenReturn(Optional.of(venue));
+        when(eventRepository.findByVenueId(100)).thenReturn(List.of());
 
         venueService.deleteById(100);
 
-        verify(venueRepository).existsById(100);
+        verify(venueRepository).findById(100);
         verify(venueRepository).deleteById(100);
+        verify(venueRepository).flush();
     }
 
     @Test
@@ -143,19 +176,19 @@ class VenueServiceTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Venue id must be positive");
 
-        verify(venueRepository, never()).existsById(anyInt());
+        verify(venueRepository, never()).findById(anyInt());
         verify(venueRepository, never()).deleteById(anyInt());
     }
 
     @Test
     void deleteById_shouldThrowWhenVenueNotFound() {
-        when(venueRepository.existsById(100)).thenReturn(false);
+        when(venueRepository.findById(100)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> venueService.deleteById(100))
                 .isInstanceOf(NotFoundException.class)
                 .hasMessage("Venue not found");
 
-        verify(venueRepository).existsById(100);
+        verify(venueRepository).findById(100);
         verify(venueRepository, never()).deleteById(anyInt());
     }
 
@@ -188,6 +221,7 @@ class VenueServiceTest {
 
         when(venueRepository.findAll(any(Specification.class)))
                 .thenReturn(List.of(venue1, venue2));
+        when(eventRepository.findByVenueIdIn(anyList())).thenReturn(List.of());
 
         long result = venueService.deleteByFilter(request);
 
@@ -283,6 +317,7 @@ class VenueServiceTest {
         when(venueRepository.findById(100)).thenReturn(Optional.of(existing));
         when(townRepository.findById(11)).thenReturn(Optional.of(newTown));
         when(venueRepository.save(any(Venue.class))).thenReturn(updated);
+        when(eventRepository.findByVenueId(100)).thenReturn(List.of());
 
         VenueResponseDto result = venueService.updateVenueById(request);
 
@@ -342,5 +377,135 @@ class VenueServiceTest {
                 .hasMessage("Town not found: 11");
 
         verify(venueRepository, never()).save(any());
+    }
+
+    @Test
+    void getAll_shouldReturnAllVenues() {
+        Town town = Town.builder().id(10).name("Berlin").build();
+        Venue venue = Venue.builder().id(100).town(town).place("Main Hall").capacity(5000).build();
+        when(venueRepository.findAll()).thenReturn(List.of(venue));
+        List<VenueResponseDto> result = venueService.getAll();
+        assertThat(result).hasSize(1);
+        assertThat(result.getFirst().getPlace()).isEqualTo("Main Hall");
+    }
+
+    @Test
+    void getAll_shouldReturnEmptyList() {
+        when(venueRepository.findAll()).thenReturn(List.of());
+        List<VenueResponseDto> result = venueService.getAll();
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    void updateVenueById_shouldThrowWhenIdNegative() {
+        VenueUpdateRequestDto request = new VenueUpdateRequestDto();
+        request.setId(-1);
+        assertThatThrownBy(() -> venueService.updateVenueById(request))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Venue id must be positive");
+    }
+
+    @Test
+    void deleteById_shouldDeleteVenueWithEventsAndSendKafka() {
+        Venue venue = Venue.builder().id(100).place("Main Hall").build();
+        Event event = Event.builder().id(10).title("Concert").venue(venue).build();
+        when(venueRepository.findById(100)).thenReturn(Optional.of(venue));
+        when(eventRepository.findByVenueId(100)).thenReturn(List.of(event));
+        when(ticketRepository.findByEventIdIn(List.of(10))).thenReturn(List.of());
+        venueService.deleteById(100);
+        verify(venueRepository).deleteById(100);
+        verify(kafkaUserProducer).sendDeleteEventEvent(any());
+    }
+
+
+    @Test
+    void updateVenueById_shouldDeactivateExcessTicketsWhenCapacityReduced() {
+        VenueUpdateRequestDto request = new VenueUpdateRequestDto();
+        request.setId(100);
+        request.setCapacity(1);
+        Town town = Town.builder().id(10).name("Berlin").build();
+        Venue existing = Venue.builder().id(100).town(town).place("Main Hall").capacity(5).build();
+        Venue saved = Venue.builder().id(100).town(town).place("Main Hall").capacity(1).build();
+        Event event = Event.builder().id(10).title("Concert").venue(existing).build();
+        Ticket ticket1 = Ticket.builder().id(1).event(event).userId(77).active(true).build();
+        Ticket ticket2 = Ticket.builder().id(2).event(event).userId(88).active(true).build();
+        Ticket ticket3 = Ticket.builder().id(3).event(event).userId(99).active(true).build();
+        when(venueRepository.findById(100)).thenReturn(Optional.of(existing));
+        when(venueRepository.save(any(Venue.class))).thenReturn(saved);
+        when(eventRepository.findByVenueId(100)).thenReturn(List.of(event));
+        when(ticketRepository.findByEventIdIn(List.of(10))).thenReturn(List.of(ticket1, ticket2, ticket3));
+        when(ticketRepository.findByEventIdInAndUserIdIsNotNullOrderByIdDesc(List.of(10))).thenReturn(List.of(ticket3, ticket2, ticket1));
+        VenueResponseDto result = venueService.updateVenueById(request);
+        assertThat(result.getCapacity()).isEqualTo(1);
+        verify(ticketRepository).saveAll(argThat(tickets -> {
+            java.util.List<?> list = (java.util.List<?>) tickets;
+            return list.size() == 2;
+        }));
+        verify(kafkaUserProducer).sendDeleteEventEvent(any());
+    }
+
+    @Test
+    void updateVenueById_shouldNotDeactivateWhenNoExcess() {
+        VenueUpdateRequestDto request = new VenueUpdateRequestDto();
+        request.setId(100);
+        request.setCapacity(3);
+        Town town = Town.builder().id(10).name("Berlin").build();
+        Venue existing = Venue.builder().id(100).town(town).place("Main Hall").capacity(5).build();
+        Venue saved = Venue.builder().id(100).town(town).place("Main Hall").capacity(3).build();
+        Event event = Event.builder().id(10).title("Concert").venue(existing).build();
+        Ticket ticket1 = Ticket.builder().id(1).event(event).userId(77).active(true).build();
+        when(venueRepository.findById(100)).thenReturn(Optional.of(existing));
+        when(venueRepository.save(any(Venue.class))).thenReturn(saved);
+        when(eventRepository.findByVenueId(100)).thenReturn(List.of(event));
+        when(ticketRepository.findByEventIdIn(List.of(10))).thenReturn(List.of(ticket1));
+        when(ticketRepository.findByEventIdInAndUserIdIsNotNullOrderByIdDesc(List.of(10))).thenReturn(List.of(ticket1));
+        VenueResponseDto result = venueService.updateVenueById(request);
+        assertThat(result.getCapacity()).isEqualTo(3);
+        verify(ticketRepository, never()).saveAll(any());
+    }
+
+
+    @Test
+    void deleteByFilter_shouldIncludeUserIdsWhenVenuesHaveEvents() {
+        VenueDeleteRequestDto request = new VenueDeleteRequestDto();
+        request.setTownId(10);
+        Town town = Town.builder().id(10).name("Berlin").build();
+        Venue venue = Venue.builder().id(100).town(town).place("Main Hall").capacity(5000).build();
+        Event event = Event.builder().id(10).title("Concert").venue(venue).build();
+        Ticket ticket = Ticket.builder().id(1).event(event).userId(77).build();
+        when(venueRepository.findAll(any(Specification.class))).thenReturn(List.of(venue));
+        when(eventRepository.findByVenueIdIn(List.of(100))).thenReturn(List.of(event));
+        when(ticketRepository.findByEventIdIn(List.of(10))).thenReturn(List.of(ticket));
+        long result = venueService.deleteByFilter(request);
+        assertThat(result).isEqualTo(1);
+        verify(kafkaUserProducer).sendDeleteEventEvent(argThat(e ->
+                e.getUserIds().contains(77)
+        ));
+    }
+
+    @Test
+    void deleteByFilter_shouldReturnZeroWhenNoMatch() {
+        VenueDeleteRequestDto request = new VenueDeleteRequestDto();
+        request.setPlace("Nonexistent");
+        when(venueRepository.findAll(any(Specification.class))).thenReturn(List.of());
+        long result = venueService.deleteByFilter(request);
+        assertThat(result).isEqualTo(0);
+    }
+
+
+    @Test
+    void updateVenueById_shouldKeepFieldsWhenNull() {
+        VenueUpdateRequestDto request = new VenueUpdateRequestDto();
+        request.setId(100);
+        Town town = Town.builder().id(10).name("Berlin").build();
+        Venue existing = Venue.builder().id(100).town(town).place("Main Hall").capacity(5000).build();
+        Venue saved = Venue.builder().id(100).town(town).place("Main Hall").capacity(5000).build();
+        when(venueRepository.findById(100)).thenReturn(Optional.of(existing));
+        when(venueRepository.save(any(Venue.class))).thenReturn(saved);
+        when(eventRepository.findByVenueId(100)).thenReturn(List.of());
+        VenueResponseDto result = venueService.updateVenueById(request);
+        assertThat(result.getPlace()).isEqualTo("Main Hall");
+        assertThat(result.getCapacity()).isEqualTo(5000);
+        assertThat(result.getTownId()).isEqualTo(10);
     }
 }

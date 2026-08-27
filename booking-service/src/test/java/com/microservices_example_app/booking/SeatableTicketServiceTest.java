@@ -1,6 +1,7 @@
 package com.microservices_example_app.booking;
 
 import com.microservices_example_app.booking.dto.SeatableTicketCreateRequestDto;
+import com.microservices_example_app.booking.dto.SeatableTicketDeleteRequestDto;
 import com.microservices_example_app.booking.dto.SeatableTicketResponseDto;
 import com.microservices_example_app.booking.dto.SeatableTicketSearchRequestDto;
 import com.microservices_example_app.booking.dto.SeatableTicketUpdateRequestDto;
@@ -312,6 +313,7 @@ class SeatableTicketServiceTest {
         SeatableTicketSearchRequestDto filter = new SeatableTicketSearchRequestDto();
         filter.setEventId(10);
         filter.setSector("A");
+        filter.setUserId(77);
 
         Event event = Event.builder()
                 .id(10)
@@ -335,7 +337,6 @@ class SeatableTicketServiceTest {
                 .userId(77)
                 .build();
 
-        when(jwtRequestUserExtractor.extractUserId()).thenReturn(77);
         when(seatableTicketRepository.findAll(any(Specification.class), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(ticket)));
 
@@ -345,7 +346,6 @@ class SeatableTicketServiceTest {
         assertThat(result.getFirst().getUserId()).isEqualTo(77);
         assertThat(result.getFirst().getSeatId()).isEqualTo(5);
 
-        verify(jwtRequestUserExtractor).extractUserId();
         verify(seatableTicketRepository).findAll(any(Specification.class), any(Pageable.class));
     }
 
@@ -365,5 +365,214 @@ class SeatableTicketServiceTest {
         assertThatThrownBy(() -> seatableTicketService.searchByFilter(filter, 1, 0))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Size must be >= 1");
+    }
+
+    @Test
+    void getById_shouldReturnSeatableTicket() {
+        Event event = Event.builder().id(10).title("Rock Concert").build();
+        Seat seat = Seat.builder().id(5).sector("A").row("3").number("12").build();
+        SeatableTicket ticket = SeatableTicket.builder().id(100).event(event).seat(seat).zone(Zone.VIP).price(BigDecimal.valueOf(200)).active(true).userId(77).build();
+        when(seatableTicketRepository.findById(100)).thenReturn(Optional.of(ticket));
+        SeatableTicketResponseDto result = seatableTicketService.getById(100);
+        assertThat(result.getId()).isEqualTo(100);
+        assertThat(result.getEventId()).isEqualTo(10);
+        assertThat(result.getSeatId()).isEqualTo(5);
+    }
+
+    @Test
+    void getById_shouldThrowWhenTicketNotFound() {
+        when(seatableTicketRepository.findById(100)).thenReturn(Optional.empty());
+        assertThatThrownBy(() -> seatableTicketService.getById(100))
+                .isInstanceOf(NotFoundException.class)
+                .hasMessage("Seatable ticket not found");
+    }
+
+    @Test
+    void refund_shouldRefundOwnActiveSeatableTicket() {
+        Event event = Event.builder().id(10).title("Rock Concert").build();
+        Seat seat = Seat.builder().id(5).sector("A").row("3").number("12").build();
+        SeatableTicket ticket = SeatableTicket.builder().id(100).event(event).seat(seat).zone(Zone.VIP).price(BigDecimal.valueOf(200)).active(true).userId(77).build();
+        when(seatableTicketRepository.findById(100)).thenReturn(Optional.of(ticket));
+        when(jwtRequestUserExtractor.extractUserId()).thenReturn(77);
+        when(jwtRequestUserExtractor.extractEmail()).thenReturn("test@mail.com");
+        when(jwtRequestUserExtractor.extractUsername()).thenReturn("alex");
+        when(seatableTicketRepository.save(any(SeatableTicket.class))).thenReturn(ticket);
+        SeatableTicketResponseDto result = seatableTicketService.refund(100);
+        assertThat(result).isNotNull();
+        verify(notificationKafkaBookingProducer).sendSuccessfulTicketRefundEvent(any());
+    }
+
+    @Test
+    void refund_shouldThrowWhenTicketNotFound() {
+        when(seatableTicketRepository.findById(100)).thenReturn(Optional.empty());
+        assertThatThrownBy(() -> seatableTicketService.refund(100))
+                .isInstanceOf(NotFoundException.class)
+                .hasMessage("Seatable ticket not found");
+    }
+
+    @Test
+    void refund_shouldThrowWhenForeignTicket() {
+        Event event = Event.builder().id(10).title("Rock Concert").build();
+        Seat seat = Seat.builder().id(5).sector("A").row("3").number("12").build();
+        SeatableTicket ticket = SeatableTicket.builder().id(100).event(event).seat(seat).zone(Zone.VIP).userId(88).build();
+        when(seatableTicketRepository.findById(100)).thenReturn(Optional.of(ticket));
+        when(jwtRequestUserExtractor.extractUserId()).thenReturn(77);
+        assertThatThrownBy(() -> seatableTicketService.refund(100))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("You can refund only your own seatable ticket");
+    }
+
+    @Test
+    void refund_shouldThrowWhenAlreadyInactive() {
+        Event event = Event.builder().id(10).title("Rock Concert").build();
+        Seat seat = Seat.builder().id(5).sector("A").row("3").number("12").build();
+        SeatableTicket ticket = SeatableTicket.builder().id(100).event(event).seat(seat).zone(Zone.VIP).active(false).userId(77).build();
+        when(seatableTicketRepository.findById(100)).thenReturn(Optional.of(ticket));
+        when(jwtRequestUserExtractor.extractUserId()).thenReturn(77);
+        assertThatThrownBy(() -> seatableTicketService.refund(100))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Seatable ticket is already inactive");
+    }
+
+    @Test
+    void refund_shouldThrowWhenIdNegative() {
+        assertThatThrownBy(() -> seatableTicketService.refund(-1))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("SeatableTicket id must be positive");
+    }
+
+    @Test
+    void deleteByFilter_shouldDeleteMatchedTicketsAndReturnCount() {
+        SeatableTicketDeleteRequestDto request = new SeatableTicketDeleteRequestDto();
+        request.setEventId(10);
+        Event event = Event.builder().id(10).title("Rock Concert").build();
+        Seat seat = Seat.builder().id(5).sector("A").row("3").number("12").build();
+        SeatableTicket ticket = SeatableTicket.builder().id(100).event(event).seat(seat).zone(Zone.VIP).userId(77).build();
+        when(jwtRequestUserExtractor.extractUserId()).thenReturn(77);
+        when(jwtRequestUserExtractor.extractEmail()).thenReturn("test@mail.com");
+        when(jwtRequestUserExtractor.extractUsername()).thenReturn("alex");
+        when(seatableTicketRepository.findAll(any(Specification.class))).thenReturn(List.of(ticket));
+        long result = seatableTicketService.deleteByFilter(request);
+        assertThat(result).isEqualTo(1);
+        verify(seatableTicketRepository).deleteAll(List.of(ticket));
+        verify(notificationKafkaBookingProducer).sendSuccessfulTicketRefundEvent(any());
+    }
+
+    @Test
+    void deleteByFilter_shouldThrowWhenUserIdNull() {
+        SeatableTicketDeleteRequestDto request = new SeatableTicketDeleteRequestDto();
+        when(jwtRequestUserExtractor.extractUserId()).thenReturn(null);
+        assertThatThrownBy(() -> seatableTicketService.deleteByFilter(request))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Cannot delete by filter: user ID not available from token");
+    }
+
+    @Test
+    void deleteByFilter_shouldReturnZeroWhenNoMatch() {
+        SeatableTicketDeleteRequestDto request = new SeatableTicketDeleteRequestDto();
+        when(jwtRequestUserExtractor.extractUserId()).thenReturn(77);
+        when(seatableTicketRepository.findAll(any(Specification.class))).thenReturn(List.of());
+        long result = seatableTicketService.deleteByFilter(request);
+        assertThat(result).isEqualTo(0);
+    }
+
+    @Test
+    void updateSeatableTicketById_shouldThrowWhenIdNegative() {
+        SeatableTicketUpdateRequestDto request = new SeatableTicketUpdateRequestDto();
+        request.setId(-1);
+        assertThatThrownBy(() -> seatableTicketService.updateSeatableTicketById(request))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("SeatableTicket id must be positive");
+    }
+
+    @Test
+    void updateSeatableTicketById_shouldThrowWhenTicketNotFound() {
+        SeatableTicketUpdateRequestDto request = new SeatableTicketUpdateRequestDto();
+        request.setId(100);
+        when(seatableTicketRepository.findById(100)).thenReturn(Optional.empty());
+        assertThatThrownBy(() -> seatableTicketService.updateSeatableTicketById(request))
+                .isInstanceOf(NotFoundException.class)
+                .hasMessage("No seatable ticket with id=100");
+    }
+
+    @Test
+    void updateSeatableTicketById_shouldThrowWhenEventNotFound() {
+        SeatableTicketUpdateRequestDto request = new SeatableTicketUpdateRequestDto();
+        request.setId(100);
+        request.setEventId(99);
+        Event event = Event.builder().id(10).title("Rock Concert").build();
+        Seat seat = Seat.builder().id(5).sector("A").row("3").number("12").build();
+        SeatableTicket existing = SeatableTicket.builder().id(100).event(event).seat(seat).zone(Zone.VIP).price(BigDecimal.valueOf(200)).active(true).userId(77).build();
+        when(seatableTicketRepository.findById(100)).thenReturn(Optional.of(existing));
+        when(eventRepository.findById(99)).thenReturn(Optional.empty());
+        assertThatThrownBy(() -> seatableTicketService.updateSeatableTicketById(request))
+                .isInstanceOf(NotFoundException.class)
+                .hasMessage("Event not found: 99");
+    }
+
+    @Test
+    void updateSeatableTicketById_shouldThrowWhenSeatNotFound() {
+        SeatableTicketUpdateRequestDto request = new SeatableTicketUpdateRequestDto();
+        request.setId(100);
+        request.setSeatId(99);
+        Event event = Event.builder().id(10).title("Rock Concert").build();
+        Seat seat = Seat.builder().id(5).sector("A").row("3").number("12").build();
+        SeatableTicket existing = SeatableTicket.builder().id(100).event(event).seat(seat).zone(Zone.VIP).price(BigDecimal.valueOf(200)).active(true).userId(77).build();
+        when(seatableTicketRepository.findById(100)).thenReturn(Optional.of(existing));
+        when(seatRepository.findById(99)).thenReturn(Optional.empty());
+        assertThatThrownBy(() -> seatableTicketService.updateSeatableTicketById(request))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Seat not found: 99");
+    }
+
+    @Test
+    void updateSeatableTicketById_shouldKeepFieldsWhenNull() {
+        SeatableTicketUpdateRequestDto request = new SeatableTicketUpdateRequestDto();
+        request.setId(100);
+        Event event = Event.builder().id(10).title("Rock Concert").build();
+        Seat seat = Seat.builder().id(5).sector("A").row("3").number("12").build();
+        SeatableTicket existing = SeatableTicket.builder().id(100).event(event).seat(seat).zone(Zone.VIP).price(BigDecimal.valueOf(200)).active(true).userId(77).build();
+        SeatableTicket saved = SeatableTicket.builder().id(100).event(event).seat(seat).zone(Zone.VIP).price(BigDecimal.valueOf(200)).active(true).userId(77).build();
+        when(seatableTicketRepository.findById(100)).thenReturn(Optional.of(existing));
+        when(seatableTicketRepository.save(any(SeatableTicket.class))).thenReturn(saved);
+        SeatableTicketResponseDto result = seatableTicketService.updateSeatableTicketById(request);
+        assertThat(result.getZone()).isEqualTo(Zone.VIP);
+        assertThat(result.getPrice()).isEqualByComparingTo("200");
+        assertThat(result.getUserId()).isEqualTo(77);
+    }
+
+
+    @Test
+    void deleteByFilter_shouldDeleteMultipleTicketsAndSendKafkaForEach() {
+        SeatableTicketDeleteRequestDto request = new SeatableTicketDeleteRequestDto();
+        request.setEventId(10);
+        Event event = Event.builder().id(10).title("Rock Concert").build();
+        Seat seat = Seat.builder().id(5).sector("A").row("3").number("12").build();
+        SeatableTicket ticket1 = SeatableTicket.builder().id(100).event(event).seat(seat).zone(Zone.VIP).userId(77).build();
+        SeatableTicket ticket2 = SeatableTicket.builder().id(101).event(event).seat(seat).zone(Zone.VIP).userId(77).build();
+        when(jwtRequestUserExtractor.extractUserId()).thenReturn(77);
+        when(jwtRequestUserExtractor.extractEmail()).thenReturn("test@mail.com");
+        when(jwtRequestUserExtractor.extractUsername()).thenReturn("alex");
+        when(seatableTicketRepository.findAll(any(Specification.class))).thenReturn(List.of(ticket1, ticket2));
+        long result = seatableTicketService.deleteByFilter(request);
+        assertThat(result).isEqualTo(2);
+        verify(seatableTicketRepository).deleteAll(List.of(ticket1, ticket2));
+        verify(notificationKafkaBookingProducer, times(2)).sendSuccessfulTicketRefundEvent(any());
+    }
+
+    @Test
+    void deleteByFilter_shouldNotSendKafkaForTicketsWithNullUserId() {
+        SeatableTicketDeleteRequestDto request = new SeatableTicketDeleteRequestDto();
+        request.setEventId(10);
+        Event event = Event.builder().id(10).title("Rock Concert").build();
+        Seat seat = Seat.builder().id(5).sector("A").row("3").number("12").build();
+        SeatableTicket ticket = SeatableTicket.builder().id(100).event(event).seat(seat).zone(Zone.VIP).userId(null).build();
+        when(jwtRequestUserExtractor.extractUserId()).thenReturn(77);
+        when(jwtRequestUserExtractor.extractEmail()).thenReturn("test@mail.com");
+        when(jwtRequestUserExtractor.extractUsername()).thenReturn("alex");
+        when(seatableTicketRepository.findAll(any(Specification.class))).thenReturn(List.of(ticket));
+        long result = seatableTicketService.deleteByFilter(request);
+        assertThat(result).isEqualTo(1);
+        verify(notificationKafkaBookingProducer, never()).sendSuccessfulTicketRefundEvent(any());
     }
 }

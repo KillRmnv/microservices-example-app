@@ -9,9 +9,14 @@ import com.microservices_example_app.booking.exceptions.NotFoundException;
 import com.microservices_example_app.booking.model.Event;
 import com.microservices_example_app.booking.model.EventAdmissionMode;
 import com.microservices_example_app.booking.model.Venue;
+import com.microservices_example_app.booking.model.Ticket;
+import com.microservices_example_app.booking.producers.NotificationKafkaUserProducer;
 import com.microservices_example_app.booking.repository.EventRepository;
+import com.microservices_example_app.booking.repository.TicketRepository;
 import com.microservices_example_app.booking.repository.VenueRepository;
 import com.microservices_example_app.booking.service.EventService;
+import jakarta.persistence.EntityManager;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -20,6 +25,7 @@ import org.mockito.Mock;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -38,8 +44,23 @@ class EventServiceTest {
     @Mock
     private VenueRepository venueRepository;
 
+    @Mock
+    private NotificationKafkaUserProducer kafkaUserProducer;
+
+    @Mock
+    private TicketRepository ticketRepository;
+
+    @Mock
+    private EntityManager entityManager;
+
     @InjectMocks
     private EventService eventService;
+
+    @BeforeEach
+    void setUp() {
+        ReflectionTestUtils.setField(eventService, "entityManager", entityManager);
+        ReflectionTestUtils.setField(eventService, "serviceName", "booking-service");
+    }
 
     @Test
     void create_shouldCreateEvent() {
@@ -225,12 +246,20 @@ class EventServiceTest {
 
     @Test
     void deleteById_shouldDeleteEvent() {
-        when(eventRepository.existsById(100)).thenReturn(true);
+        Event event = Event.builder()
+                .id(100)
+                .title("Rock Concert")
+                .build();
+
+        when(eventRepository.findById(100)).thenReturn(Optional.of(event));
+        when(ticketRepository.findByEventId(100)).thenReturn(List.of());
 
         eventService.deleteById(100);
 
-        verify(eventRepository).existsById(100);
+        verify(eventRepository).findById(100);
         verify(eventRepository).deleteById(100);
+        verify(eventRepository).flush();
+        verify(kafkaUserProducer).sendDeleteEventEvent(any());
     }
 
     @Test
@@ -239,19 +268,19 @@ class EventServiceTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Event id must be positive");
 
-        verify(eventRepository, never()).existsById(anyInt());
+        verify(eventRepository, never()).findById(anyInt());
         verify(eventRepository, never()).deleteById(anyInt());
     }
 
     @Test
     void deleteById_shouldThrowWhenEventNotFound() {
-        when(eventRepository.existsById(100)).thenReturn(false);
+        when(eventRepository.findById(100)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> eventService.deleteById(100))
                 .isInstanceOf(NotFoundException.class)
                 .hasMessage("Event not found");
 
-        verify(eventRepository).existsById(100);
+        verify(eventRepository).findById(100);
         verify(eventRepository, never()).deleteById(anyInt());
     }
 
@@ -288,12 +317,14 @@ class EventServiceTest {
 
         when(eventRepository.findAll(any(Specification.class)))
                 .thenReturn(List.of(event1, event2));
+        when(ticketRepository.findByEventIdIn(anyList())).thenReturn(List.of());
 
         long result = eventService.deleteByFilter(request);
 
         assertThat(result).isEqualTo(2);
         verify(eventRepository).findAll(any(Specification.class));
         verify(eventRepository).deleteAll(List.of(event1, event2));
+        verify(kafkaUserProducer).sendDeleteEventEvent(any());
     }
 
     @Test
@@ -337,6 +368,7 @@ class EventServiceTest {
         when(eventRepository.findById(100)).thenReturn(Optional.of(existing));
         when(venueRepository.findById(11)).thenReturn(Optional.of(newVenue));
         when(eventRepository.save(any(Event.class))).thenReturn(updated);
+        when(ticketRepository.findByEventId(100)).thenReturn(List.of());
 
         EventResponseDto result = eventService.updateEventById(request);
 
@@ -356,6 +388,7 @@ class EventServiceTest {
         assertThat(actual.getAdmissionMode()).isEqualTo(EventAdmissionMode.SEATABLE);
         assertThat(actual.getStartsAt()).isEqualTo(LocalDateTime.of(2026, 6, 1, 19, 0));
         assertThat(actual.getEndsAt()).isEqualTo(LocalDateTime.of(2026, 6, 1, 22, 30));
+        verify(kafkaUserProducer).sendUpdateEventEvent(any());
     }
 
     @Test
@@ -400,5 +433,106 @@ class EventServiceTest {
                 .hasMessage("Venue not found: 11");
 
         verify(eventRepository, never()).save(any());
+    }
+
+    @Test
+    void getAll_shouldReturnEmptyListWhenNoEvents() {
+        when(eventRepository.findAll()).thenReturn(List.of());
+        List<EventResponseDto> result = eventService.getAll();
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    void updateEventById_shouldThrowWhenIdNegative() {
+        EventUpdateRequestDto request = new EventUpdateRequestDto();
+        request.setId(-1);
+        assertThatThrownBy(() -> eventService.updateEventById(request))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Event id must be positive");
+    }
+
+    @Test
+    void updateEventById_shouldKeepFieldsWhenNull() {
+        EventUpdateRequestDto request = new EventUpdateRequestDto();
+        request.setId(100);
+        Venue venue = Venue.builder().id(10).place("Main Hall").build();
+        Event existing = Event.builder().id(100).title("Rock Concert").startsAt(LocalDateTime.of(2026, 5, 1, 19, 0)).endsAt(LocalDateTime.of(2026, 5, 1, 22, 0)).venue(venue).admissionMode(EventAdmissionMode.GENERAL).build();
+        Event saved = Event.builder().id(100).title("Rock Concert").startsAt(LocalDateTime.of(2026, 5, 1, 19, 0)).endsAt(LocalDateTime.of(2026, 5, 1, 22, 0)).venue(venue).admissionMode(EventAdmissionMode.GENERAL).build();
+        when(eventRepository.findById(100)).thenReturn(Optional.of(existing));
+        when(eventRepository.save(any(Event.class))).thenReturn(saved);
+        when(ticketRepository.findByEventId(100)).thenReturn(List.of());
+        EventResponseDto result = eventService.updateEventById(request);
+        assertThat(result.getTitle()).isEqualTo("Rock Concert");
+        assertThat(result.getAdmissionMode()).isEqualTo(EventAdmissionMode.GENERAL);
+    }
+
+    @Test
+    void deleteById_shouldDeleteEventWithTicketsAndSendKafkaWithUserIds() {
+        Event event = Event.builder().id(100).title("Rock Concert").build();
+        Ticket ticket1 = Ticket.builder().id(1).event(event).userId(77).build();
+        Ticket ticket2 = Ticket.builder().id(2).event(event).userId(88).build();
+        when(eventRepository.findById(100)).thenReturn(Optional.of(event));
+        when(ticketRepository.findByEventId(100)).thenReturn(List.of(ticket1, ticket2));
+        eventService.deleteById(100);
+        verify(eventRepository).deleteById(100);
+        verify(kafkaUserProducer).sendDeleteEventEvent(argThat(e ->
+                e.getUserIds().contains(77) && e.getUserIds().contains(88)
+        ));
+    }
+
+    @Test
+    void deleteByFilter_shouldReturnZeroWhenNoMatch() {
+        EventDeleteRequestDto request = new EventDeleteRequestDto();
+        request.setTitle("Nonexistent");
+        when(eventRepository.findAll(any(Specification.class))).thenReturn(List.of());
+        long result = eventService.deleteByFilter(request);
+        assertThat(result).isEqualTo(0);
+        verify(kafkaUserProducer).sendDeleteEventEvent(any());
+    }
+
+    @Test
+    void create_shouldThrowWhenVenueIdNull() {
+        EventCreateRequestDto request = new EventCreateRequestDto();
+        request.setVenueId(null);
+        assertThatThrownBy(() -> eventService.create(request))
+                .isInstanceOf(NotFoundException.class)
+                .hasMessage("Venue not found");
+    }
+
+
+    @Test
+    void updateEventById_shouldSendKafkaWithUserIdsWhenTicketsExist() {
+        EventUpdateRequestDto request = new EventUpdateRequestDto();
+        request.setId(100);
+        request.setTitle("Updated Concert");
+        Venue venue = Venue.builder().id(10).place("Main Hall").build();
+        Event existing = Event.builder().id(100).title("Rock Concert").startsAt(LocalDateTime.of(2026, 5, 1, 19, 0)).endsAt(LocalDateTime.of(2026, 5, 1, 22, 0)).venue(venue).admissionMode(EventAdmissionMode.GENERAL).build();
+        Event saved = Event.builder().id(100).title("Updated Concert").startsAt(LocalDateTime.of(2026, 5, 1, 19, 0)).endsAt(LocalDateTime.of(2026, 5, 1, 22, 0)).venue(venue).admissionMode(EventAdmissionMode.GENERAL).build();
+        Ticket ticket1 = Ticket.builder().id(1).event(existing).userId(77).build();
+        Ticket ticket2 = Ticket.builder().id(2).event(existing).userId(88).build();
+        when(eventRepository.findById(100)).thenReturn(Optional.of(existing));
+        when(eventRepository.save(any(Event.class))).thenReturn(saved);
+        when(ticketRepository.findByEventId(100)).thenReturn(List.of(ticket1, ticket2));
+        eventService.updateEventById(request);
+        verify(kafkaUserProducer).sendUpdateEventEvent(argThat(e ->
+                e.getUserIds().contains(77) && e.getUserIds().contains(88)
+        ));
+    }
+
+
+    @Test
+    void deleteByFilter_shouldIncludeUserIdsWhenEventsHaveTickets() {
+        EventDeleteRequestDto request = new EventDeleteRequestDto();
+        request.setTitle("Rock Concert");
+        Venue venue = Venue.builder().id(10).place("Main Hall").build();
+        Event event = Event.builder().id(100).title("Rock Concert").venue(venue).build();
+        Ticket ticket = Ticket.builder().id(1).event(event).userId(77).build();
+        when(eventRepository.findAll(any(Specification.class))).thenReturn(List.of(event));
+        when(ticketRepository.findByEventIdIn(List.of(100))).thenReturn(List.of(ticket));
+        long result = eventService.deleteByFilter(request);
+        assertThat(result).isEqualTo(1);
+        verify(kafkaUserProducer).sendDeleteEventEvent(argThat(e ->
+                e.getUserIds().contains(77)
+        ));
     }
 }

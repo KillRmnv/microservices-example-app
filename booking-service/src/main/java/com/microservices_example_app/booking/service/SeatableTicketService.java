@@ -197,11 +197,7 @@ public class SeatableTicketService {
             builder.active(ticket.isActive());
         }
 
-        if (request.getUserId() != null) {
-            builder.userId(request.getUserId());
-        } else {
-            builder.userId(ticket.getUserId());
-        }
+        builder.userId(ticket.getUserId());
 
         log.info("Update seatable ticket with id: {}", ticket.getId());
         SeatableTicket saved = seatableTicketRepository.save(builder.build());
