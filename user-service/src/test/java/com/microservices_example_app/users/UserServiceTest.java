@@ -3,6 +3,8 @@ package com.microservices_example_app.users;
 import com.microservices_example_app.users.dto.*;
 import com.microservices_example_app.users.event.ForgetPasswordEvent;
 import com.microservices_example_app.users.event.SuccessfulRegistrationEmailEvent;
+import com.microservices_example_app.users.event.UserDeletedEvent;
+import com.microservices_example_app.users.event.UserUpdatedEvent;
 import com.microservices_example_app.users.exceptions.EmailForwardingException;
 import com.microservices_example_app.users.exceptions.UserNotFoundException;
 import com.microservices_example_app.users.model.Role;
@@ -100,8 +102,8 @@ class UserServiceTest {
         when(roleRepository.findByName("CUSTOMER")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> userService.register("alex@test.com", "123456", "CUSTOMER", "alex",false))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessage("Role not found");
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Role not found: CUSTOMER");
 
         verify(passwordService, never()).hash(anyString());
         verify(userDao, never()).save(any());
@@ -620,5 +622,483 @@ class UserServiceTest {
                 .hasMessage("Role not found: ADMIN");
 
         verify(userDao, never()).save(any());
+    }
+
+    // ==================== resetPassword ====================
+
+    @Test
+    void resetPassword_shouldResetPasswordWhenTokenValid() {
+        Role role = Role.builder().id(1).name("CUSTOMER").build();
+        User user = User.builder()
+                .id(10)
+                .username("alex")
+                .email("alex@test.com")
+                .passwordHash("oldHash")
+                .userRole(role)
+                .isSystem(false)
+                .build();
+
+        try (MockedStatic<JwtUtil> jwtUtilMock = mockStatic(JwtUtil.class)) {
+            jwtUtilMock.when(() -> JwtUtil.validatePasswordResetToken("valid-token")).thenReturn(true);
+            jwtUtilMock.when(() -> JwtUtil.extractUserIdFromPasswordResetToken("valid-token")).thenReturn(10);
+
+            when(userDao.findById(10)).thenReturn(Optional.of(user));
+            when(passwordService.hash("newpass")).thenReturn("newHash");
+
+            userService.resetPassword("valid-token", "newpass");
+
+            ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
+            verify(userDao).save(captor.capture());
+            assertThat(captor.getValue().getPasswordHash()).isEqualTo("newHash");
+            assertThat(captor.getValue().getUsername()).isEqualTo("alex");
+            assertThat(captor.getValue().getEmail()).isEqualTo("alex@test.com");
+        }
+    }
+
+    @Test
+    void resetPassword_shouldThrowWhenTokenInvalid() {
+        try (MockedStatic<JwtUtil> jwtUtilMock = mockStatic(JwtUtil.class)) {
+            jwtUtilMock.when(() -> JwtUtil.validatePasswordResetToken("bad-token")).thenReturn(false);
+
+            assertThatThrownBy(() -> userService.resetPassword("bad-token", "newpass"))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessage("Invalid or expired reset token");
+
+            verify(userDao, never()).findById(anyInt());
+            verify(userDao, never()).save(any());
+        }
+    }
+
+    @Test
+    void resetPassword_shouldThrowWhenUserNotFound() {
+        try (MockedStatic<JwtUtil> jwtUtilMock = mockStatic(JwtUtil.class)) {
+            jwtUtilMock.when(() -> JwtUtil.validatePasswordResetToken("valid-token")).thenReturn(true);
+            jwtUtilMock.when(() -> JwtUtil.extractUserIdFromPasswordResetToken("valid-token")).thenReturn(99);
+
+            when(userDao.findById(99)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> userService.resetPassword("valid-token", "newpass"))
+                    .isInstanceOf(UserNotFoundException.class)
+                    .hasMessage("User not found");
+
+            verify(userDao, never()).save(any());
+        }
+    }
+
+    // ==================== validateResetToken ====================
+
+    @Test
+    void validateResetToken_shouldReturnTrueWhenValid() {
+        try (MockedStatic<JwtUtil> jwtUtilMock = mockStatic(JwtUtil.class)) {
+            jwtUtilMock.when(() -> JwtUtil.validatePasswordResetToken("valid-token")).thenReturn(true);
+
+            assertThat(userService.validateResetToken("valid-token")).isTrue();
+        }
+    }
+
+    @Test
+    void validateResetToken_shouldReturnFalseWhenInvalid() {
+        try (MockedStatic<JwtUtil> jwtUtilMock = mockStatic(JwtUtil.class)) {
+            jwtUtilMock.when(() -> JwtUtil.validatePasswordResetToken("bad-token")).thenReturn(false);
+
+            assertThat(userService.validateResetToken("bad-token")).isFalse();
+        }
+    }
+
+    // ==================== getUsersByPage validation ====================
+
+    @Test
+    void getUsersByPage_shouldThrowWhenPageInvalid() {
+        assertThatThrownBy(() -> userService.getUsersByPage(0, 10))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Page must be >= 1");
+    }
+
+    @Test
+    void getUsersByPage_shouldThrowWhenSizeInvalid() {
+        assertThatThrownBy(() -> userService.getUsersByPage(1, 0))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Size must be >= 1");
+    }
+
+    // ==================== updateUserById edge cases ====================
+
+    @Test
+    void updateUserById_shouldThrowWhenIdNegative() {
+        UserUpdateRequestDto request = new UserUpdateRequestDto();
+        request.setId(-1);
+
+        assertThatThrownBy(() -> userService.updateUserById(request))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("User id must be positive");
+    }
+
+    @Test
+    void updateUserById_shouldKeepEmailWhenSameAsCurrent() {
+        UserUpdateRequestDto request = new UserUpdateRequestDto();
+        request.setId(10);
+        request.setEmail("alex@test.com");
+
+        Role role = Role.builder().id(1).name("CUSTOMER").build();
+        User existing = User.builder()
+                .id(10)
+                .username("alex")
+                .email("alex@test.com")
+                .passwordHash("oldHash")
+                .userRole(role)
+                .build();
+        User saved = User.builder()
+                .id(10)
+                .username("alex")
+                .email("alex@test.com")
+                .passwordHash("oldHash")
+                .userRole(role)
+                .build();
+
+        when(userDao.findById(10)).thenReturn(Optional.of(existing));
+        when(userDao.findByEmail("alex@test.com")).thenReturn(Optional.of(existing));
+        when(userDao.save(any(User.class))).thenReturn(saved);
+
+        UserResponseDto result = userService.updateUserById(request);
+
+        assertThat(result.getEmail()).isEqualTo("alex@test.com");
+        verify(userDao).save(any());
+    }
+
+    @Test
+    void updateUserById_shouldKeepFieldsWhenNull() {
+        UserUpdateRequestDto request = new UserUpdateRequestDto();
+        request.setId(10);
+
+        Role role = Role.builder().id(1).name("CUSTOMER").build();
+        User existing = User.builder()
+                .id(10)
+                .username("alex")
+                .email("alex@test.com")
+                .passwordHash("oldHash")
+                .userRole(role)
+                .isSystem(false)
+                .build();
+        User saved = User.builder()
+                .id(10)
+                .username("alex")
+                .email("alex@test.com")
+                .passwordHash("oldHash")
+                .userRole(role)
+                .isSystem(false)
+                .build();
+
+        when(userDao.findById(10)).thenReturn(Optional.of(existing));
+        when(userDao.save(any(User.class))).thenReturn(saved);
+
+        UserResponseDto result = userService.updateUserById(request);
+
+        assertThat(result.getUsername()).isEqualTo("alex");
+        assertThat(result.getEmail()).isEqualTo("alex@test.com");
+        assertThat(result.getRole()).isEqualTo("CUSTOMER");
+
+        ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
+        verify(userDao).save(captor.capture());
+        assertThat(captor.getValue().getPasswordHash()).isEqualTo("oldHash");
+    }
+
+    @Test
+    void updateUserById_shouldKeepFieldsWhenBlank() {
+        UserUpdateRequestDto request = new UserUpdateRequestDto();
+        request.setId(10);
+        request.setEmail("  ");
+        request.setUsername("  ");
+        request.setRole("  ");
+        request.setPassword("  ");
+
+        Role role = Role.builder().id(1).name("CUSTOMER").build();
+        User existing = User.builder()
+                .id(10)
+                .username("alex")
+                .email("alex@test.com")
+                .passwordHash("oldHash")
+                .userRole(role)
+                .isSystem(false)
+                .build();
+        User saved = User.builder()
+                .id(10)
+                .username("alex")
+                .email("alex@test.com")
+                .passwordHash("oldHash")
+                .userRole(role)
+                .isSystem(false)
+                .build();
+
+        when(userDao.findById(10)).thenReturn(Optional.of(existing));
+        when(userDao.save(any(User.class))).thenReturn(saved);
+
+        UserResponseDto result = userService.updateUserById(request);
+
+        assertThat(result.getUsername()).isEqualTo("alex");
+        assertThat(result.getEmail()).isEqualTo("alex@test.com");
+
+        ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
+        verify(userDao).save(captor.capture());
+        assertThat(captor.getValue().getPasswordHash()).isEqualTo("oldHash");
+        assertThat(captor.getValue().getUserRole().getName()).isEqualTo("CUSTOMER");
+    }
+
+    @Test
+    void updateUserById_shouldSetIsSystemWhenRoleAdmin() {
+        UserUpdateRequestDto request = new UserUpdateRequestDto();
+        request.setId(10);
+        request.setRole("ADMIN");
+        request.setIsSystem(true);
+
+        Role oldRole = Role.builder().id(1).name("CUSTOMER").build();
+        Role adminRole = Role.builder().id(2).name("ADMIN").build();
+
+        User existing = User.builder()
+                .id(10)
+                .username("alex")
+                .email("alex@test.com")
+                .passwordHash("oldHash")
+                .userRole(oldRole)
+                .isSystem(false)
+                .build();
+        User saved = User.builder()
+                .id(10)
+                .username("alex")
+                .email("alex@test.com")
+                .passwordHash("oldHash")
+                .userRole(adminRole)
+                .isSystem(true)
+                .build();
+
+        when(userDao.findById(10)).thenReturn(Optional.of(existing));
+        when(roleRepository.findByName("ADMIN")).thenReturn(Optional.of(adminRole));
+        when(userDao.save(any(User.class))).thenReturn(saved);
+
+        UserResponseDto result = userService.updateUserById(request);
+
+        ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
+        verify(userDao).save(captor.capture());
+        assertThat(captor.getValue().getIsSystem()).isTrue();
+    }
+
+    @Test
+    void updateUserById_shouldKeepIsSystemWhenRoleNotAdmin() {
+        UserUpdateRequestDto request = new UserUpdateRequestDto();
+        request.setId(10);
+        request.setRole("CUSTOMER");
+        request.setIsSystem(true);
+
+        Role role = Role.builder().id(1).name("CUSTOMER").build();
+
+        User existing = User.builder()
+                .id(10)
+                .username("alex")
+                .email("alex@test.com")
+                .passwordHash("oldHash")
+                .userRole(role)
+                .isSystem(false)
+                .build();
+        User saved = User.builder()
+                .id(10)
+                .username("alex")
+                .email("alex@test.com")
+                .passwordHash("oldHash")
+                .userRole(role)
+                .isSystem(false)
+                .build();
+
+        when(userDao.findById(10)).thenReturn(Optional.of(existing));
+        when(roleRepository.findByName("CUSTOMER")).thenReturn(Optional.of(role));
+        when(userDao.save(any(User.class))).thenReturn(saved);
+
+        UserResponseDto result = userService.updateUserById(request);
+
+        ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
+        verify(userDao).save(captor.capture());
+        assertThat(captor.getValue().getIsSystem()).isFalse();
+    }
+
+    // ==================== updateUser Kafka verification ====================
+
+    @Test
+    void updateUser_shouldSendUpdatedEvent() {
+        Role role = Role.builder().id(1).name("CUSTOMER").build();
+        User existing = User.builder().id(10).username("alex").email("alex@test.com").passwordHash("h").userRole(role).build();
+        User updated = User.builder().id(10).username("alex2").email("alex2@test.com").passwordHash("h2").userRole(role).build();
+
+        when(userDao.findById(10)).thenReturn(Optional.of(existing));
+
+        userService.updateUser(updated);
+
+        verify(authenticationProducer).sendUserUpdatedEvent(any(UserUpdatedEvent.class));
+    }
+
+    // ==================== deleteUser Kafka verification ====================
+
+    @Test
+    void deleteUser_shouldSendDeletedEvent() {
+        UserDeleteRequestDto request = new UserDeleteRequestDto();
+        request.setId(10);
+
+        Role role = Role.builder().id(1).name("CUSTOMER").build();
+        User existing = User.builder().id(10).username("alex").email("alex@test.com").passwordHash("h").userRole(role).build();
+
+        when(userDao.findById(10)).thenReturn(Optional.of(existing));
+
+        userService.deleteUser(request);
+
+        verify(authenticationProducer).sendUserDeletedEvent(any(UserDeletedEvent.class));
+    }
+
+    // ==================== deleteByFilter edge cases ====================
+
+    @Test
+    void deleteByFilter_shouldReturnZeroWhenNoMatch() {
+        UserDeleteRequestDto request = new UserDeleteRequestDto();
+        request.setEmail("nobody@test.com");
+        request.setRole("CUSTOMER");
+
+        Role role = Role.builder().id(1).name("CUSTOMER").build();
+        when(roleRepository.findByName("CUSTOMER")).thenReturn(Optional.of(role));
+        when(userDao.findAll(any(Specification.class))).thenReturn(List.of());
+
+        long result = userService.deleteByFilter(request);
+
+        assertThat(result).isEqualTo(0);
+        verify(userDao).deleteAll(List.of());
+    }
+
+    @Test
+    void deleteByFilter_shouldSendEventPerDeletedUser() {
+        UserDeleteRequestDto request = new UserDeleteRequestDto();
+        request.setEmail("alex@test.com");
+        request.setRole("CUSTOMER");
+
+        Role role = Role.builder().id(1).name("CUSTOMER").build();
+        User user1 = User.builder().id(1).username("u1").email("alex@test.com").passwordHash("h").userRole(role).build();
+        User user2 = User.builder().id(2).username("u2").email("alex@test.com").passwordHash("h").userRole(role).build();
+
+        when(roleRepository.findByName("CUSTOMER")).thenReturn(Optional.of(role));
+        when(userDao.findAll(any(Specification.class))).thenReturn(List.of(user1, user2));
+
+        long result = userService.deleteByFilter(request);
+
+        assertThat(result).isEqualTo(2);
+        verify(authenticationProducer, times(2)).sendUserDeletedEvent(any(UserDeletedEvent.class));
+    }
+
+    // ==================== searchByFilter edge cases ====================
+
+    @Test
+    void searchByFilter_shouldReturnAllWhenFiltersNull() {
+        UserSearchRequestDto filter = new UserSearchRequestDto();
+
+        Role role = Role.builder().id(1).name("CUSTOMER").build();
+        User user = User.builder().id(10).username("alex").email("alex@test.com").passwordHash("h").userRole(role).build();
+
+        when(userDao.findAll(any(Specification.class))).thenReturn(List.of(user));
+
+        List<UserResponseDto> result = userService.searchByFilter(filter);
+
+        assertThat(result).hasSize(1);
+    }
+
+    @Test
+    void searchByFilter_shouldSkipRoleWhenBlank() {
+        UserSearchRequestDto filter = new UserSearchRequestDto();
+        filter.setRole("  ");
+
+        Role role = Role.builder().id(1).name("CUSTOMER").build();
+        User user = User.builder().id(10).username("alex").email("alex@test.com").passwordHash("h").userRole(role).build();
+
+        when(userDao.findAll(any(Specification.class))).thenReturn(List.of(user));
+
+        List<UserResponseDto> result = userService.searchByFilter(filter);
+
+        assertThat(result).hasSize(1);
+        verify(roleRepository, never()).findByName(anyString());
+    }
+
+    @Test
+    void searchByFilterPaged_shouldThrowWhenRoleNotFound() {
+        UserSearchRequestDto filter = new UserSearchRequestDto();
+        filter.setRole("INVALID");
+
+        when(roleRepository.findByName("INVALID")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> userService.searchByFilter(filter, 1, 10))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Role not found: INVALID");
+    }
+
+    // ==================== register isSystem propagation ====================
+
+    @Test
+    void register_shouldPropagateIsSystemTrue() {
+        Role role = Role.builder().id(1).name("ADMIN").build();
+        User savedUser = User.builder()
+                .id(10)
+                .username("admin")
+                .email("admin@test.com")
+                .passwordHash("hashed")
+                .userRole(role)
+                .isSystem(true)
+                .build();
+
+        when(roleRepository.findByName("ADMIN")).thenReturn(Optional.of(role));
+        when(passwordService.hash("123456")).thenReturn("hashed");
+        when(userDao.save(any(User.class))).thenReturn(savedUser);
+
+        UserRegistrationDto result = userService.register("admin@test.com", "123456", "ADMIN", "admin", true);
+
+        assertThat(result.getIsSystem()).isTrue();
+    }
+
+    // ==================== login role assertion ====================
+
+    @Test
+    void login_shouldReturnRoleInResponse() {
+        Role role = Role.builder().id(1).name("EVENT_MANAGER").build();
+        User user = User.builder()
+                .id(10)
+                .username("alex")
+                .email("alex@test.com")
+                .passwordHash("hashed")
+                .userRole(role)
+                .build();
+
+        when(userDao.findByEmail("alex@test.com")).thenReturn(Optional.of(user));
+        when(passwordService.verify("123456", "hashed")).thenReturn(true);
+
+        try (MockedStatic<JwtUtil> jwtUtilMock = mockStatic(JwtUtil.class)) {
+            jwtUtilMock.when(() -> JwtUtil.generateToken(10, "alex", "alex@test.com", "EVENT_MANAGER"))
+                    .thenReturn("jwt-token");
+
+            UserLoginResponseDto result = userService.login("alex@test.com", "123456");
+
+            assertThat(result.getRole()).isEqualTo("EVENT_MANAGER");
+        }
+    }
+
+    // ==================== getAll empty ====================
+
+    @Test
+    void getAll_shouldReturnEmptyListWhenNoUsers() {
+        when(userDao.findAll()).thenReturn(List.of());
+
+        List<UserResponseDto> result = userService.getAll();
+
+        assertThat(result).isEmpty();
+    }
+
+    // ==================== getUsersByPage beyond data ====================
+
+    @Test
+    void getUsersByPage_shouldReturnEmptyWhenPageBeyondData() {
+        when(userDao.findAll(any(Pageable.class))).thenReturn(new PageImpl<>(List.of()));
+
+        List<UserResponseDto> result = userService.getUsersByPage(999, 10);
+
+        assertThat(result).isEmpty();
     }
 }
