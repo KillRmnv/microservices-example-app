@@ -14,7 +14,6 @@ A fully functional microservices-based event ticketing platform built with Java 
 - [Key Features](#key-features)
 - [Kafka Event Flow](#kafka-event-flow)
 - [Local Development](#local-development)
-- [Possible Improvements](#possible-improvements)
 
 ## Architecture Overview
 
@@ -27,7 +26,7 @@ The system follows a microservice architecture with 4 core services behind an AP
 | **Gateway** | 8080 | Single entry point for all client requests, request routing, JWT validation, static frontend serving | Spring Cloud Gateway, WebFlux, Spring Security, Resilience4j |
 | **User Service** | 8081 | User management, authentication, authorization, role management | Spring Boot, Spring Security, JWT (JJWT), PostgreSQL, Redis, Kafka |
 | **Booking Service** | 8082 | Event, ticket, venue, and town management; ticket booking operations | Spring Boot, Spring Data JPA, PostgreSQL, Redis (Redisson), Kafka |
-| **Notification Service** | 8083 | Asynchronous email notifications for authentication and booking events | Spring Boot, Spring Mail, Kafka Consumer |
+| **Notification Service** | 8083 | Asynchronous email notifications for authentication and booking events | Spring Boot, Spring Mail, Kafka Consumer (also implemented in Go — see `notification-service-go/`) |
 
 ### Infrastructure Components
 - **PostgreSQL 16**: Two separate databases (`user_service`, `booking_service`) with Flyway migrations (see `user-service/src/main/resources/db/migration/` and `booking-service/src/main/resources/db/migration/`)
@@ -39,6 +38,7 @@ The system follows a microservice architecture with 4 core services behind an AP
 
 ### Backend
 - **Java 21** (set in `gradle/version.gradle`)
+- **Go 1.23** (notification-service-go — alternative implementation of notification service)
 - **Spring Boot 4.0.5**: Core framework
 - **Spring Cloud Gateway**: API gateway (gateway service, uses WebFlux)
 - **Spring Security**: Authentication and authorization (JWT via JJWT 0.12.3)
@@ -55,11 +55,14 @@ The system follows a microservice architecture with 4 core services behind an AP
 - **Mockito**: Mocking
 - **Testcontainers**: Integration tests with real infrastructure (PostgreSQL, Kafka, Redis)
 - **Awaitility**: Asynchronous operation testing
+- **Selenium + WebDriverManager**: E2E browser tests (headless Chrome)
+- **Jakarta Mail (IMAP)**: E2E email verification against real Gmail
 
 ### DevOps
 - **Docker + Docker Compose**: Containerization
-- **Multi-stage Docker Builds**: JDK for build, JRE for runtime
+- **Multi-stage Docker Builds**: JDK for build, JRE for runtime (Java), golang → alpine (Go)
 - **Gradle 8+**: Build tool (wrapper included per service)
+- **Go modules**: Dependency management for notification-service-go
 
 ## Project Structure
 
@@ -72,7 +75,13 @@ microservices-example-app/
 │   └── build.gradle                  # Dependencies
 ├── user-service/                     # User management service
 ├── booking-service/                  # Booking management service
-├── notification-service/             # Email notification service
+├── notification-service/             # Email notification service (Java)
+├── notification-service-go/          # Email notification service (Go alternative)
+│   ├── main.go                       # Entry point + health endpoint
+│   ├── dto/events.go                 # Kafka event DTOs
+│   ├── email/service.go              # SMTP email sending
+│   ├── kafka/consumers.go            # Kafka consumers (6 topics, 8 groups)
+│   └── Dockerfile                    # Multi-stage build (golang → alpine)
 ├── gradle/                           # Shared Gradle configuration
 │   └── version.gradle                # Centralized version management
 ├── docker-compose.yml                # Infrastructure orchestration
@@ -83,6 +92,7 @@ microservices-example-app/
 ## Prerequisites
 
 - Java 21 JDK (for local development)
+- Go 1.23+ (for notification-service-go)
 - Docker & Docker Compose
 - Gradle 8+ (or use included wrappers `./gradlew`)
 - (Optional) PostgreSQL 16, Redis 7, Kafka 7.5 for local development without Docker
@@ -106,6 +116,8 @@ cp gateway/.env.example gateway/.env
 ```
 
 Edit the `.env` files as needed (especially `JWT_SECRET` and email configuration for notification service).
+
+> The Go notification service (`notification-service-go/`) uses the same environment variables. Copy its `.env.example` to `.env` if running it locally.
 
 ### 3. Start all services with Docker Compose
 ```bash
@@ -179,16 +191,19 @@ Services communicate asynchronously via Kafka topics. All events are consumed by
 
 ## Local Development
 
-Each service has its own `./gradlew` — there is no root Gradle build.
+Each service has its own `./gradlew` — there is no root Gradle build. The Go notification service uses `go run`.
 
 ```bash
 # Start infrastructure only (required for local service runs and tests)
 docker compose up -d postgres redis zookeeper kafka
 
-# Run individual services locally
+# Run individual services locally (Java)
 cd user-service && ./gradlew bootRun
 cd booking-service && ./gradlew bootRun
 cd gateway && ./gradlew bootRun   # serves frontend at http://localhost:8080
+
+# Run notification service (Go alternative)
+cd notification-service-go && go run .
 
 # Run all tests in a service (requires Docker for Testcontainers)
 cd <service> && ./gradlew test
@@ -196,3 +211,36 @@ cd <service> && ./gradlew test
 # Run a single test class
 cd <service> && ./gradlew test --tests "*.TestClassName"
 ```
+
+## E2E Testing
+
+Gateway contains end-to-end tests that spin up the full system via Docker Compose and verify real user flows.
+
+### Prerequisites
+- Docker & Docker Compose running
+- Gmail account with App Password (for email verification tests)
+- Headless Chrome/Chromium installed (CI sets `CHROME_BIN=/usr/bin/chromium`)
+
+### Environment Variables
+```bash
+export GMAIL_USERNAME=your-email@gmail.com
+export GMAIL_PASSWORD=your-app-password
+```
+
+### Available E2E Tests
+
+| Test | Description |
+|------|-------------|
+| `RegistrationE2ETest` | Registers a user via the frontend, verifies registration email arrives in Gmail via IMAP |
+| `EventDeletionMassMailingE2ETest` | Full flow: register users → buy tickets → verify event in UI → delete event → verify mass cancellation emails |
+
+### Running E2E Tests
+```bash
+# Run all E2E tests in gateway (requires GMAIL creds + Docker)
+cd gateway && ./gradlew test --tests "*E2E*" -Djunit.jupiter.tags.include=e2e
+
+# Run all non-E2E tests (excludes e2e tag)
+cd gateway && ./gradlew test -Djunit.jupiter.tags.exclude=e2e
+```
+
+E2E tests are tagged with `@Tag("e2e")` and managed via JUnit 5 tag filtering.
