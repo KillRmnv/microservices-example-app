@@ -1,4 +1,4 @@
-package com.microservices_example_app.notification;
+package com.microservices_example_app.gateway;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
