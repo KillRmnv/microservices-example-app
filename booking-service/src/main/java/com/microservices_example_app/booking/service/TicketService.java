@@ -202,10 +202,6 @@ public class TicketService {
         String username = jwtRequestUserExtractor.extractUsername();
 
         if (currentUserId!=null&&((previousUserId != null && !currentUserId.equals(previousUserId))||(previousUserId==null))) {
-            notificationKafkaBookingProducer.sendSuccessfulTicketRefundEvent(
-                    new SuccessfulTicketRefundEvent(email, username, saved.getEvent().getTitle(), serviceName)
-            );
-            log.info("Refund event sent: ticket id={}, userId={}", saved.getId(), currentUserId);
 
             notificationKafkaBookingProducer.sendSuccessfulBookingEvent(
                     new SuccessfulBookingEvent(email, username, saved.getEvent().getTitle(), serviceName)

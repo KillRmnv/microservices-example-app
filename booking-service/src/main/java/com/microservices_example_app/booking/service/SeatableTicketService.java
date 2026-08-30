@@ -1,6 +1,7 @@
 package com.microservices_example_app.booking.service;
 
 import com.microservices_example_app.booking.dto.*;
+import com.microservices_example_app.booking.event.DeleteEventEvent;
 import com.microservices_example_app.booking.event.SuccessfulBookingEvent;
 import com.microservices_example_app.booking.event.SuccessfulTicketRefundEvent;
 import com.microservices_example_app.booking.exceptions.NotFoundException;
@@ -8,6 +9,7 @@ import com.microservices_example_app.booking.model.Event;
 import com.microservices_example_app.booking.model.Seat;
 import com.microservices_example_app.booking.model.SeatableTicket;
 import com.microservices_example_app.booking.producers.NotificationKafkaBookingProducer;
+import com.microservices_example_app.booking.producers.NotificationKafkaUserProducer;
 import com.microservices_example_app.booking.repository.EventRepository;
 import com.microservices_example_app.booking.repository.SeatRepository;
 import com.microservices_example_app.booking.repository.SeatableTicketRepository;
@@ -33,6 +35,7 @@ public class SeatableTicketService {
     private final EventRepository eventRepository;
     private final SeatRepository seatRepository;
     private final NotificationKafkaBookingProducer notificationKafkaBookingProducer;
+    private final NotificationKafkaUserProducer kafkaUserProducer;
     private final JwtRequestUserExtractor jwtRequestUserExtractor;
 
     @Value("${spring.application.name}")
@@ -161,6 +164,10 @@ public class SeatableTicketService {
         SeatableTicket ticket = seatableTicketRepository.findById(request.getId())
                 .orElseThrow(() -> new NotFoundException("No seatable ticket with id=" + request.getId()));
 
+        Integer currentUserId = jwtRequestUserExtractor.extractUserId();
+        Integer previousUserId = ticket.getUserId();
+        log.info("previous userid:{}", previousUserId);
+
         var builder = SeatableTicket.builder().id(ticket.getId());
 
         if (request.getEventId() != null) {
@@ -197,10 +204,28 @@ public class SeatableTicketService {
             builder.active(ticket.isActive());
         }
 
-        builder.userId(ticket.getUserId());
+        if (currentUserId != null) {
+            builder.userId(currentUserId);
+        } else {
+            builder.userId(ticket.getUserId());
+        }
 
         log.info("Update seatable ticket with id: {}", ticket.getId());
         SeatableTicket saved = seatableTicketRepository.save(builder.build());
+
+        String email = jwtRequestUserExtractor.extractEmail();
+        String username = jwtRequestUserExtractor.extractUsername();
+
+        if (currentUserId != null && ((previousUserId != null && !currentUserId.equals(previousUserId)) || (previousUserId == null))) {
+            
+            notificationKafkaBookingProducer.sendSuccessfulBookingEvent(
+                    new SuccessfulBookingEvent(email, username, saved.getEvent().getTitle(), serviceName)
+            );
+            log.info("Booking event sent: seatable ticket id={}, userId={}", saved.getId(), request.getUserId());
+        } else {
+            log.debug("No user change for seatable ticket id={}", saved.getId());
+        }
+
         return toResponseDto(saved);
     }
     @Transactional
@@ -262,15 +287,15 @@ public class SeatableTicketService {
 
         seatableTicketRepository.deleteAll(tickets);
 
-        String email = jwtRequestUserExtractor.extractEmail();
-        String username = jwtRequestUserExtractor.extractUsername();
-
         tickets.stream()
                 .filter(t -> t.getUserId() != null)
                 .forEach(t -> {
-                    notificationKafkaBookingProducer.sendSuccessfulTicketRefundEvent(
-                            new SuccessfulTicketRefundEvent(email, username, t.getEvent().getTitle(), serviceName)
+                    DeleteEventEvent refundEvent = new DeleteEventEvent(
+                            List.of(t.getEvent().getTitle()),
+                            serviceName,
+                            List.of(t.getUserId())
                     );
+                    kafkaUserProducer.sendDeleteEventEvent(refundEvent);
                     log.info("Refund notification sent for seatable ticket id={}, userId={}", t.getId(), t.getUserId());
                 });
 
