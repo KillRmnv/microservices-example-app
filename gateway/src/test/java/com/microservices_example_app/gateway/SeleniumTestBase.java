@@ -10,6 +10,7 @@ import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeOptions;
+import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
 
 import java.io.IOException;
@@ -112,6 +113,13 @@ class SeleniumTestBase {
     protected List<WebElement> findAll(String cssSelector) {
         waitForPageLoad();
         return driver.findElements(By.cssSelector(cssSelector));
+    }
+
+    protected void clickByTestId(String testId) {
+        new WebDriverWait(driver, TIMEOUT)
+                .until(ExpectedConditions.elementToBeClickable(
+                        By.cssSelector("[data-testid='" + testId + "']")))
+                .click();
     }
 
     protected Object js(String script) {

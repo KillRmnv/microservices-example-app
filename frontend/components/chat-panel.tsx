@@ -3,14 +3,32 @@
 import { useEffect, useState } from 'react'
 import { ArrowRight, CheckCircle2, CloudRain, MessageCircle, RefreshCcw, Sun, X } from 'lucide-react'
 import type { StateContract } from '@/lib/types'
+import { api } from '@/lib/api'
+import {
+  clearContract,
+  confirmHold,
+  createHold,
+  isMockMode,
+  loadContract,
+  saveContract,
+  sendDialogue,
+  type DialogMessage,
+} from '@/lib/assistant'
+import { contractFromParsed, parseQuery } from '@/lib/dialogue'
 
 interface ChatMessage {
   id: number
   kind: 'user' | 'assistant' | 'filters' | 'results' | 'plan' | 'weather'
   text: string
   filters?: StateContract
-  results?: { title: string; meta: string; price: string }[]
+  results?: { title: string; meta: string; price: string; event_id?: string }[]
   plan?: { time: string; title: string; detail: string; source: string }[]
+  holdId?: string
+  error?: boolean
+}
+
+function isBookable(eventId: string | undefined): eventId is string {
+  return !!eventId && /^\d+$/.test(eventId)
 }
 
 const CITIES = 'Минск'
@@ -126,6 +144,106 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
     },
   ])
   const [draft, setDraft] = useState('')
+  const [busy, setBusy] = useState(false)
+  const mock = isMockMode()
+
+  const nextId = () => Date.now() + Math.floor(Math.random() * 1000)
+
+  const pushError = (text: string) => {
+    setMessages((prev) => [...prev, { id: nextId(), kind: 'assistant', text, error: true }])
+  }
+
+  const sendLive = async (text: string) => {
+    setBusy(true)
+    try {
+      const parsed = parseQuery(text)
+      const contract = contractFromParsed(parsed, loadContract() ?? undefined)
+      const response = await sendDialogue(contract)
+      saveContract(response.contract)
+      setMessages((prev) => [
+        ...prev,
+        ...response.messages.map((message: DialogMessage, index: number) => ({
+          id: nextId() + index,
+          kind: message.kind,
+          text: message.text,
+          results: message.results,
+          weather: message.weather,
+          plan: message.plan,
+          filters: message.kind === 'filters' ? response.contract : undefined,
+        })),
+      ])
+    } catch (e) {
+      pushError(e instanceof Error ? `Не получилось связаться с ассистентом: ${e.message}` : 'Не получилось связаться с ассистентом.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const selectResult = async (result: { title: string; meta: string; price: string; event_id?: string }) => {
+    if (!isBookable(result.event_id)) return
+    const contract = loadContract()
+    const sessionId = contract?.context_state.session_id ?? `web_${Date.now()}`
+    const partySize = contract?.hard_filters.party_size ?? 2
+    setBusy(true)
+    try {
+      const tickets = await api.getTickets(Number(result.event_id))
+      const active = tickets.filter((ticket) => ticket.active)
+      if (!active.length) {
+        pushError('Похоже, билеты разобрали — выберите другое событие.')
+        return
+      }
+      const cheapest = active.reduce((best, ticket) => (ticket.price < best.price ? ticket : best))
+      const hold = await createHold({
+        session_id: sessionId,
+        event_id: Number(result.event_id),
+        zone: String(cheapest.zone),
+        price: cheapest.price,
+        party_size: partySize,
+      })
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: nextId(),
+          kind: 'plan',
+          text: `Держу для вас: ${result.title} — ${cheapest.zone}, ${cheapest.price} руб. Бронь сгорит через 10 минут.`,
+          plan: [{ time: 'hold', title: result.title, detail: `${result.meta} · ${result.price}`, source: 'assistant' }],
+          holdId: hold.id,
+        },
+      ])
+    } catch (e) {
+      pushError(e instanceof Error ? `Не удалось оформить бронь: ${e.message}` : 'Не удалось оформить бронь.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const confirmPlan = async (message: ChatMessage) => {
+    if (!message.holdId) return
+    setBusy(true)
+    try {
+      const hold = await confirmHold(message.holdId)
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: nextId(),
+          kind: 'assistant',
+          text: `Готово! Бронь №${hold.id} подтверждена: событие ${hold.event_id}, зона ${hold.zone}, ${hold.price} руб.`,
+        },
+      ])
+      const confirmedId = message.id
+      setMessages((prev) => prev.map((item) =>
+        item.id === confirmedId ? { ...item, holdId: undefined } : item))
+    } catch (e) {
+      pushError(e instanceof Error ? `Не удалось подтвердить: ${e.message}` : 'Не удалось подтвердить бронь.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const dismissPlan = (messageId: number) => {
+    clearContract()
+    setMessages((prev) => prev.filter((item) => item.id !== messageId))
+  }
 
   useEffect(() => {
     if (open) {
@@ -149,12 +267,16 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
 
   const send = () => {
     const text = draft.trim()
-    if (!text) return
+    if (!text || busy) return
     setDraft('')
+    setMessages((prev) => [...prev, { id: nextId(), kind: 'user', text }])
+    if (!mock) {
+      void sendLive(text)
+      return
+    }
     const known = Object.keys(SCENARIOS).find((key) =>
       key.toLowerCase().split(' ').some((word) => word.length > 3 && text.toLowerCase().includes(word)),
-    )
-    setMessages((prev) => [...prev, { id: prev.length * 10 + 1, kind: 'user', text }])
+    );
     setTimeout(() => {
       if (known) {
         pushScenario(known)
@@ -162,7 +284,7 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
         setMessages((prev) => [
           ...prev,
           {
-            id: prev.length * 10 + 2,
+            id: nextId(),
             kind: 'assistant',
             text: 'Уточню: вас интересует событие на конкретную дату или место для вечера? Напишите, сколько вас будет и какой бюджет на человека.',
           },
@@ -176,7 +298,7 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
       <section className="chat-panel" onClick={(e) => e.stopPropagation()} data-testid="chat-panel">
         <header>
           <div>
-            <div className="kicker">СПРАВКА РЕДАКЦИИ · РЕЖИМ ДЕМО</div>
+            <div className="kicker">СПРАВКА РЕДАКЦИИ · {mock ? 'РЕЖИМ ДЕМО' : 'ОНЛАЙН'}</div>
             <h2>Ваш помощник</h2>
           </div>
           <button onClick={onClose} aria-label="Закрыть" data-testid="chat-close"><X size={19} /></button>
@@ -220,10 +342,20 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
                   <p>{message.text}</p>
                   <div className="result-cards">
                     {message.results.map((result) => (
-                      <article className="result-card" key={result.title} data-testid="chat-result-card">
+                      <article className="result-card" key={`${result.title}-${result.event_id ?? ''}`} data-testid="chat-result-card">
                         <h3>{result.title}</h3>
                         <p>{result.meta}</p>
                         <strong>{result.price}</strong>
+                        {isBookable(result.event_id) && (
+                          <button
+                            className="apply-button"
+                            disabled={busy}
+                            onClick={() => void selectResult(result)}
+                            data-testid="chat-result-select"
+                          >
+                            Выбрать
+                          </button>
+                        )}
                       </article>
                     ))}
                   </div>
@@ -248,10 +380,19 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
                     ))}
                   </ol>
                   <div className="plan-actions">
-                    <button className="apply-button" data-testid="chat-plan-confirm">
+                    <button
+                      className="apply-button"
+                      disabled={busy || !message.holdId}
+                      onClick={() => void confirmPlan(message)}
+                      data-testid="chat-plan-confirm"
+                    >
                       <CheckCircle2 size={15} /> Подтвердить план
                     </button>
-                    <button className="reset-button" data-testid="chat-plan-edit">
+                    <button
+                      className="reset-button"
+                      onClick={() => dismissPlan(message.id)}
+                      data-testid="chat-plan-edit"
+                    >
                       <RefreshCcw size={13} /> Изменить условия
                     </button>
                   </div>
@@ -259,14 +400,16 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
               )
             }
             return (
-              <div className="assistant-message" key={message.id}>
+              <div className="assistant-message" key={message.id} data-testid={message.error ? 'chat-error' : undefined}>
                 <span className="message-number">СВОДКА № 001 · ТОЛЬКО ЧТО</span>
                 <p>{message.text}</p>
+                {mock && (
                 <div className="quick-replies" data-testid="chat-quick-replies">
                   {Object.keys(SCENARIOS).map((label) => (
                     <button key={label} onClick={() => pushScenario(label)}>{label}</button>
                   ))}
                 </div>
+                )}
               </div>
             )
           })}
@@ -284,7 +427,7 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
             onChange={(e) => setDraft(e.target.value)}
             data-testid="chat-input"
           />
-          <button aria-label="Отправить" type="submit" data-testid="chat-send"><ArrowRight size={18} /></button>
+          <button aria-label="Отправить" type="submit" disabled={busy} data-testid="chat-send"><ArrowRight size={18} /></button>
         </form>
       </section>
     </div>
