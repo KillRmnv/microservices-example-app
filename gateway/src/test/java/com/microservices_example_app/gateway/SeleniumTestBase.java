@@ -122,6 +122,14 @@ class SeleniumTestBase {
                 .click();
     }
 
+    protected void typeByTestId(String testId, String text) {
+        WebElement input = new WebDriverWait(driver, TIMEOUT)
+                .until(ExpectedConditions.elementToBeClickable(
+                        By.cssSelector("[data-testid='" + testId + "']")));
+        input.clear();
+        input.sendKeys(text);
+    }
+
     protected Object js(String script) {
         return ((JavascriptExecutor) driver).executeScript(script);
     }

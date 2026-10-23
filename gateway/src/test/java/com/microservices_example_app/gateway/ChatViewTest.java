@@ -8,7 +8,7 @@ class ChatViewTest extends SeleniumTestBase {
 
     private void openChat() {
         navigateTo("/");
-        findByTestId("assistant-fab").click();
+        clickByTestId("assistant-fab");
         assertThat(findByTestId("chat-panel")).isNotNull();
     }
 
@@ -20,10 +20,11 @@ class ChatViewTest extends SeleniumTestBase {
     }
 
     @Test
-    void shouldShowOnlineModeWithoutMockFlag() {
+    void shouldShowChatKicker() {
         openChat();
-        // CI builds the frontend without NEXT_PUBLIC_ASSISTANT_MOCK.
-        assertThat(find(".chat-panel .kicker").getText()).contains("ОНЛАЙН");
+        // Kicker always names the desk; the mode suffix (ДЕМО/ОНЛАЙН)
+        // depends on the build-time NEXT_PUBLIC_ASSISTANT_MOCK flag.
+        assertThat(find(".chat-panel .kicker").getText()).contains("СПРАВКА РЕДАКЦИИ");
     }
 
     @Test
@@ -37,8 +38,8 @@ class ChatViewTest extends SeleniumTestBase {
     @Test
     void shouldEchoUserMessage() {
         openChat();
-        findByTestId("chat-input").sendKeys("Что-нибудь на выходные");
-        findByTestId("chat-send").click();
+        typeByTestId("chat-input", "Что-нибудь на выходные");
+        clickByTestId("chat-send");
         assertThat(findByTestId("chat-user-message").getText())
                 .isEqualTo("Что-нибудь на выходные");
     }
@@ -46,8 +47,8 @@ class ChatViewTest extends SeleniumTestBase {
     @Test
     void shouldShowErrorWithoutBackend() {
         openChat();
-        findByTestId("chat-input").sendKeys("Тихий джаз в субботу");
-        findByTestId("chat-send").click();
+        typeByTestId("chat-input", "Тихий джаз в субботу");
+        clickByTestId("chat-send");
         // No backend behind the static export: the panel must say so.
         assertThat(findByTestId("chat-error").getText()).contains("ассистент");
     }
