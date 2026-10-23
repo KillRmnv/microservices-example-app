@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     llama_embed_url: str = "http://localhost:8088"
     collector_base_url: str = "http://localhost:8085"
 
+    scheduler_enabled: bool = True
+    sweep_interval_s: int = 300
+
     def backend_for(self, stage: str) -> str:
         for chunk in self.llm_stages.split(","):
             name, _, backend = chunk.partition(":")

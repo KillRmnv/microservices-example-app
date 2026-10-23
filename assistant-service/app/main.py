@@ -11,6 +11,7 @@ import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 
 from . import db
@@ -31,7 +32,32 @@ async def lifespan(app: FastAPI):
     applied = db.run_migrations(settings.database_url)
     if applied:
         log.info("applied migrations: %s", applied)
+    if settings.scheduler_enabled:
+        from apscheduler.schedulers.asyncio import AsyncIOScheduler
+        from apscheduler.triggers.interval import IntervalTrigger
+
+        from .holds import expire_holds
+
+        async def sweep_job() -> None:
+            try:
+                with db.get_conn(settings.database_url) as conn:
+                    expired = expire_holds(conn)
+                if expired:
+                    log.info("sweep expired %d holds", expired)
+            except Exception as exc:  # noqa: BLE001 — scheduler must survive
+                log.warning("holds sweep failed: %s", exc)
+
+        scheduler = AsyncIOScheduler()
+        scheduler.add_job(sweep_job, IntervalTrigger(seconds=settings.sweep_interval_s),
+                          id="holds-sweep", max_instances=1, coalesce=True,
+                          next_run_time=None)
+        scheduler.start()
+        app.state.scheduler = scheduler
+        log.info("scheduled holds sweep every %ss", settings.sweep_interval_s)
     yield
+    scheduler = getattr(app.state, "scheduler", None)
+    if scheduler is not None:
+        scheduler.shutdown(wait=False)
 
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
@@ -149,3 +175,24 @@ def sweep_holds_endpoint():
     with db.get_conn(settings.database_url) as conn:
         expired = _expire_holds(conn)
     return {"expired": expired}
+
+
+@app.get("/metrics")
+def metrics():
+    """Prometheus text (scraped, see prometheus.yml)."""
+    with db.get_conn(settings.database_url) as conn:
+        text = assistant_metrics(conn)
+    return PlainTextResponse(text)
+
+
+def assistant_metrics(conn) -> str:
+    dialogue = conn.execute(
+        "SELECT action, count(*) FROM dialogue_runs GROUP BY action").fetchall()
+    holds = conn.execute(
+        "SELECT status, count(*) FROM booking_holds GROUP BY status").fetchall()
+    lines = []
+    for row in dialogue:
+        lines.append(f'assistant_dialogue_runs_total{{action="{row["action"]}"}} {row["count"]}')
+    for row in holds:
+        lines.append(f'assistant_holds{{status="{row["status"]}"}} {row["count"]}')
+    return "\n".join(lines) + "\n"

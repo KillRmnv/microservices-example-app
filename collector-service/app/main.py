@@ -10,12 +10,14 @@ import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 
 from . import db
 from .config import settings
 from .embeddings import LlamaServerEmbedding, embeddable_text
 from .http import PoliteClient
+from .scheduler import degraded_sources, post_alert, source_health
 from .sources.afisha_me import AfishaMeAdapter
 from .sources.base import CollectContext, RunStats, SourceAdapter
 from .sources.relax import RelaxAdapter
@@ -41,7 +43,10 @@ async def lifespan(app: FastAPI):
     app.state.embedder = LlamaServerEmbedding(settings.llama_embed_url)
     app.state.vector = QdrantStore(settings.qdrant_url, settings.qdrant_collection)
     await app.state.vector.ensure(settings.qdrant_vector_size)
+    from .scheduler import start_scheduler, stop_scheduler
+    start_scheduler(app)
     yield
+    stop_scheduler(app)
     await app.state.http.aclose()
 
 
@@ -123,8 +128,18 @@ async def embed_source(source: str, limit: int | None = None):
     if source != "all" and source not in ADAPTERS and source != "telegram":
         raise HTTPException(status_code=404, detail=f"unknown source: {source}")
     started = time.monotonic()
+    embedded, pending = await embed_pending(app, source, limit)
+    duration = time.monotonic() - started
+    return {"source": source, "embedded": embedded,
+            "pending": pending, "duration_s": round(duration, 1)}
+
+
+async def embed_pending(app, source: str = "all", limit: int | None = None,
+                        cap: int | None = None) -> tuple[int, int]:
+    """Embed unembedded rows in batches; shared by endpoint and scheduler."""
+    from .config import settings as collector_settings
     embedded = 0
-    with db.get_conn(settings.database_url) as conn:
+    with db.get_conn(collector_settings.database_url) as conn:
         params: list = []
         query = ("SELECT id, title, venue_name, description, city, category,"
                  " start_at FROM collected_events WHERE embedded_at IS NULL")
@@ -132,11 +147,14 @@ async def embed_source(source: str, limit: int | None = None):
             query += " AND source = %s"
             params.append(source)
         query += " ORDER BY fetched_at"
-        if limit:
+        fetch_limit = limit
+        if cap is not None:
+            fetch_limit = min(limit or cap, cap)
+        if fetch_limit:
             query += " LIMIT %s"
-            params.append(max(1, limit))
+            params.append(max(1, fetch_limit))
         rows = conn.execute(query, params).fetchall()
-        batch_size = settings.embed_batch_size
+        batch_size = collector_settings.embed_batch_size
         for offset in range(0, len(rows), batch_size):
             batch = rows[offset:offset + batch_size]
             texts = [embeddable_text(row["title"], row["venue_name"],
@@ -164,9 +182,57 @@ async def embed_source(source: str, limit: int | None = None):
             )
             conn.commit()
             embedded += len(batch)
-    duration = time.monotonic() - started
-    return {"source": source, "embedded": embedded,
-            "pending": len(rows) - embedded, "duration_s": round(duration, 1)}
+    return embedded, len(rows) - embedded
+
+
+@app.get("/collect/health")
+def collect_health():
+    """Per-source freshness for alerting (stage 5): degraded when the last
+    `ops_alert_window` runs brought 0 new events or any run errored."""
+    with db.get_conn(settings.database_url) as conn:
+        health = source_health(conn, settings.ops_alert_window)
+    return {"sources": health, "degraded": degraded_sources(health)}
+
+
+@app.post("/collect/alert-check")
+async def alert_check():
+    """Evaluate health now and POST the degraded list to the webhook."""
+    with db.get_conn(settings.database_url) as conn:
+        health = source_health(conn, settings.ops_alert_window)
+    degraded = degraded_sources(health)
+    sent = await post_alert(settings.ops_webhook_url, degraded)
+    return {"degraded": degraded, "alert_sent": sent}
+
+
+@app.get("/metrics")
+def metrics():
+    """Prometheus text (scraped, see prometheus.yml)."""
+    with db.get_conn(settings.database_url) as conn:
+        text = collect_metrics(conn)
+    return PlainTextResponse(text)
+
+
+def collect_metrics(conn) -> str:
+    totals = conn.execute(
+        "SELECT source, count(*) FROM collected_events GROUP BY source").fetchall()
+    runs = conn.execute(
+        "SELECT source, status, count(*) FROM source_runs GROUP BY source, status"
+    ).fetchall()
+    errors = conn.execute(
+        "SELECT source, sum(parse_errors) FROM source_runs GROUP BY source").fetchall()
+    last = conn.execute(
+        "SELECT source, extract(epoch FROM max(started_at)) AS ts"
+        " FROM source_runs GROUP BY source").fetchall()
+    lines = []
+    for row in totals:
+        lines.append(f'collector_events_total{{source="{row["source"]}"}} {row["count"]}')
+    for row in runs:
+        lines.append(f'collector_runs_total{{source="{row["source"]}",status="{row["status"]}"}} {row["count"]}')
+    for row in errors:
+        lines.append(f'collector_parse_errors_total{{source="{row["source"]}"}} {row["sum"] or 0}')
+    for row in last:
+        lines.append(f'collector_last_run_unixtime{{source="{row["source"]}"}} {int(row["ts"] or 0)}')
+    return "\n".join(lines) + "\n"
 
 
 def record_run(source: str, status: str, stats: RunStats, error: str | None,

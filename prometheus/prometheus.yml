@@ -34,3 +34,17 @@ scrape_configs:
       - targets: ["notification-service:8083"]
         labels:
           service: "notification-service"
+
+  - job_name: "collector-service"
+    metrics_path: "/metrics"
+    static_configs:
+      - targets: ["collector-service:8080"]
+        labels:
+          service: "collector-service"
+
+  - job_name: "assistant-service"
+    metrics_path: "/metrics"
+    static_configs:
+      - targets: ["assistant-service:8080"]
+        labels:
+          service: "assistant-service"

@@ -29,6 +29,24 @@ class Settings(BaseSettings):
     telegram_max_pages: int = 5
     telegram_llm_fallback: bool = False
 
+    # Scheduler (APScheduler, intervals in seconds: "source:seconds,...").
+    scheduler_enabled: bool = True
+    schedules: str = ("ticketpro:21600,relax:86400,afisha_me:86400,"
+                      "telegram:1200")
+
+    # Ops alerting: POST degraded sources here (ntfy/Slack/healthchecks).
+    ops_webhook_url: str = ""
+    ops_alert_window: int = 2
+
+    def schedule_map(self) -> dict[str, int]:
+        result = {}
+        for chunk in self.schedules.split(","):
+            name, _, seconds = chunk.partition(":")
+            name, seconds = name.strip(), seconds.strip()
+            if name and seconds.isdigit():
+                result[name] = int(seconds)
+        return result
+
     def min_interval_for(self, source: str) -> float:
         for chunk in self.source_intervals.split(","):
             if ":" not in chunk:

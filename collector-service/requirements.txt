@@ -6,5 +6,6 @@ pydantic-settings==2.8.1
 psycopg[binary]==3.2.5
 qdrant-client==1.12.1
 selectolax==1.0.2
+apscheduler==3.11.3
 pytest==8.3.5
 pytest-asyncio==0.26.0
