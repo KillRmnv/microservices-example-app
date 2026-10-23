@@ -151,6 +151,19 @@ jobs:
   collector-service:
     name: Collector Service (Python)
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: 1234
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
 
@@ -167,6 +180,8 @@ jobs:
       - name: Run tests
         run: python -m pytest tests/ -q
         working-directory: collector-service
+        env:
+          COLLECTOR_TEST_DATABASE_URL: postgresql://postgres:1234@localhost:5432/postgres
 
       # The Dockerfile COPYs ./collector-service, so the build
       # context must be the repo root.
