@@ -151,9 +151,6 @@ jobs:
   collector-service:
     name: Collector Service (Python)
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: collector-service
     steps:
       - uses: actions/checkout@v4
 
@@ -165,19 +162,20 @@ jobs:
 
       - name: Install dependencies
         run: pip install -r requirements.txt
+        working-directory: collector-service
 
       - name: Run tests
         run: python -m pytest tests/ -q
+        working-directory: collector-service
 
+      # The Dockerfile COPYs ./collector-service, so the build
+      # context must be the repo root.
       - name: Build Docker image
         run: docker build -f collector-service/Dockerfile -t collector-service:test .
 
   assistant-service:
     name: Assistant Service (Python)
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: assistant-service
     steps:
       - uses: actions/checkout@v4
 
@@ -189,10 +187,14 @@ jobs:
 
       - name: Install dependencies
         run: pip install -r requirements.txt
+        working-directory: assistant-service
 
       - name: Run tests
         run: python -m pytest tests/ -q
+        working-directory: assistant-service
 
+      # The Dockerfile COPYs ./assistant-service, so the build
+      # context must be the repo root.
       - name: Build Docker image
         run: docker build -f assistant-service/Dockerfile -t assistant-service:test .
 
