@@ -38,6 +38,9 @@ class FakeCollector(CollectorClient):
     async def search_lexical(self, query, city, category, limit):
         return self._rows[:limit]
 
+    async def search_venues_lexical(self, query, city, rubric, limit):
+        return self._rows[:limit]
+
 
 @pytest.mark.asyncio
 async def test_hybrid_search_merges_both_origins():
@@ -77,6 +80,27 @@ async def test_collector_client_uses_mock_transport():
     client = CollectorClient("http://collector:8085", transport=httpx.MockTransport(handler))
     rows = await client.search_lexical("джаз", None, None, 5)
     assert rows == [{"id": "e1", "title": "Джаз"}]
+
+
+@pytest.mark.asyncio
+async def test_hybrid_search_venues_merges():
+    from app.search import VenueSearchRequest, hybrid_search_venues
+
+    store = InMemoryStore([
+        ("v1", [1.0, 0.0, 0.0], {"name": "Кофейня", "rubric": "Кофейни"}),
+        ("v2", [0.0, 1.0, 0.0], {"name": "Театр", "rubric": "Театры"}),
+    ])
+    collector = FakeCollector([
+        {"id": "v2", "name": "Театр", "rubric": "Театры", "address": "ул. X"},
+        {"id": "v3", "name": "Бар", "rubric": "Бары", "address": "ул. Y"},
+    ])
+    hits = await hybrid_search_venues(
+        FakeEmbedder(), store, collector,
+        VenueSearchRequest(vector_query="кофе", limit=3))
+    by_id = {hit.id: hit for hit in hits}
+    assert set(by_id) == {"v1", "v2", "v3"}
+    assert by_id["v2"].origins == ["dense", "lexical"]
+    assert by_id["v3"].payload["address"] == "ул. Y"
 
 
 @pytest.mark.asyncio

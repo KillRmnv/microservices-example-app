@@ -174,3 +174,20 @@ def normalize_jsonld(source: str, source_id: str, source_url: str, category: str
         if isinstance(data.get("organizer"), dict) else None,
         raw=data,
     )
+
+
+@dataclass
+class VenueRow:
+    source: str = "twogis"
+    source_id: str = ""
+    name: str = ""
+    rubric: str | None = None
+    address: str | None = None
+    city: str = "Минск"
+    lat: float | None = None
+    lon: float | None = None
+    schedule: dict | None = None
+    rating: float | None = None
+    review_count: int | None = None
+    source_url: str | None = None
+    raw: dict = field(default_factory=dict)

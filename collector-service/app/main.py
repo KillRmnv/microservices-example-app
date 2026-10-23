@@ -23,6 +23,7 @@ from .sources.base import CollectContext, RunStats, SourceAdapter
 from .sources.relax import RelaxAdapter
 from .sources.telegram import TelegramAdapter
 from .sources.ticketpro import TicketproAdapter
+from .sources.twogis_places import TwogisPlacesAdapter
 from .vector import QdrantStore, VectorPoint
 
 log = logging.getLogger(__name__)
@@ -43,6 +44,9 @@ async def lifespan(app: FastAPI):
     app.state.embedder = LlamaServerEmbedding(settings.llama_embed_url)
     app.state.vector = QdrantStore(settings.qdrant_url, settings.qdrant_collection)
     await app.state.vector.ensure(settings.qdrant_vector_size)
+    app.state.vector_venues = QdrantStore(settings.qdrant_url,
+                                          settings.qdrant_collection_venues)
+    await app.state.vector_venues.ensure(settings.qdrant_vector_size)
     from .scheduler import start_scheduler, stop_scheduler
     start_scheduler(app)
     yield
@@ -58,6 +62,7 @@ ADAPTERS: dict[str, SourceAdapter] = {
     RelaxAdapter.name: RelaxAdapter(),
     AfishaMeAdapter.name: AfishaMeAdapter(),
     TelegramAdapter.name: TelegramAdapter(),
+    TwogisPlacesAdapter.name: TwogisPlacesAdapter(),
 }
 
 
@@ -183,6 +188,69 @@ async def embed_pending(app, source: str = "all", limit: int | None = None,
             conn.commit()
             embedded += len(batch)
     return embedded, len(rows) - embedded
+
+
+@app.get("/venues/search")
+def venues_search(q: str, city: str | None = None, rubric: str | None = None,
+                  limit: int = 20):
+    """Lexical half of venue hybrid search."""
+    limit = max(1, min(100, limit))
+    query = ("""SELECT id, source, name, rubric, address, city, lat, lon,
+                       rating, review_count,
+                       ts_rank_cd(search_vector, plainto_tsquery('russian', %s)) AS rank
+                FROM collected_venues
+                WHERE search_vector @@ plainto_tsquery('russian', %s)
+                AND (%s::TEXT IS NULL OR city = %s)
+                AND (%s::TEXT IS NULL OR rubric = %s)
+                ORDER BY rank DESC LIMIT %s""")
+    with db.get_conn(settings.database_url) as conn:
+        rows = conn.execute(query, (q, q, city, city, rubric, rubric, limit)).fetchall()
+    return {"venues": [dict(row) for row in rows]}
+
+
+@app.post("/embed/venues")
+async def embed_venues(limit: int | None = None):
+    """Backfill Qdrant `venues` collection (2GIS catalog)."""
+    started = time.monotonic()
+    embedded = 0
+    with db.get_conn(settings.database_url) as conn:
+        query = ("SELECT id, name, rubric, address, city FROM collected_venues"
+                 " WHERE embedded_at IS NULL ORDER BY fetched_at")
+        params: list = []
+        if limit:
+            query += " LIMIT %s"
+            params.append(max(1, limit))
+        rows = conn.execute(query, params).fetchall()
+        batch_size = settings.embed_batch_size
+        for offset in range(0, len(rows), batch_size):
+            batch = rows[offset:offset + batch_size]
+            texts = ["\n".join(part for part in
+                               [row["name"], row["rubric"], row["address"]]
+                               if part) for row in batch]
+            try:
+                vectors = await app.state.embedder.embed(texts)
+                await app.state.vector_venues.upsert([
+                    VectorPoint(
+                        id=str(row["id"]),
+                        vector=vector,
+                        payload={"name": row["name"], "city": row["city"],
+                                 "rubric": row["rubric"] or "",
+                                 "address": row["address"] or ""},
+                    )
+                    for row, vector in zip(batch, vectors)
+                ])
+            except Exception as exc:  # noqa: BLE001 — keep already stored batches
+                log.warning("venues embed batch failed: %s", exc)
+                break
+            conn.execute(
+                "UPDATE collected_venues SET embedded_at = now() WHERE id = ANY(%s)",
+                ([row["id"] for row in batch],),
+            )
+            conn.commit()
+            embedded += len(batch)
+    duration = time.monotonic() - started
+    return {"embedded": embedded, "pending": len(rows) - embedded,
+            "duration_s": round(duration, 1)}
 
 
 @app.get("/collect/health")

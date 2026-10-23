@@ -22,6 +22,7 @@ class Settings(BaseSettings):
 
     qdrant_url: str = "http://localhost:6333"
     qdrant_collection: str = "events"
+    qdrant_collection_venues: str = "venues"
     llama_embed_url: str = "http://localhost:8088"
     collector_base_url: str = "http://localhost:8085"
 

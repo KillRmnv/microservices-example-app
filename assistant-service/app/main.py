@@ -21,7 +21,15 @@ from .dialogue import DialogResponse, run_search_turn
 from .holds import confirm_hold as _confirm_hold
 from .holds import create_hold as _create_hold
 from .holds import expire_holds as _expire_holds
-from .search import SearchHit, SearchRequest, build_search_components, hybrid_search
+from .search import (
+    SearchHit,
+    SearchRequest,
+    VenueHit,
+    VenueSearchRequest,
+    build_search_components,
+    hybrid_search,
+    hybrid_search_venues,
+)
 from .tools import BookingClient
 
 log = logging.getLogger(__name__)
@@ -143,6 +151,16 @@ async def search(req: SearchRequest):
     fused = await hybrid_search(embedder, store, collector, req)
     return [SearchHit(event_id=hit.id, title=hit.payload.get("title", ""),
                       score=hit.score, origins=hit.origins) for hit in fused]
+
+
+@app.post("/assistant/search_venues", response_model=list[VenueHit])
+async def search_venues(req: VenueSearchRequest):
+    embedder, store, collector = build_search_components(venues=True)
+    fused = await hybrid_search_venues(embedder, store, collector, req)
+    return [VenueHit(venue_id=hit.id, name=hit.payload.get("name", ""),
+                     rubric=hit.payload.get("rubric", ""),
+                     address=hit.payload.get("address", ""),
+                     score=hit.score, origins=hit.origins) for hit in fused]
 
 
 class HoldRequest(BaseModel):

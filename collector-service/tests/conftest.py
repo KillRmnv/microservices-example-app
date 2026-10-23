@@ -40,5 +40,7 @@ def conn():
     with db.get_conn(url) as connection:
         yield connection
         connection.rollback()
-        connection.execute("TRUNCATE event_sources, screenings, collected_events, source_runs")
+        connection.execute(
+            "TRUNCATE event_sources, screenings, collected_events, source_runs,"
+            " collected_venues, api_quota, twogis_rubrics, collector_kv")
         connection.commit()

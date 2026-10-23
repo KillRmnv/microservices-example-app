@@ -20,6 +20,7 @@ class Settings(BaseSettings):
 
     qdrant_url: str = "http://localhost:6333"
     qdrant_collection: str = "events"
+    qdrant_collection_venues: str = "venues"
     qdrant_vector_size: int = 1024  # bge-m3
     llama_embed_url: str = "http://localhost:8088"
     embed_batch_size: int = 32
@@ -37,6 +38,16 @@ class Settings(BaseSettings):
     # Ops alerting: POST degraded sources here (ntfy/Slack/healthchecks).
     ops_webhook_url: str = ""
     ops_alert_window: int = 2
+
+    # 2GIS Places (demo key: 1000 req/month — quota guard stops at cap-reserve).
+    twogis_api_key: str = ""
+    twogis_monthly_cap: int = 1000
+    twogis_reserve: int = 100
+    twogis_region: str = "Минск"
+    twogis_page_size: int = 50
+    # Test set first; expand after the trial ("кафе,рестораны,бары,кинотеатры,
+    # театры,музеи,клубы,выставки,караоке,парки,библиотеки,спортзалы,...").
+    twogis_rubrics: str = "кафе,кинотеатры,театры,музеи"
 
     def schedule_map(self) -> dict[str, int]:
         result = {}

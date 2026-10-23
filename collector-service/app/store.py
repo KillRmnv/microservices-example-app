@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 
-from .normalize import RawEvent
+from .normalize import RawEvent, VenueRow
 from .sources.base import RunStats
 
 log = logging.getLogger(__name__)
@@ -129,4 +129,36 @@ def upsert_events(conn, events: list[RawEvent]) -> RunStats:
                  event.price_max, event.image_url, event.ticket_url,
                  event.title, event.source_url, twin["id"]),
             )
+    return stats
+
+
+VENUE_UPSERT_SQL = """
+INSERT INTO collected_venues
+    (source, source_id, name, rubric, address, city, lat, lon,
+     schedule, rating, review_count, source_url, raw)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+ON CONFLICT (source, source_id) DO UPDATE SET
+    name = EXCLUDED.name, rubric = EXCLUDED.rubric,
+    address = EXCLUDED.address, lat = EXCLUDED.lat, lon = EXCLUDED.lon,
+    schedule = EXCLUDED.schedule, rating = EXCLUDED.rating,
+    review_count = EXCLUDED.review_count, source_url = EXCLUDED.source_url,
+    raw = EXCLUDED.raw, fetched_at = now()
+RETURNING (xmax = 0) AS inserted
+"""
+
+
+def upsert_venues(conn, venues: list[VenueRow]) -> RunStats:
+    import json
+    stats = RunStats()
+    for venue in venues:
+        row = conn.execute(VENUE_UPSERT_SQL, (
+            venue.source, venue.source_id, venue.name, venue.rubric,
+            venue.address, venue.city, venue.lat, venue.lon,
+            json.dumps(venue.schedule, ensure_ascii=False) if venue.schedule else None,
+            venue.rating, venue.review_count, venue.source_url,
+            json.dumps(venue.raw, ensure_ascii=False, default=str),
+        )).fetchone()
+        stats.parsed += 1
+        if row["inserted"]:
+            stats.new_events += 1
     return stats
