@@ -101,8 +101,6 @@ class TelegramAdapter(SourceAdapter):
             conn.commit()
             ids = [message["id"] for message in messages]
             before = min(ids) - 1
-            if len(messages) < 5:
-                break  # last page
 
     def normalize(self, channel: str, message: dict, now) -> RawEvent | None:
         text = message.get("text") or ""
