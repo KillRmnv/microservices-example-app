@@ -1,0 +1,62 @@
+name: Source Watch (Weekly)
+
+# Regression watch for scraper sources (SCRAPPING.md §8). Read-only curl
+# checks on GitHub runners — no project VPN traffic. A red run means
+# selectors/markup drifted or anti-bot kicked in.
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+jobs:
+  watch:
+    name: Source Watch
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ticketpro listings still carry Event JSON-LD
+        run: |
+          for path in bilety-na-koncert bilety-v-teatr festivali; do
+            count=$(curl -sL --max-time 20 -A 'Mozilla/5.0' "https://www.ticketpro.by/$path/" \
+              | grep -o '"@type": *"Event"' | wc -l)
+            echo "$path: $count events"
+            test "$count" -ge 5 || exit 1
+          done
+
+      - name: Relax sitemap inventory alive
+        run: |
+          count=$(curl -sL --max-time 20 --compressed -A 'Mozilla/5.0' \
+            'https://afisha.relax.by/sitemap-eventsAfisha.xml.gz' \
+            | gunzip -c | grep -o '<loc>' | wc -l)
+          echo "relax locs: $count"
+          test "$count" -ge 500 || exit 1
+
+      - name: Afisha.me sitemaps alive
+        run: |
+          for map in map-concert-minsk-1 map-theatre-minsk-1 map-exhibition-minsk-1; do
+            count=$(curl -sL --max-time 20 -A 'Mozilla/5.0' \
+              "https://afisha.me/sitemap/$map.xml" | grep -o '<loc>' | wc -l)
+            echo "$map: $count urls"
+            test "$count" -ge 5 || exit 1
+          done
+
+      - name: Telegram previews alive
+        run: |
+          for channel in minsk_kuda kuda_shodit_by; do
+            count=$(curl -sL --max-time 20 -A 'Mozilla/5.0' \
+              "https://t.me/s/$channel" | grep -o 'data-post="[^"]*"' | sort -u | wc -l)
+            echo "$channel: $count posts"
+            test "$count" -ge 3 || exit 1
+          done
+
+      - name: Anti-bot tripwire (bycard, 24afisha)
+        run: |
+          # These sources are BACKLOG (anti-bot). This step only records
+          # whether the challenge is still up — never fails the workflow.
+          for url in 'https://bycard.by/afisha' 'https://24afisha.by/ru/minsk'; do
+            if curl -sL --max-time 20 -A 'Mozilla/5.0' "$url" | grep -q '<title>Verification</title>'; then
+              echo "ANTI-BOT UP: $url"
+            else
+              echo "NO CHALLENGE: $url"
+            fi
+          done
+          exit 0
