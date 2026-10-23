@@ -17,6 +17,10 @@ jobs:
   user-service:
     name: User Service
     runs-on: ubuntu-latest
+    services:
+      docker:
+        image: docker:24-dind
+        options: --privileged
     defaults:
       run:
         working-directory: user-service
@@ -30,8 +34,8 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      - name: Run tests
-        run: ./gradlew test --no-daemon
+      - name: Run tests (exclude e2e & integration)
+        run: ./gradlew check -Djunit.jupiter.tags.exclude=e2e,integration --no-daemon
 
       - name: Build Docker image
         run: docker build -f Dockerfile -t user-service:test ..
@@ -39,6 +43,10 @@ jobs:
   booking-service:
     name: Booking Service
     runs-on: ubuntu-latest
+    services:
+      docker:
+        image: docker:24-dind
+        options: --privileged
     defaults:
       run:
         working-directory: booking-service
@@ -52,15 +60,19 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      - name: Run tests
-        run: ./gradlew test --no-daemon
+      - name: Run tests (exclude e2e & integration)
+        run: ./gradlew check -Djunit.jupiter.tags.exclude=e2e,integration --no-daemon
 
       - name: Build Docker image
         run: docker build -f Dockerfile -t booking-service:test ..
 
   notification-service:
-    name: Notification Service
+    name: Notification Service (Java)
     runs-on: ubuntu-latest
+    services:
+      docker:
+        image: docker:24-dind
+        options: --privileged
     defaults:
       run:
         working-directory: notification-service
@@ -74,15 +86,45 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      - name: Run tests
-        run: ./gradlew test --no-daemon
+      - name: Run tests (exclude e2e & integration)
+        run: ./gradlew check -Djunit.jupiter.tags.exclude=e2e,integration --no-daemon
 
       - name: Build Docker image
         run: docker build -f Dockerfile -t notification-service:test ..
 
+  notification-service-go:
+    name: Notification Service (Go)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: notification-service-go
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache: true
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Run tests
+        run: go test ./...
+
+      - name: Build binary
+        run: CGO_ENABLED=0 go build -o notification-service-go .
+
+      - name: Build Docker image
+        run: docker build -f Dockerfile -t notification-service-go:test .
+
   gateway:
     name: Gateway
     runs-on: ubuntu-latest
+    services:
+      docker:
+        image: docker:24-dind
+        options: --privileged
     defaults:
       run:
         working-directory: gateway
@@ -101,8 +143,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y chromium
 
-      - name: Run tests
-        run: ./gradlew test --no-daemon
+      - name: Run tests (exclude e2e & integration)
+        run: ./gradlew check -Djunit.jupiter.tags.exclude=e2e,integration --no-daemon
         env:
           CHROME_BIN: /usr/bin/chromium
 

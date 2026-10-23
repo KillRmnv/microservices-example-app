@@ -30,3 +30,7 @@ replay_pid*
 build
 .gradle
 *.iml
+
+AGENTS.md
+course.md
+Latex_template/

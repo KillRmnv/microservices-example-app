@@ -14,6 +14,7 @@ import com.microservices_example_app.booking.model.Seat;
 import com.microservices_example_app.booking.model.SeatableTicket;
 import com.microservices_example_app.booking.model.Zone;
 import com.microservices_example_app.booking.producers.NotificationKafkaBookingProducer;
+import com.microservices_example_app.booking.producers.NotificationKafkaUserProducer;
 import com.microservices_example_app.booking.repository.EventRepository;
 import com.microservices_example_app.booking.repository.SeatRepository;
 import com.microservices_example_app.booking.repository.SeatableTicketRepository;
@@ -53,6 +54,9 @@ class SeatableTicketServiceTest {
 
     @Mock
     private NotificationKafkaBookingProducer notificationKafkaBookingProducer;
+
+    @Mock
+    private NotificationKafkaUserProducer kafkaUserProducer;
 
     @Mock
     private JwtRequestUserExtractor jwtRequestUserExtractor;
@@ -294,6 +298,7 @@ class SeatableTicketServiceTest {
                 .build();
 
         when(seatableTicketRepository.findById(100)).thenReturn(Optional.of(existing));
+        when(jwtRequestUserExtractor.extractUserId()).thenReturn(77);
         when(seatableTicketRepository.save(any(SeatableTicket.class))).thenReturn(updated);
 
         SeatableTicketResponseDto result = seatableTicketService.updateSeatableTicketById(request);
@@ -306,6 +311,9 @@ class SeatableTicketServiceTest {
         ArgumentCaptor<SeatableTicket> captor = ArgumentCaptor.forClass(SeatableTicket.class);
         verify(seatableTicketRepository).save(captor.capture());
         assertThat(captor.getValue().getUserId()).isEqualTo(77);
+
+        verify(notificationKafkaBookingProducer, never()).sendSuccessfulTicketRefundEvent(any());
+        verify(notificationKafkaBookingProducer, never()).sendSuccessfulBookingEvent(any());
     }
 
     @Test
@@ -449,13 +457,11 @@ class SeatableTicketServiceTest {
         Seat seat = Seat.builder().id(5).sector("A").row("3").number("12").build();
         SeatableTicket ticket = SeatableTicket.builder().id(100).event(event).seat(seat).zone(Zone.VIP).userId(77).build();
         when(jwtRequestUserExtractor.extractUserId()).thenReturn(77);
-        when(jwtRequestUserExtractor.extractEmail()).thenReturn("test@mail.com");
-        when(jwtRequestUserExtractor.extractUsername()).thenReturn("alex");
         when(seatableTicketRepository.findAll(any(Specification.class))).thenReturn(List.of(ticket));
         long result = seatableTicketService.deleteByFilter(request);
         assertThat(result).isEqualTo(1);
         verify(seatableTicketRepository).deleteAll(List.of(ticket));
-        verify(notificationKafkaBookingProducer).sendSuccessfulTicketRefundEvent(any());
+        verify(kafkaUserProducer).sendDeleteEventEvent(any());
     }
 
     @Test
@@ -483,6 +489,61 @@ class SeatableTicketServiceTest {
         assertThatThrownBy(() -> seatableTicketService.updateSeatableTicketById(request))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("SeatableTicket id must be positive");
+    }
+
+    @Test
+    void updateSeatableTicketById_shouldSendKafkaWhenUserIdChanges() {
+        SeatableTicketUpdateRequestDto request = new SeatableTicketUpdateRequestDto();
+        request.setId(100);
+        request.setZone(Zone.FAN_ZONE);
+        Event event = Event.builder().id(10).title("Rock Concert").build();
+        Seat seat = Seat.builder().id(5).sector("A").row("3").number("12").build();
+        SeatableTicket existing = SeatableTicket.builder().id(100).event(event).seat(seat).zone(Zone.VIP).price(BigDecimal.valueOf(100)).active(true).userId(77).build();
+        SeatableTicket updated = SeatableTicket.builder().id(100).event(event).seat(seat).zone(Zone.FAN_ZONE).price(BigDecimal.valueOf(100)).active(true).userId(88).build();
+        when(seatableTicketRepository.findById(100)).thenReturn(Optional.of(existing));
+        when(jwtRequestUserExtractor.extractUserId()).thenReturn(88);
+        when(jwtRequestUserExtractor.extractEmail()).thenReturn("new@mail.com");
+        when(jwtRequestUserExtractor.extractUsername()).thenReturn("newuser");
+        when(seatableTicketRepository.save(any(SeatableTicket.class))).thenReturn(updated);
+        seatableTicketService.updateSeatableTicketById(request);
+        verify(notificationKafkaBookingProducer).sendSuccessfulTicketRefundEvent(any());
+        verify(notificationKafkaBookingProducer).sendSuccessfulBookingEvent(any());
+    }
+
+    @Test
+    void updateSeatableTicketById_shouldSendKafkaWhenPreviousUserIdIsNull() {
+        SeatableTicketUpdateRequestDto request = new SeatableTicketUpdateRequestDto();
+        request.setId(100);
+        request.setZone(Zone.FAN_ZONE);
+        Event event = Event.builder().id(10).title("Rock Concert").build();
+        Seat seat = Seat.builder().id(5).sector("A").row("3").number("12").build();
+        SeatableTicket existing = SeatableTicket.builder().id(100).event(event).seat(seat).zone(Zone.VIP).price(BigDecimal.valueOf(100)).active(true).userId(null).build();
+        SeatableTicket updated = SeatableTicket.builder().id(100).event(event).seat(seat).zone(Zone.FAN_ZONE).price(BigDecimal.valueOf(100)).active(true).userId(77).build();
+        when(seatableTicketRepository.findById(100)).thenReturn(Optional.of(existing));
+        when(jwtRequestUserExtractor.extractUserId()).thenReturn(77);
+        when(jwtRequestUserExtractor.extractEmail()).thenReturn("test@mail.com");
+        when(jwtRequestUserExtractor.extractUsername()).thenReturn("alex");
+        when(seatableTicketRepository.save(any(SeatableTicket.class))).thenReturn(updated);
+        seatableTicketService.updateSeatableTicketById(request);
+        verify(notificationKafkaBookingProducer).sendSuccessfulTicketRefundEvent(any());
+        verify(notificationKafkaBookingProducer).sendSuccessfulBookingEvent(any());
+    }
+
+    @Test
+    void updateSeatableTicketById_shouldNotSendKafkaWhenSameUserId() {
+        SeatableTicketUpdateRequestDto request = new SeatableTicketUpdateRequestDto();
+        request.setId(100);
+        request.setZone(Zone.FAN_ZONE);
+        Event event = Event.builder().id(10).title("Rock Concert").build();
+        Seat seat = Seat.builder().id(5).sector("A").row("3").number("12").build();
+        SeatableTicket existing = SeatableTicket.builder().id(100).event(event).seat(seat).zone(Zone.VIP).price(BigDecimal.valueOf(100)).active(true).userId(77).build();
+        SeatableTicket updated = SeatableTicket.builder().id(100).event(event).seat(seat).zone(Zone.FAN_ZONE).price(BigDecimal.valueOf(100)).active(true).userId(77).build();
+        when(seatableTicketRepository.findById(100)).thenReturn(Optional.of(existing));
+        when(jwtRequestUserExtractor.extractUserId()).thenReturn(77);
+        when(seatableTicketRepository.save(any(SeatableTicket.class))).thenReturn(updated);
+        seatableTicketService.updateSeatableTicketById(request);
+        verify(notificationKafkaBookingProducer, never()).sendSuccessfulTicketRefundEvent(any());
+        verify(notificationKafkaBookingProducer, never()).sendSuccessfulBookingEvent(any());
     }
 
     @Test
@@ -551,13 +612,11 @@ class SeatableTicketServiceTest {
         SeatableTicket ticket1 = SeatableTicket.builder().id(100).event(event).seat(seat).zone(Zone.VIP).userId(77).build();
         SeatableTicket ticket2 = SeatableTicket.builder().id(101).event(event).seat(seat).zone(Zone.VIP).userId(77).build();
         when(jwtRequestUserExtractor.extractUserId()).thenReturn(77);
-        when(jwtRequestUserExtractor.extractEmail()).thenReturn("test@mail.com");
-        when(jwtRequestUserExtractor.extractUsername()).thenReturn("alex");
         when(seatableTicketRepository.findAll(any(Specification.class))).thenReturn(List.of(ticket1, ticket2));
         long result = seatableTicketService.deleteByFilter(request);
         assertThat(result).isEqualTo(2);
         verify(seatableTicketRepository).deleteAll(List.of(ticket1, ticket2));
-        verify(notificationKafkaBookingProducer, times(2)).sendSuccessfulTicketRefundEvent(any());
+        verify(kafkaUserProducer, times(2)).sendDeleteEventEvent(any());
     }
 
     @Test
@@ -568,11 +627,9 @@ class SeatableTicketServiceTest {
         Seat seat = Seat.builder().id(5).sector("A").row("3").number("12").build();
         SeatableTicket ticket = SeatableTicket.builder().id(100).event(event).seat(seat).zone(Zone.VIP).userId(null).build();
         when(jwtRequestUserExtractor.extractUserId()).thenReturn(77);
-        when(jwtRequestUserExtractor.extractEmail()).thenReturn("test@mail.com");
-        when(jwtRequestUserExtractor.extractUsername()).thenReturn("alex");
         when(seatableTicketRepository.findAll(any(Specification.class))).thenReturn(List.of(ticket));
         long result = seatableTicketService.deleteByFilter(request);
         assertThat(result).isEqualTo(1);
-        verify(notificationKafkaBookingProducer, never()).sendSuccessfulTicketRefundEvent(any());
+        verify(kafkaUserProducer, never()).sendDeleteEventEvent(any());
     }
 }
