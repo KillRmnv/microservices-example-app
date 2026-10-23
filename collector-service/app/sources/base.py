@@ -40,3 +40,5 @@ class SourceAdapter(ABC):
 class CollectContext:
     http: object  # PoliteClient (typed loosely to avoid a cycle)
     db_url: str
+    # Canary runs: cap card URLs (sitemap adapters) / pages (ticketpro).
+    max_urls: int | None = None
