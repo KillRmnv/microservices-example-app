@@ -20,11 +20,9 @@ class ChatViewTest extends SeleniumTestBase {
     }
 
     @Test
-    void shouldShowChatKicker() {
+    void shouldShowChatHeader() {
         openChat();
-        // Kicker always names the desk; the mode suffix (ДЕМО/ОНЛАЙН)
-        // depends on the build-time NEXT_PUBLIC_ASSISTANT_MOCK flag.
-        assertThat(find(".chat-panel .kicker").getText()).contains("СПРАВКА РЕДАКЦИИ");
+        assertThat(find(".chat-panel header h2").getText()).isEqualTo("Ваш помощник");
     }
 
     @Test
