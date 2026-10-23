@@ -17,8 +17,13 @@ class Settings(BaseSettings):
     llm_external_api_key: str = ""
     llm_external_model: str = "gpt-4o-mini"
     # "structure:ollama,plan:external,telegram:external"
-    llm_stages: str = "structure:ollama,plan:external,telegram:external"
+    llm_stages: str = "structure:mock,plan:mock,telegram:mock"
     llm_timeout_s: float = 60.0
+
+    qdrant_url: str = "http://localhost:6333"
+    qdrant_collection: str = "events"
+    llama_embed_url: str = "http://localhost:8088"
+    collector_base_url: str = "http://localhost:8085"
 
     def backend_for(self, stage: str) -> str:
         for chunk in self.llm_stages.split(","):

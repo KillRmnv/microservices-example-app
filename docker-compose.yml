@@ -138,6 +138,8 @@ services:
     env_file:
       - ./.env
       - ./collector-service/.env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       postgres:
         condition: service_healthy
@@ -151,6 +153,8 @@ services:
     env_file:
       - ./.env
       - ./assistant-service/.env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       postgres:
         condition: service_healthy
@@ -166,6 +170,20 @@ services:
       - "6334:6334"
     volumes:
       - qdrant_data:/qdrant/storage
+
+  # Opt-in local embeddings (profile `llm`). Mounts the host models dir;
+  # services reach it as http://llama-embed:8088 (override LLAMA_EMBED_URL).
+  llama-embed:
+    profiles: ["llm"]
+    build:
+      context: .
+      dockerfile: ./llama-embed/Dockerfile
+    volumes:
+      - ${MODEL_DIR:-~/models}:/models:ro
+    environment:
+      LLAMA_MODEL_FILE: /models/${EMBED_MODEL_FILE:-bge-m3-q8_0.gguf}
+    ports:
+      - "${LLAMA_EMBED_PORT:-8088}:8088"
 
   prometheus:
     image: prom/prometheus:latest

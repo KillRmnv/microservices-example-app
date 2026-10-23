@@ -15,6 +15,7 @@ from fastapi import FastAPI
 from . import db
 from .config import settings
 from .contract import StateContract, sanitize
+from .search import SearchHit, SearchRequest, build_search_components, hybrid_search
 
 log = logging.getLogger(__name__)
 
@@ -84,3 +85,11 @@ def dialogue(contract: StateContract):
     duration_ms = int((time.monotonic() - started) * 1000)
     record_run(result, duration_ms)
     return result
+
+
+@app.post("/assistant/search", response_model=list[SearchHit])
+async def search(req: SearchRequest):
+    embedder, store, collector = build_search_components()
+    fused = await hybrid_search(embedder, store, collector, req)
+    return [SearchHit(event_id=hit.id, title=hit.payload.get("title", ""),
+                      score=hit.score, origins=hit.origins) for hit in fused]

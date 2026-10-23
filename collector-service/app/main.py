@@ -14,11 +14,14 @@ from pydantic import BaseModel
 
 from . import db
 from .config import settings
+from .embeddings import LlamaServerEmbedding, embeddable_text
 from .http import PoliteClient
 from .sources.afisha_me import AfishaMeAdapter
 from .sources.base import CollectContext, RunStats, SourceAdapter
 from .sources.relax import RelaxAdapter
+from .sources.telegram import TelegramAdapter
 from .sources.ticketpro import TicketproAdapter
+from .vector import QdrantStore, VectorPoint
 
 log = logging.getLogger(__name__)
 
@@ -35,6 +38,9 @@ async def lifespan(app: FastAPI):
         backoff_base_s=settings.backoff_base_s,
         timeout_s=settings.timeout_s,
     )
+    app.state.embedder = LlamaServerEmbedding(settings.llama_embed_url)
+    app.state.vector = QdrantStore(settings.qdrant_url, settings.qdrant_collection)
+    await app.state.vector.ensure(settings.qdrant_vector_size)
     yield
     await app.state.http.aclose()
 
@@ -46,6 +52,7 @@ ADAPTERS: dict[str, SourceAdapter] = {
     TicketproAdapter.name: TicketproAdapter(),
     RelaxAdapter.name: RelaxAdapter(),
     AfishaMeAdapter.name: AfishaMeAdapter(),
+    TelegramAdapter.name: TelegramAdapter(),
 }
 
 
@@ -90,6 +97,76 @@ def events(source: str | None = None, city: str | None = None, limit: int = 50):
     with db.get_conn(settings.database_url) as conn:
         rows = conn.execute(query, (source, source, city, city, limit)).fetchall()
     return {"events": [dict(row) for row in rows]}
+
+
+@app.get("/events/search")
+def events_search(q: str, city: str | None = None, category: str | None = None,
+                  limit: int = 20):
+    """Lexical half of hybrid search: russian tsvector rank + filters."""
+    limit = max(1, min(100, limit))
+    query = ("""SELECT id, source, source_url, title, category, start_at,
+                       venue_name, city, price_min, price_max,
+                       ts_rank_cd(search_vector, plainto_tsquery('russian', %s)) AS rank
+                FROM collected_events
+                WHERE search_vector @@ plainto_tsquery('russian', %s)
+                AND (%s::TEXT IS NULL OR city = %s)
+                AND (%s::TEXT IS NULL OR category = %s)
+                ORDER BY rank DESC LIMIT %s""")
+    with db.get_conn(settings.database_url) as conn:
+        rows = conn.execute(query, (q, q, city, city, category, category, limit)).fetchall()
+    return {"events": [dict(row) for row in rows]}
+
+
+@app.post("/embed/{source}")
+async def embed_source(source: str, limit: int | None = None):
+    """Backfill Qdrant vectors for collected events (stage 2)."""
+    if source != "all" and source not in ADAPTERS and source != "telegram":
+        raise HTTPException(status_code=404, detail=f"unknown source: {source}")
+    started = time.monotonic()
+    embedded = 0
+    with db.get_conn(settings.database_url) as conn:
+        params: list = []
+        query = ("SELECT id, title, venue_name, description, city, category,"
+                 " start_at FROM collected_events WHERE embedded_at IS NULL")
+        if source != "all":
+            query += " AND source = %s"
+            params.append(source)
+        query += " ORDER BY fetched_at"
+        if limit:
+            query += " LIMIT %s"
+            params.append(max(1, limit))
+        rows = conn.execute(query, params).fetchall()
+        batch_size = settings.embed_batch_size
+        for offset in range(0, len(rows), batch_size):
+            batch = rows[offset:offset + batch_size]
+            texts = [embeddable_text(row["title"], row["venue_name"],
+                                     row["description"]) for row in batch]
+            try:
+                vectors = await app.state.embedder.embed(texts)
+                await app.state.vector.upsert([
+                    VectorPoint(
+                        id=str(row["id"]),
+                        vector=vector,
+                        payload={"title": row["title"], "city": row["city"],
+                                 "category": row["category"],
+                                 "venue": row["venue_name"] or "",
+                                 "start_at": row["start_at"].isoformat()
+                                 if row["start_at"] else ""},
+                    )
+                    for row, vector in zip(batch, vectors)
+                ])
+            except Exception as exc:  # noqa: BLE001 — keep already stored batches
+                log.warning("embed batch failed: %s", exc)
+                break
+            conn.execute(
+                "UPDATE collected_events SET embedded_at = now() WHERE id = ANY(%s)",
+                ([row["id"] for row in batch],),
+            )
+            conn.commit()
+            embedded += len(batch)
+    duration = time.monotonic() - started
+    return {"source": source, "embedded": embedded,
+            "pending": len(rows) - embedded, "duration_s": round(duration, 1)}
 
 
 def record_run(source: str, status: str, stats: RunStats, error: str | None,

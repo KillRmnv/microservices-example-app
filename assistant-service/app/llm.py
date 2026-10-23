@@ -100,4 +100,25 @@ def provider_for(stage: str, settings: Settings,
     backend = settings.backend_for(stage)
     if backend == "external":
         return OpenAICompatProvider(settings, transport=transport)
+    if backend == "mock":
+        return MockProvider(settings)
     return OllamaProvider(settings, transport=transport)
+
+
+class MockProvider(LLMProvider):
+    """Stand-in while Ling is not running: deterministic, no network.
+
+    Returns a minimal ask_clarification contract fragment as JSON text.
+    The caller (stage 3) validates it like any model output.
+    """
+
+    name = "mock"
+
+    def __init__(self, settings: Settings) -> None:
+        self._settings = settings
+
+    async def complete(self, *, system: str, user: str,
+                       json_mode: bool = False, max_tokens: int = 512) -> str:
+        return ('{"dialogue_action": "ask_clarification", '
+                '"needs_clarification": true, '
+                '"clarification_prompt": "Мок провайдера: уточните дату и время"}')

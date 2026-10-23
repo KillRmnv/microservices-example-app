@@ -37,3 +37,6 @@ Latex_template/
 FRONTEND.*
 places.md
 SCRAPPING.md
+__pycache__/
+*.pyc
+.pytest_cache/

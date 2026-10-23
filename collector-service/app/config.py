@@ -18,6 +18,17 @@ class Settings(BaseSettings):
     # "relax:10,afisha_me:10" — minimum seconds between requests per source.
     source_intervals: str = ""
 
+    qdrant_url: str = "http://localhost:6333"
+    qdrant_collection: str = "events"
+    qdrant_vector_size: int = 1024  # bge-m3
+    llama_embed_url: str = "http://localhost:8088"
+    embed_batch_size: int = 32
+
+    # Telegram: verify channels against the Mininform list before adding!
+    telegram_channels: str = "minsk_kuda,kuda_shodit_by"
+    telegram_max_pages: int = 5
+    telegram_llm_fallback: bool = False
+
     def min_interval_for(self, source: str) -> float:
         for chunk in self.source_intervals.split(","):
             if ":" not in chunk:
