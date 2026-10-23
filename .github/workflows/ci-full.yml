@@ -43,6 +43,8 @@ jobs:
           docker build -f gateway/Dockerfile -t gateway:test ..
           docker build -f notification-service-go/Dockerfile -t notification-service-go:test .
           docker build -f frontend/Dockerfile -t frontend:test ..
+          docker build -f collector-service/Dockerfile -t collector-service:test ..
+          docker build -f assistant-service/Dockerfile -t assistant-service:test ..
 
   smoke-test:
     name: Smoke Tests (Full Stack)
