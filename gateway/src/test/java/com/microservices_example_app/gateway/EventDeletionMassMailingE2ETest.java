@@ -41,6 +41,7 @@ class EventDeletionMassMailingE2ETest {
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
     private static final String GATEWAY_URL = "http://localhost:8080";
+    private static final String FRONTEND_URL = frontendUrl();
     private static final String GMAIL_HOST = "imap.gmail.com";
     private static final int GMAIL_PORT = 993;
     private static final int EMAIL_WAIT_SECONDS = 180;
@@ -66,6 +67,11 @@ class EventDeletionMassMailingE2ETest {
     private static Integer eventId;
 
     private record EmailData(String subject, String from, String body) {}
+
+    private static String frontendUrl() {
+        String url = System.getenv("FRONTEND_URL");
+        return url != null && !url.isBlank() ? url : "http://localhost:3000";
+    }
 
     @BeforeAll
     static void setup() throws Exception {
@@ -145,17 +151,11 @@ class EventDeletionMassMailingE2ETest {
         injectJwtAndNavigate(customer1Jwt);
 
         WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(20));
-        wait.until(d -> !d.findElements(By.cssSelector("#events-grid .event-card")).isEmpty());
+        wait.until(d -> !d.findElements(
+                By.cssSelector("[data-testid='lead-story'] h3, [data-testid='event-card'] h3")).isEmpty());
 
-        List<WebElement> cards = driver.findElements(By.cssSelector("#events-grid .event-card"));
-        boolean found = cards.stream().anyMatch(card -> {
-            try {
-                return card.findElement(By.tagName("h3")).getText().contains(EVENT_TITLE);
-            } catch (Exception e) {
-                return false;
-            }
-        });
-        assertThat(found).as("Event should be visible in UI before deletion").isTrue();
+        assertThat(findEventCardTitle(EVENT_TITLE))
+                .as("Event should be visible in UI before deletion").isTrue();
     }
 
     @Test
@@ -181,19 +181,12 @@ class EventDeletionMassMailingE2ETest {
         injectJwtAndNavigate(customer1Jwt);
 
         WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(20));
-        wait.until(d -> d.findElements(By.cssSelector("#events-grid .event-card")).size() > 0
-                || d.findElements(By.cssSelector("#events-grid p")).size() > 0
-                || d.findElements(By.cssSelector("#events-grid .alert")).size() > 0);
+        wait.until(d -> !d.findElements(
+                By.cssSelector("[data-testid='lead-story'] h3, [data-testid='event-card'] h3")).isEmpty()
+                || !d.findElements(By.cssSelector("[data-testid='home-error']")).isEmpty());
 
-        List<WebElement> cards = driver.findElements(By.cssSelector("#events-grid .event-card"));
-        boolean found = cards.stream().anyMatch(card -> {
-            try {
-                return card.findElement(By.tagName("h3")).getText().contains(EVENT_TITLE);
-            } catch (Exception e) {
-                return false;
-            }
-        });
-        assertThat(found).as("Deleted event should NOT be visible in UI").isFalse();
+        assertThat(findEventCardTitle(EVENT_TITLE))
+                .as("Deleted event should NOT be visible in UI").isFalse();
     }
 
     @Test
@@ -229,7 +222,7 @@ class EventDeletionMassMailingE2ETest {
     // ── Selenium helpers ──────────────────────────────────────────────
 
     private void injectJwtAndNavigate(String jwt) throws Exception {
-        driver.get(GATEWAY_URL);
+        driver.get(FRONTEND_URL);
         waitForPageLoad();
 
         String[] parts = jwt.split("\\.");
@@ -237,14 +230,30 @@ class EventDeletionMassMailingE2ETest {
         JsonNode claims = objectMapper.readTree(payload);
         String role = claims.has("role") ? claims.get("role").asText() : "CUSTOMER";
         String email = claims.has("email") ? claims.get("email").asText() : "";
+        String userId = claims.has("id") ? claims.get("id").asText()
+                : claims.has("userId") ? claims.get("userId").asText() : "";
 
+        // New frontend session keys, see frontend/lib/api.ts tokenStore.
         ((JavascriptExecutor) driver).executeScript(
-                "localStorage.setItem('token', arguments[0]);" +
-                "localStorage.setItem('userRole', arguments[1]);" +
-                "localStorage.setItem('userEmail', arguments[2]);" +
-                "App.handleRoute();",
-                jwt, role, email);
+                "localStorage.setItem('dosugToken', arguments[0]);" +
+                "localStorage.setItem('dosugRole', arguments[1]);" +
+                "localStorage.setItem('dosugEmail', arguments[2]);" +
+                "localStorage.setItem('dosugUserId', arguments[3]);",
+                jwt, role, email, userId);
+        driver.get(FRONTEND_URL + "/");
         waitForPageLoad();
+    }
+
+    private boolean findEventCardTitle(String title) {
+        List<WebElement> headings = driver.findElements(
+                By.cssSelector("[data-testid='lead-story'] h3, [data-testid='event-card'] h3"));
+        return headings.stream().anyMatch(h -> {
+            try {
+                return h.getText().contains(title);
+            } catch (Exception e) {
+                return false;
+            }
+        });
     }
 
     // ── HTTP helpers ──────────────────────────────────────────────────
@@ -362,20 +371,26 @@ class EventDeletionMassMailingE2ETest {
     }
 
     private static void waitForServicesHealthy() throws Exception {
-        System.out.println("Waiting for services to become healthy...");
-        long deadline = System.currentTimeMillis() + 300_000L;
+        waitForUrl(GATEWAY_URL, "Gateway", 300_000L);
+        // Frontend proxies /users and /booking to the gateway, so check it last.
+        waitForUrl(FRONTEND_URL, "Frontend", 300_000L);
+    }
+
+    private static void waitForUrl(String url, String name, long timeoutMs) throws Exception {
+        System.out.println("Waiting for " + name + " at " + url + "...");
+        long deadline = System.currentTimeMillis() + timeoutMs;
 
         while (System.currentTimeMillis() < deadline) {
             ProcessBuilder httpCheck = new ProcessBuilder(
                     "curl", "-s", "-o", "/dev/null", "-w", "%{http_code}",
-                    GATEWAY_URL);
+                    url);
             httpCheck.redirectErrorStream(true);
             Process httpProcess = httpCheck.start();
             String httpCode = new String(httpProcess.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
             httpProcess.waitFor();
 
             if (httpCode.equals("200")) {
-                System.out.println("Gateway is healthy!");
+                System.out.println(name + " is healthy!");
                 Thread.sleep(5000);
                 return;
             }
@@ -383,7 +398,7 @@ class EventDeletionMassMailingE2ETest {
             System.out.print(".");
             Thread.sleep(5000);
         }
-        throw new RuntimeException("Gateway did not become healthy within timeout");
+        throw new RuntimeException(name + " did not become healthy within timeout");
     }
 
     private static void stopDockerCompose() {

@@ -10,92 +10,97 @@ import static org.assertj.core.api.Assertions.assertThat;
 class HomeViewTest extends SeleniumTestBase {
 
     @Test
-    void shouldRenderSearchBar() {
+    void shouldRenderHomePage() {
         navigateTo("/");
-        assertThat(find(".search-bar")).isNotNull();
+        assertThat(findByTestId("home-page")).isNotNull();
     }
 
     @Test
-    void shouldHaveSearchTitleInput() {
+    void shouldHaveMastheadBrand() {
         navigateTo("/");
-        WebElement input = find("#search-title");
-        assertThat(input.getAttribute("placeholder")).contains("Поиск");
+        WebElement brand = find(".brand h1 a");
+        assertThat(brand.getText()).isEqualTo("ДОСУГ");
+        assertThat(brand.getAttribute("href")).endsWith("/");
     }
 
     @Test
-    void shouldHaveAdmissionModeSelect() {
+    void shouldHaveMainNavigation() {
         navigateTo("/");
-        assertThat(find("#search-admission")).isNotNull();
+        assertThat(findByTestId("newspaper-nav")).isNotNull();
+        assertThat(findByTestId("nav-home").getAttribute("href")).endsWith("/");
+        assertThat(findByTestId("nav-events").getAttribute("href")).endsWith("/events");
+        assertThat(findByTestId("nav-places").getAttribute("href")).endsWith("/places");
+        assertThat(findByTestId("nav-profile").getAttribute("href")).endsWith("/profile");
+        assertThat(findByTestId("nav-about").getAttribute("href")).endsWith("/about");
     }
 
     @Test
-    void shouldHaveVenueSelect() {
+    void shouldHideManagerAndAdminNavWhenLoggedOut() {
         navigateTo("/");
-        assertThat(find("#search-venue")).isNotNull();
+        assertThat(findAllByTestId("nav-manager")).isEmpty();
+        assertThat(findAllByTestId("nav-admin")).isEmpty();
     }
 
     @Test
-    void shouldHaveSearchButton() {
+    void shouldShowLoginActionWhenLoggedOut() {
         navigateTo("/");
-        assertThat(find("#search-btn").getText()).isEqualTo("Найти");
+        assertThat(findByTestId("masthead-login").getAttribute("href")).endsWith("/login");
+        assertThat(findAllByTestId("masthead-logout")).isEmpty();
+        assertThat(findAllByTestId("masthead-profile")).isEmpty();
     }
 
     @Test
-    void shouldHaveResetButton() {
+    void shouldHaveFiltersSidebar() {
         navigateTo("/");
-        assertThat(find("#reset-btn").getText()).isEqualTo("Сбросить");
+        assertThat(findByTestId("filters-sidebar")).isNotNull();
+        assertThat(findByTestId("apply-filters").getText()).startsWith("Показать подборку");
+        assertThat(findByTestId("reset-filters").getText()).isEqualTo("Сбросить всё");
     }
 
     @Test
-    void shouldHaveDateInputs() {
+    void shouldHaveViewSwitch() {
         navigateTo("/");
-        assertThat(find("#search-starts-from").getAttribute("type")).isEqualTo("date");
-        assertThat(find("#search-starts-to").getAttribute("type")).isEqualTo("date");
+        assertThat(findByTestId("home-view-switch")).isNotNull();
+        assertThat(findByTestId("view-grid").getText()).isEqualTo("Сетка");
+        assertThat(findByTestId("view-map").getText()).isEqualTo("Карта");
     }
 
     @Test
-    void shouldHaveEventsGrid() {
+    void shouldKeepErrorStateWhenSwitchingToMapWithoutBackend() {
         navigateTo("/");
-        assertThat(find("#events-grid")).isNotNull();
+        // The API error takes precedence over the map placeholder offline.
+        findByTestId("view-map").click();
+        assertThat(findByTestId("home-error")).isNotNull();
+        assertThat(findAllByTestId("map-placeholder")).isEmpty();
     }
 
     @Test
-    void shouldHavePaginationDiv() {
+    void shouldHaveDayTabs() {
         navigateTo("/");
-        assertThat(find("#pagination")).isNotNull();
+        List<WebElement> tabs = findAll("[data-testid='home-day-tabs'] button");
+        assertThat(tabs).hasSize(4);
+        assertThat(tabs.get(0).getText()).isEqualTo("Все даты");
     }
 
     @Test
-    void shouldHaveAdmissionOptions() {
+    void shouldHaveDateBudgetAndAtmosphereInputs() {
         navigateTo("/");
-        List<WebElement> options = findAll("#search-admission option");
-        assertThat(options.size()).isGreaterThanOrEqualTo(3);
+        assertThat(findByTestId("filters-date").getAttribute("type")).isEqualTo("date");
+        assertThat(findByTestId("filters-budget").getAttribute("type")).isEqualTo("range");
+        assertThat(find("textarea[data-testid='filters-atmosphere']")
+                .getAttribute("placeholder")).contains("уютно");
     }
 
     @Test
-    void shouldHaveCardGridClass() {
+    void shouldShowErrorStateWithoutBackend() {
         navigateTo("/");
-        assertThat(find("#events-grid").getAttribute("class")).contains("card-grid");
+        assertThat(findByTestId("home-error").getText()).contains("Не удалось связаться с редакцией");
     }
 
     @Test
-    void shouldHaveSearchBarInputs() {
+    void shouldToggleTheme() {
         navigateTo("/");
-        List<WebElement> inputs = findAll(".search-bar input");
-        assertThat(inputs.size()).isGreaterThanOrEqualTo(3);
-    }
-
-    @Test
-    void shouldHaveSearchBarSelects() {
-        navigateTo("/");
-        List<WebElement> selects = findAll(".search-bar select");
-        assertThat(selects).hasSize(2);
-    }
-
-    @Test
-    void shouldHaveSearchBarButtons() {
-        navigateTo("/");
-        List<WebElement> buttons = findAll(".search-bar button");
-        assertThat(buttons).hasSize(2);
+        findByTestId("theme-toggle").click();
+        assertThat(find("main.newspaper").getAttribute("class")).contains("dark-mode");
     }
 }
