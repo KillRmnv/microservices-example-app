@@ -2,9 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
   pull_request:
-    branches: [main]
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -12,6 +10,8 @@ concurrency:
 
 env:
   JAVA_VERSION: '21'
+  NODE_VERSION: '22'
+  PNPM_VERSION: '10'
 
 jobs:
   user-service:
@@ -95,9 +95,6 @@ jobs:
   notification-service-go:
     name: Notification Service (Go)
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: notification-service-go
     steps:
       - uses: actions/checkout@v4
 
@@ -108,15 +105,48 @@ jobs:
 
       - name: Download dependencies
         run: go mod download
+        working-directory: notification-service-go
 
       - name: Run tests
         run: go test ./...
+        working-directory: notification-service-go
 
       - name: Build binary
         run: CGO_ENABLED=0 go build -o notification-service-go .
+        working-directory: notification-service-go
+
+      # The Go Dockerfile COPYs ./notification-service-go, so the build
+      # context must be the repo root (not notification-service-go/).
+      - name: Build Docker image
+        run: docker build -f notification-service-go/Dockerfile -t notification-service-go:test .
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - run: corepack enable
+      - run: corepack prepare pnpm@${{ env.PNPM_VERSION }} --activate
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: frontend
+
+      - name: Typecheck
+        run: pnpm exec tsc --noEmit
+        working-directory: frontend
+
+      - name: Production build (static export)
+        run: pnpm build
+        working-directory: frontend
 
       - name: Build Docker image
-        run: docker build -f Dockerfile -t notification-service-go:test .
+        run: docker build -f frontend/Dockerfile -t frontend:test .
 
   gateway:
     name: Gateway
@@ -137,6 +167,20 @@ jobs:
           java-version: ${{ env.JAVA_VERSION }}
 
       - uses: gradle/actions/setup-gradle@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - run: corepack enable
+      - run: corepack prepare pnpm@${{ env.PNPM_VERSION }} --activate
+
+      # Selenium view tests serve the prebuilt export from ../frontend/out.
+      - name: Build frontend export
+        run: |
+          cd ../frontend
+          pnpm install --frozen-lockfile
+          pnpm build
 
       - name: Install Chromium
         run: |
