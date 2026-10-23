@@ -19,6 +19,7 @@ class SearchRequest(BaseModel):
     vector_query: str
     city: str | None = None
     category: str | None = None
+    max_price_per_person: float | None = None
     limit: int = 10
 
 
@@ -57,12 +58,13 @@ async def hybrid_search(embedder, store, collector: CollectorClient,
         must["city"] = req.city
     if req.category:
         must["category"] = req.category
-    try:
-        query_vector = (await embedder.embed([req.vector_query]))[0]
-        dense = await store.search(query_vector, req.limit * 2, must or None)
-    except Exception as exc:  # noqa: BLE001 — dense is optional, lexical is not
-        log.warning("dense search failed, lexical only: %s", exc)
-        dense = []
+    dense = []
+    if req.vector_query.strip():
+        try:
+            query_vector = (await embedder.embed([req.vector_query]))[0]
+            dense = await store.search(query_vector, req.limit * 2, must or None)
+        except Exception as exc:  # noqa: BLE001 — dense is optional, lexical is not
+            log.warning("dense search failed, lexical only: %s", exc)
     try:
         lexical = await collector.search_lexical(req.vector_query, req.city,
                                                  req.category, req.limit * 2)
@@ -72,7 +74,13 @@ async def hybrid_search(embedder, store, collector: CollectorClient,
     dense_ids = [(hit.id, {"title": hit.payload.get("title", "")}) for hit in dense]
     lexical_ids = [str(row["id"]) for row in lexical]
     titles = {str(row["id"]): row.get("title", "") for row in lexical}
-    fused = fuse_search(dense_ids, lexical_ids, req.limit)
+    prices = {str(row["id"]): row.get("price_min") for row in lexical}
+    fused = fuse_search(dense_ids, lexical_ids, req.limit * 2)
+    if req.max_price_per_person is not None:
+        fused = [hit for hit in fused
+                 if (price := prices.get(hit.id)) is None
+                 or float(price) <= req.max_price_per_person]
+    fused = fused[:req.limit]
     for hit in fused:
         if not hit.payload.get("title") and hit.id in titles:
             hit.payload["title"] = titles[hit.id]

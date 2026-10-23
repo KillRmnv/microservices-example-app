@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     port: int = 8084
 
     database_url: str = "postgresql://postgres:1234@localhost:5432/assistant_db"
-    booking_base_url: str = "http://localhost:8082"
+    booking_base_url: str = "http://booking-service:8082"
 
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "qwen3:8b"

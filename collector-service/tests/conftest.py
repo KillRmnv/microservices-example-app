@@ -1,9 +1,18 @@
-"""Shared test postgres (skips when unreachable)."""
-import os
+"""Shared test postgres (skips when unreachable).
 
+Each service migrates its OWN test database: migration filenames collide
+across services (V1__init.sql), so sharing one database silently skips
+migrations via the common schema_migrations table.
+"""
+import os
+import re
+
+import psycopg
 import pytest
 
 from app import db
+
+TEST_DB = "collector_pytest"
 
 
 def pg_url() -> str:
@@ -12,17 +21,24 @@ def pg_url() -> str:
         "postgresql://postgres:1234@localhost:5432/postgres",
     )
     sep = "&" if "?" in base else "?"
-    return f"{base}{sep}connect_timeout=5"
+    maintenance = f"{base}{sep}connect_timeout=5"
+    with psycopg.connect(maintenance, autocommit=True) as conn:
+        exists = conn.execute(
+            "SELECT 1 FROM pg_database WHERE datname = %s", (TEST_DB,)).fetchone()
+        if not exists:
+            conn.execute(f'CREATE DATABASE "{TEST_DB}"')
+    return re.sub(r"/[^/]*(\?.*)?$", f"/{TEST_DB}\\1", maintenance)
 
 
 @pytest.fixture()
 def conn():
     try:
-        db.run_migrations(pg_url())
+        url = pg_url()
+        db.run_migrations(url)
     except Exception as exc:  # noqa: BLE001 — no postgres here, skip
         pytest.skip(f"no test postgres: {exc}")
-    with db.get_conn(pg_url()) as connection:
+    with db.get_conn(url) as connection:
         yield connection
-        connection.rollback()  # clear a possibly aborted test transaction
+        connection.rollback()
         connection.execute("TRUNCATE event_sources, screenings, collected_events, source_runs")
         connection.commit()

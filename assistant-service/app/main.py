@@ -10,12 +10,18 @@ import logging
 import time
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 
 from . import db
 from .config import settings
 from .contract import StateContract, sanitize
+from .dialogue import DialogResponse, run_search_turn
+from .holds import confirm_hold as _confirm_hold
+from .holds import create_hold as _create_hold
+from .holds import expire_holds as _expire_holds
 from .search import SearchHit, SearchRequest, build_search_components, hybrid_search
+from .tools import BookingClient
 
 log = logging.getLogger(__name__)
 
@@ -79,6 +85,7 @@ def apply_stage0_rules(contract: StateContract) -> StateContract:
 
 @app.post("/assistant/dialogue", response_model=StateContract)
 def dialogue(contract: StateContract):
+    # Legacy shape (kept for backward compat): contract only.
     started = time.monotonic()
     clean = sanitize(contract)
     result = apply_stage0_rules(clean)
@@ -87,9 +94,58 @@ def dialogue(contract: StateContract):
     return result
 
 
+@app.post("/assistant/dialogue/v2", response_model=DialogResponse)
+async def dialogue_v2(contract: StateContract):
+    """Full turn: validation + tools + messages (stage 3)."""
+    started = time.monotonic()
+    clean = sanitize(contract)
+    ruled = apply_stage0_rules(clean)
+    if ruled.needs_clarification or ruled.dialogue_action not in ("search", "update_filters"):
+        record_run(ruled, int((time.monotonic() - started) * 1000))
+        return DialogResponse(contract=ruled, messages=[])
+    embedder, store, collector = build_search_components()
+    booking = BookingClient(settings.booking_base_url)
+    response = await run_search_turn(ruled, embedder=embedder, store=store,
+                                     collector=collector, booking=booking)
+    record_run(response.contract, int((time.monotonic() - started) * 1000))
+    return response
+
+
 @app.post("/assistant/search", response_model=list[SearchHit])
 async def search(req: SearchRequest):
     embedder, store, collector = build_search_components()
     fused = await hybrid_search(embedder, store, collector, req)
     return [SearchHit(event_id=hit.id, title=hit.payload.get("title", ""),
                       score=hit.score, origins=hit.origins) for hit in fused]
+
+
+class HoldRequest(BaseModel):
+    session_id: str
+    event_id: int
+    zone: str = "BASIC"
+    price: float = 0.0
+    party_size: int = 1
+
+
+@app.post("/assistant/holds", status_code=201)
+def create_hold_endpoint(req: HoldRequest):
+    with db.get_conn(settings.database_url) as conn:
+        hold = _create_hold(conn, req.session_id, req.event_id,
+                            req.zone, req.price, req.party_size)
+    return hold.__dict__
+
+
+@app.post("/assistant/holds/{hold_id}/confirm")
+def confirm_hold_endpoint(hold_id: str):
+    with db.get_conn(settings.database_url) as conn:
+        hold = _confirm_hold(conn, hold_id)
+    if hold is None:
+        raise HTTPException(status_code=410, detail="hold missing, taken or expired")
+    return hold.__dict__
+
+
+@app.post("/assistant/holds/sweep")
+def sweep_holds_endpoint():
+    with db.get_conn(settings.database_url) as conn:
+        expired = _expire_holds(conn)
+    return {"expired": expired}
