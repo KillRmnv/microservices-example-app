@@ -33,4 +33,15 @@ public class FallbackController {
                         "message", "Booking service is temporarily unavailable"
                 ));
     }
+
+    @RequestMapping("/assistant")
+    public ResponseEntity<?> assistantFallback() {
+        log.warn("Assistant service is unavailable, triggering fallback");
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(Map.of(
+                        "status", 503,
+                        "error", "Service Unavailable",
+                        "message", "Assistant service is temporarily unavailable"
+                ));
+    }
 }

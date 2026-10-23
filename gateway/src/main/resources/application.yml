@@ -50,6 +50,25 @@ spring:
               metadata:
                 connect-timeout: 3000
                 response-timeout: 5s
+
+            - id: assistant-service
+              uri: http://assistant-service:8080
+              predicates:
+                - Path=/assistant/**
+              filters:
+                - name: CircuitBreaker
+                  args:
+                    name: assistantServiceCircuitBreaker
+                    fallbackUri: forward:/fallback/assistant
+                - name: Retry
+                  args:
+                    retries: 2
+                    backoff:
+                      firstBackoff: 500ms
+                      maxBackoff: 1s
+              metadata:
+                connect-timeout: 3000
+                response-timeout: 60s
           globalcors:
             add-to-simple-url-handler-mapping: true
             cors-configurations:
@@ -111,12 +130,22 @@ resilience4j:
         wait-duration-in-open-state: 10s
         permitted-number-of-calls-in-half-open-state: 3
         automatic-transition-from-open-to-half-open-enabled: true
+      assistantServiceCircuitBreaker:
+        register-health-indicator: true
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
+        automatic-transition-from-open-to-half-open-enabled: true
   timelimiter:
     instances:
       userServiceCircuitBreaker:
         timeout-duration: 5s
       bookingServiceCircuitBreaker:
         timeout-duration: 5s
+      assistantServiceCircuitBreaker:
+        timeout-duration: 60s
 logging:
   level:
     org.springframework.cloud.gateway: INFO

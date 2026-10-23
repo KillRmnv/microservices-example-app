@@ -131,6 +131,42 @@ services:
     ports:
       - "${FRONTEND_PORT:-3000}:80"
 
+  collector-service:
+    build:
+      context: .
+      dockerfile: ./collector-service/Dockerfile
+    env_file:
+      - ./.env
+      - ./collector-service/.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${COLLECTOR_PORT:-8085}:8080"
+
+  assistant-service:
+    build:
+      context: .
+      dockerfile: ./assistant-service/Dockerfile
+    env_file:
+      - ./.env
+      - ./assistant-service/.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+    ports:
+      - "${ASSISTANT_PORT:-8084}:8080"
+
+  qdrant:
+    image: qdrant/qdrant:v1.12.4
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+
   prometheus:
     image: prom/prometheus:latest
     ports:
@@ -162,3 +198,4 @@ volumes:
   postgres_data:
   prometheus_data:
   grafana_data:
+  qdrant_data:
