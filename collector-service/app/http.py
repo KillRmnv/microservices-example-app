@@ -13,6 +13,8 @@ from urllib.parse import urlparse
 
 import httpx
 
+from .core.logging import redact_url
+
 log = logging.getLogger(__name__)
 
 RETRYABLE_STATUS = {429, 500, 502, 503, 504}
@@ -76,12 +78,15 @@ class PoliteClient:
                 response = await self._client.get(url, **kwargs)
             except (httpx.ConnectError, httpx.ReadTimeout, httpx.PoolTimeout) as exc:
                 last_exc = exc
-                log.warning("fetch %s failed (attempt %d): %s", url, attempt, exc)
+                log.warning("fetch %s failed (attempt %d): %s",
+                            redact_url(url), attempt, exc)
             else:
                 if response.status_code not in RETRYABLE_STATUS:
                     return response
-                last_exc = RuntimeError(f"HTTP {response.status_code} for {url}")
-                log.warning("fetch %s -> %s (attempt %d)", url, response.status_code, attempt)
+                last_exc = RuntimeError(
+                    f"HTTP {response.status_code} for {redact_url(url)}")
+                log.warning("fetch %s -> %s (attempt %d)",
+                            redact_url(url), response.status_code, attempt)
                 retry_after = response.headers.get("retry-after")
                 if retry_after and retry_after.isdigit():
                     await asyncio.sleep(float(retry_after))

@@ -64,6 +64,14 @@ class Settings(BaseSettings):
     search_candidate_multiplier: int = 2
     max_results: int = 5
 
+    # OpenAPI/Swagger: disable in production (docs_enabled=false hides
+    # /docs, /redoc and /openapi.json entirely).
+    docs_enabled: bool = True
+
+    # Structured logging: "json" for containers, "text" for local runs.
+    log_format: str = "json"
+    log_level: str = "INFO"
+
     def backend_for(self, stage: str) -> str:
         """Backend name for a pipeline stage; "ollama" is a legacy alias."""
         for chunk in self.llm_stages.split(","):

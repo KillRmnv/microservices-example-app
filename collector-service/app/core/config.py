@@ -89,5 +89,13 @@ class Settings(BaseSettings):
                     break
         return self.default_min_interval_s
 
+    # OpenAPI/Swagger: disable in production (docs_enabled=false hides
+    # /docs, /redoc and /openapi.json entirely).
+    docs_enabled: bool = True
+
+    # Structured logging: "json" for containers, "text" for local runs.
+    log_format: str = "json"
+    log_level: str = "INFO"
+
 
 settings = Settings()

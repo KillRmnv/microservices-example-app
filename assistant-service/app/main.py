@@ -10,6 +10,7 @@ from .api import deps
 from .api.routers import dialogue, holds, ops, search
 from .core import db
 from .core.config import settings
+from .core.logging import RequestIdMiddleware, setup_logging
 from .errors.handlers import register_exception_handlers
 from .scheduler import start_scheduler, stop_scheduler
 
@@ -31,12 +32,21 @@ async def lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
-    application = FastAPI(title=settings.app_name, lifespan=lifespan)
+    setup_logging(settings.app_name, settings.log_level, settings.log_format)
+    docs = settings.docs_enabled
+    application = FastAPI(
+        title=settings.app_name, lifespan=lifespan,
+        docs_url="/docs" if docs else None,
+        redoc_url="/redoc" if docs else None,
+        openapi_url="/openapi.json" if docs else None,
+    )
+    application.add_middleware(RequestIdMiddleware)
     register_exception_handlers(application)
     application.include_router(dialogue.router)
     application.include_router(search.router)
     application.include_router(holds.router)
-    application.include_router(ops.router)
+    # Ops endpoints stay out of the public schema.
+    application.include_router(ops.router, include_in_schema=False)
     return application
 
 

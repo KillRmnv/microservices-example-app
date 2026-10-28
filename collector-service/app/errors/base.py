@@ -16,6 +16,11 @@ class NotFoundError(DomainError):
     code = "not_found"
 
 
+class ValidationError(DomainError):
+    status_code = 400
+    code = "validation_error"
+
+
 class UpstreamError(DomainError):
     status_code = 502
     code = "upstream_error"

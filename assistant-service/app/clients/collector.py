@@ -1,4 +1,4 @@
-"""Collector-service read client (lexical half of hybrid search)."""
+"""Collector-service read client (lexical fallback for hybrid search)."""
 from __future__ import annotations
 
 import logging

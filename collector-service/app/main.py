@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from .api.routers import catalog, collect, embed, ops
 from .core import db
 from .core.config import settings
+from .core.logging import RequestIdMiddleware, setup_logging
 from .embeddings import LlamaServerEmbedding
 from .errors.handlers import register_exception_handlers
 from .http import PoliteClient
@@ -56,12 +57,22 @@ async def lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
-    application = FastAPI(title=settings.app_name, lifespan=lifespan)
+    setup_logging(settings.app_name, settings.log_level, settings.log_format)
+    docs = settings.docs_enabled
+    application = FastAPI(
+        title=settings.app_name, lifespan=lifespan,
+        docs_url="/docs" if docs else None,
+        redoc_url="/redoc" if docs else None,
+        openapi_url="/openapi.json" if docs else None,
+    )
+    application.add_middleware(RequestIdMiddleware)
     register_exception_handlers(application)
-    application.include_router(collect.router)
+    # Only the catalog reads stay in the public schema; collection,
+    # embedding and ops endpoints are internal.
     application.include_router(catalog.router)
-    application.include_router(embed.router)
-    application.include_router(ops.router)
+    application.include_router(collect.router, include_in_schema=False)
+    application.include_router(embed.router, include_in_schema=False)
+    application.include_router(ops.router, include_in_schema=False)
     return application
 
 
