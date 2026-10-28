@@ -1,7 +1,7 @@
 """Russian date expressions from Telegram posts.
 
 Covers "9 октября (пт), в 19:00", "9 октября в 19:00", "сегодня/завтра в 19:00".
-Times are Europe/Minsk local, returned UTC-aware. Past dates -> None.
+Times use the configured timezone, returned UTC-aware. Past dates -> None.
 """
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import re
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-MINSK_TZ = ZoneInfo("Europe/Minsk")
+from .core.config import settings
 
 MONTHS = {
     "января": 1, "февраля": 2, "марта": 3, "апреля": 4,
@@ -41,7 +41,7 @@ def parse_ru_datetime(text: str | None, now_utc: datetime) -> datetime | None:
     """Future datetime in UTC, or None when absent/past."""
     if not text:
         return None
-    now_minsk = now_utc.astimezone(MINSK_TZ)
+    now_minsk = now_utc.astimezone(ZoneInfo(settings.default_timezone))
     match = DAY_MONTH_RE.search(text)
     if match:
         day, month_name, time_text = int(match.group(1)), match.group(2).lower(), match.group(3)

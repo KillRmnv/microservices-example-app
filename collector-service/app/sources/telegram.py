@@ -13,10 +13,11 @@ from datetime import datetime, timezone
 
 from selectolax.lexbor import LexborHTMLParser
 
-from .. import db
+from ..core import db
+from ..core.config import settings
 from ..normalize import RawEvent, parse_price
 from ..parse import clean_text
-from ..store import upsert_events
+from ..repositories.store import upsert_events
 from .base import CollectContext, RunStats, SourceAdapter
 from ..text_ru import parse_ru_datetime
 
@@ -59,7 +60,6 @@ class TelegramAdapter(SourceAdapter):
         self._llm_fallback = llm_fallback
 
     async def collect(self, ctx: CollectContext) -> RunStats:
-        from ..config import settings
         channels = self._channels or [
             name.strip() for name in settings.telegram_channels.split(",") if name.strip()]
         max_pages = self._max_pages if self._max_pages else settings.telegram_max_pages
@@ -126,7 +126,7 @@ class TelegramAdapter(SourceAdapter):
             category=category,
             start_at=start_at,
             venue_name=venue,
-            city="Минск",
+            city=settings.default_city,
             price_min=price_min,
             price_max=price_max,
             raw={"channel": channel, "message_id": message["id"]},

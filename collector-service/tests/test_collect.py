@@ -10,7 +10,7 @@ import httpx
 import psycopg
 import pytest
 
-from app import db
+from app.core import db
 from app.http import PoliteClient
 from app.sources.afisha_me import AfishaMeAdapter
 from app.sources.base import CollectContext
@@ -116,7 +116,7 @@ def test_cross_source_merge_keeps_fuller_record(conn):
     from datetime import datetime, timezone
 
     from app.normalize import RawEvent
-    from app.store import upsert_events
+    from app.repositories.store import upsert_events
 
     start = datetime(2026, 12, 5, 16, 0, tzinfo=timezone.utc)
     thin = RawEvent(source="afisha_me", source_id="a1",

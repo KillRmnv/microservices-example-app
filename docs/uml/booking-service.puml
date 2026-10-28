@@ -1,0 +1,99 @@
+@startuml booking-service
+skinparam linetype ortho
+skinparam nodesep 90
+skinparam ranksep 110
+skinparam classAttributeIconSize 0
+
+title booking-service — catalog and ticket inventory
+
+package "domain entities" as domain {
+  class Town {
+    -Long id
+    -String name
+  }
+  class Venue {
+    -Long id
+    -Town town
+    -String place
+    -int capacity
+    -int fullness
+  }
+  class Event {
+    -Long id
+    -String title
+    -LocalDateTime startsAt
+    -LocalDateTime endsAt
+    -Venue venue
+    -AdmissionMode admissionMode
+  }
+  class Seat {
+    -Long id
+    -Venue venue
+    -String sector
+    -String rowLabel
+    -String seatNumber
+  }
+  class Ticket {
+    -Long id
+    -Event event
+    -String zone
+    -BigDecimal price
+    -boolean active
+    -Long userId
+  }
+  class SeatableTicket {
+    -Long ticketId
+    -Seat seat
+  }
+  enum AdmissionMode {
+    SEATABLE
+    GENERAL
+  }
+}
+
+package "application services" as services {
+  class EventService
+  class TicketService {
+    +search(eventId, active, pageable)
+    +issue(...)
+  }
+  class SeatService
+}
+
+package "persistence" as persistence {
+  interface TownRepository
+  interface VenueRepository
+  interface EventRepository
+  interface TicketRepository
+  interface SeatRepository
+  class VenueFullnessTrigger
+}
+
+Venue "1" o-- "0..*" Event : hosts
+Town "1" o-- "0..*" Venue
+Venue "1" o-- "0..*" Seat
+Event "1" o-- "0..*" Ticket
+Ticket "1" -- "0..1" SeatableTicket
+Seat "1" o-- "0..*" SeatableTicket
+Event --> AdmissionMode
+
+EventService --> EventRepository
+TicketService --> TicketRepository
+TicketService --> SeatRepository
+SeatService --> SeatRepository
+TicketService ..> VenueFullnessTrigger : capacity guard
+
+note bottom of VenueFullnessTrigger
+  BEFORE UPDATE ON tickets: increments
+  venue_fullness and raises when
+  fullness > venue.capacity.
+end note
+
+note right of Ticket
+  zone CHECK IN (VIP, FAN_ZONE, BASIC)
+  price CHECK > 0
+  active = true is the assistant's
+  availability signal.
+end note
+
+@enduml

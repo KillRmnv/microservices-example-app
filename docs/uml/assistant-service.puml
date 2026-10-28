@@ -1,0 +1,170 @@
+@startuml assistant-service
+skinparam linetype ortho
+skinparam nodesep 90
+skinparam ranksep 110
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+
+title assistant-service — dialogue, hybrid search, holds
+
+package "api (controllers + DTO)" as api {
+  class DialogueRouter {
+    +POST /assistant/dialogue
+    +POST /assistant/dialogue/v2
+  }
+  class SearchRouter {
+    +POST /assistant/search
+    +POST /assistant/search_venues
+  }
+  class HoldsRouter {
+    +POST /assistant/holds
+    +POST /assistant/holds/{id}/confirm
+    +POST /assistant/holds/sweep
+  }
+  class StateContract {
+    +dialogue_action
+    +hard_filters
+    +negative_filters
+    +semantic_payload
+    +context_state
+    +sanitize()
+  }
+  class HoldRequest
+  class DialogResponse
+}
+
+package "services (use cases)" as services {
+  class DialogueService {
+    -SearchService search
+    -WeatherService weather
+    -BookingClient booking
+    +apply_rules(contract)
+    +search_turn(contract)
+    +record_run(contract, ms)
+  }
+  class SearchService {
+    -EmbeddingProvider embedder
+    -VectorStore store
+    -CollectorClient collector
+    +events(plan)
+    +venues(plan)
+    -_finish(fused, rows, pipeline, limit)
+  }
+  class WeatherService {
+    -OpenMeteoClient client
+    -WeatherCache cache
+    +forecast(date, lat, lon)
+    -_ttl_for(date)
+  }
+  class HoldService {
+    -BookingClient booking
+    +create(session, event, zone, price, party)
+    +confirm(id)
+    +sweep()
+  }
+  class MetricsService {
+    +render()
+  }
+}
+
+package "filters (specification pattern)" as filters {
+  abstract class Filter {
+    +qdrant_must()
+    +lexical_params()
+    +matches(hit)
+  }
+  class CityFilter
+  class CategoryFilter
+  class RubricFilter
+  class MaxPriceFilter
+  class ExcludeCategoriesFilter
+  class FilterPipeline {
+    +add(spec)
+    +qdrant_must()
+    +lexical_params()
+    +apply(hits)
+  }
+}
+
+package "clients (external I/O)" as clients {
+  class CollectorClient
+  class BookingClient
+  class OpenMeteoClient
+  interface WeatherCache
+  class RedisWeatherCache
+  class NullWeatherCache
+  interface EmbeddingProvider
+  class LlamaServerEmbedding
+  interface VectorStore
+  class QdrantStore
+  class InMemoryStore
+  class LlamaCppProvider
+  class OpenAICompatProvider
+  class MockProvider
+  class FallbackProvider
+}
+
+package "repositories" as repos {
+  class HoldsRepository
+  class DialogueRunsRepository
+}
+
+package "domain models" as models {
+  class FusedHit
+  class SearchPlan
+  class Weather
+  class Hold
+  class Availability
+}
+
+DialogueRouter --> DialogueService
+SearchRouter --> SearchService
+HoldsRouter --> HoldService
+
+DialogueService --> SearchService
+DialogueService --> WeatherService
+DialogueService --> BookingClient
+DialogueService ..> DialogueRunsRepository : record
+HoldService --> BookingClient
+HoldService ..> HoldsRepository
+SearchService --> FilterPipeline
+SearchService --> CollectorClient
+SearchService --> EmbeddingProvider
+SearchService --> VectorStore
+WeatherService --> OpenMeteoClient
+WeatherService --> WeatherCache
+MetricsService ..> HoldsRepository
+MetricsService ..> DialogueRunsRepository
+
+FilterPipeline "1" o-- "*" Filter
+Filter <|.. CityFilter
+Filter <|.. CategoryFilter
+Filter <|.. RubricFilter
+Filter <|.. MaxPriceFilter
+Filter <|.. ExcludeCategoriesFilter
+WeatherCache <|.. RedisWeatherCache
+WeatherCache <|.. NullWeatherCache
+VectorStore <|.. QdrantStore
+VectorStore <|.. InMemoryStore
+EmbeddingProvider <|.. LlamaServerEmbedding
+
+DialogueService ..> SearchPlan
+SearchService ..> FusedHit
+WeatherService ..> Weather
+HoldService ..> Hold
+HoldService ..> Availability
+
+note right of FilterPipeline
+  One backend pass + one post-filter pass.
+  New filter = new Filter subclass,
+  no new branch in SearchService.
+end note
+
+note bottom of LlamaCppProvider
+  Registry: provider_for(stage) reads
+  ASSISTANT_LLM_STAGES; unknown names
+  fail fast. FallbackProvider is
+  appended when ASSISTANT_LLM_FALLBACK_ENABLED.
+end note
+
+@enduml

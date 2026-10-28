@@ -10,10 +10,10 @@ import logging
 import re
 from datetime import datetime, timezone
 
-from .. import db
+from ..core import db
 from ..normalize import RawEvent, normalize_jsonld
 from ..parse import extract_json_ld_events
-from ..store import upsert_events
+from ..repositories.store import upsert_events
 from .base import CollectContext, RunStats, SourceAdapter
 
 log = logging.getLogger(__name__)

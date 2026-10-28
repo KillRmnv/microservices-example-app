@@ -1,6 +1,6 @@
 """HTML -> structured event extraction.
 
-Priority (SCRAPPING.md §5): JSON-LD Event -> microdata -> nothing else.
+Priority: JSON-LD Event -> microdata -> nothing else.
 No JS evaluation, no anti-bot circumvention.
 """
 from __future__ import annotations

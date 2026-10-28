@@ -6,7 +6,7 @@ import pytest
 from app.normalize import VenueRow
 from app.quota import QuotaExhausted, try_consume, used
 from app.sources.twogis_places import TwogisPlacesAdapter, normalize_point
-from app.store import upsert_venues
+from app.repositories.store import upsert_venues
 from conftest import pg_url
 from pathlib import Path
 import json
@@ -51,7 +51,7 @@ def test_parse_item_name_fallback_and_empty():
 
 
 def test_quota_guard_stops_at_cap_minus_reserve(conn):
-    from app import db
+    from app.core import db
     with db.get_conn(pg_url()) as c:
         assert try_consume(c, "twogis", "2026-10", cap=3, reserve=1) is True
         assert try_consume(c, "twogis", "2026-10", cap=3, reserve=1) is True
@@ -99,7 +99,7 @@ def test_twogis_collect_two_pages_then_quota(conn):
 
     # NOTE: the adapter reads settings lazily (`from ..config import settings`
     # inside methods), so patch the config singleton for the test.
-    import app.config as config_module
+    import app.core.config as config_module
     saved = (config_module.settings.twogis_api_key,
              config_module.settings.twogis_monthly_cap,
              config_module.settings.twogis_reserve,
@@ -128,7 +128,7 @@ def test_twogis_collect_stops_on_quota(conn):
 
     from app.http import PoliteClient
     from app.sources.base import CollectContext
-    import app.config as config_module
+    import app.core.config as config_module
 
     calls = []
 
@@ -160,7 +160,7 @@ def test_twogis_items_request_has_no_locale_by_default(conn):
     """Regression: locale=ru_RU made 2GIS return an empty items list."""
     from app.http import PoliteClient
     from app.sources.base import CollectContext
-    import app.config as config_module
+    import app.core.config as config_module
     import json as jsonlib
 
     items = jsonlib.loads((FIXTURES / "twogis_items.json").read_text())["result"]["items"]

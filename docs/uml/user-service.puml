@@ -1,0 +1,57 @@
+@startuml user-service
+skinparam linetype ortho
+skinparam nodesep 90
+skinparam ranksep 110
+skinparam classAttributeIconSize 0
+
+title user-service — identity, roles, permissions
+
+package "domain entities" as domain {
+  class User {
+    -Long id
+    -String username
+    -String email
+    -String passwordHash
+    -Role role
+    -boolean system
+  }
+  class Role {
+    -Long id
+    -String name
+    -Set<Permission> permissions
+  }
+  class Permission {
+    -Long id
+    -String name
+  }
+}
+
+package "application services" as services {
+  class UserService
+  class RoleService
+  class AuthenticationService
+}
+
+package "persistence" as persistence {
+  interface UserRepository
+  interface RoleRepository
+  interface PermissionRepository
+  class SystemUserGuards
+}
+
+Role "1" o-- "0..*" User : assigned to
+Role "0..*" o-- "0..*" Permission : grants
+
+UserService --> UserRepository
+RoleService --> RoleRepository
+RoleService --> PermissionRepository
+AuthenticationService --> UserRepository
+AuthenticationService ..> SystemUserGuards
+
+note bottom of SystemUserGuards
+  Triggers protect is_system users:
+  role cannot change and the row
+  cannot be deleted.
+end note
+
+@enduml

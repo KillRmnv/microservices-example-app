@@ -1,6 +1,6 @@
 name: Source Watch (Weekly)
 
-# Regression watch for scraper sources (SCRAPPING.md §8). Read-only curl
+# Regression watch for scraper sources. Read-only curl
 # checks on GitHub runners — no project VPN traffic. A red run means
 # selectors/markup drifted or anti-bot kicked in.
 on:

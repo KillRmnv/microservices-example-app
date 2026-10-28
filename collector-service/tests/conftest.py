@@ -10,7 +10,7 @@ import re
 import psycopg
 import pytest
 
-from app import db
+from app.core import db
 
 TEST_DB = "collector_pytest"
 
@@ -31,7 +31,17 @@ def pg_url() -> str:
 
 
 @pytest.fixture()
-def conn():
+def database_url():
+    try:
+        url = pg_url()
+        db.run_migrations(url)
+    except Exception as exc:  # noqa: BLE001 — no postgres here, skip
+        pytest.skip(f"no test postgres: {exc}")
+    yield url
+
+
+@pytest.fixture()
+def conn(database_url):
     try:
         url = pg_url()
         db.run_migrations(url)

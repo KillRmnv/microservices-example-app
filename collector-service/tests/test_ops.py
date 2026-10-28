@@ -1,14 +1,10 @@
 import httpx
 import pytest
 
-from app.config import Settings
-from app.main import collect_metrics
-from app.scheduler import (
-    advisory_lock,
-    degraded_sources,
-    post_alert,
-    source_health,
-)
+from app.core.config import Settings
+from app.repositories import runs
+from app.scheduler import advisory_lock
+from app.services.ops_service import degraded_sources, post_alert, render_metrics
 
 
 def test_schedule_map_parsing():
@@ -33,7 +29,7 @@ def test_source_health_flags_degraded(conn):
     _seed_run(conn, "dry", "ok", 0)
     _seed_run(conn, "broken", "error", 0)
     _seed_run(conn, "broken", "ok", 4)
-    health = {entry["source"]: entry for entry in source_health(conn, window=2)}
+    health = {entry["source"]: entry for entry in runs.health(conn, window=2)}
     assert health["good"]["degraded"] is False
     assert health["dry"]["degraded"] is True  # 0 new twice in a row
     assert health["broken"]["degraded"] is True  # last window has an error
@@ -41,7 +37,7 @@ def test_source_health_flags_degraded(conn):
 
 
 def test_advisory_lock_exclusive(conn):
-    from app import db
+    from app.core import db
     from tests.conftest import pg_url
     with advisory_lock(pg_url(), "collect:test") as first:
         assert first is True
@@ -80,7 +76,7 @@ def test_collect_metrics_format(conn):
         """INSERT INTO collected_events (source, source_id, source_url, title)
            VALUES ('ticketpro', 'x1', 'http://x/1', 'Концерт')""")
     conn.commit()
-    text = collect_metrics(conn)
+    text = render_metrics(runs.metrics(conn))
     assert 'collector_events_total{source="ticketpro"} 1' in text
     assert 'collector_runs_total{source="ticketpro",status="ok"} 1' in text
     assert 'collector_parse_errors_total{source="ticketpro"} 2' in text

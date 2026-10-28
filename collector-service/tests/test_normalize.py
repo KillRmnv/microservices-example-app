@@ -2,14 +2,14 @@ from datetime import datetime, timezone
 
 from app.normalize import (
     RawEvent,
-    is_minsk,
+    is_target_city,
     normalize_jsonld,
     parse_age,
     parse_datetime,
     parse_price,
 )
 from app.parse import extract_json_ld_events
-from app.store import fullness, merge_decision
+from app.repositories.store import fullness, merge_decision
 from pathlib import Path
 
 NOW = datetime(2026, 10, 23, tzinfo=timezone.utc)
@@ -41,9 +41,9 @@ def test_parse_age():
     assert parse_age("Рок") is None
 
 
-def test_is_minsk():
-    assert is_minsk({"address": {"addressLocality": "Минск"}})
-    assert not is_minsk({"address": {"addressLocality": "Брест"}})
+def test_is_target_city():
+    assert is_target_city({"address": {"addressLocality": "Минск"}})
+    assert not is_target_city({"address": {"addressLocality": "Брест"}})
 
 
 def test_ticketpro_normalize_and_city_filter():

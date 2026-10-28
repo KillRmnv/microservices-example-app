@@ -8,11 +8,11 @@ from __future__ import annotations
 
 import logging
 
-from .. import db
-from ..config import settings
+from ..core import db
+from ..core.config import settings
 from ..normalize import VenueRow
 from ..quota import QuotaExhausted, current_month, try_consume
-from ..store import upsert_venues
+from ..repositories.store import upsert_venues
 from .base import CollectContext, RunStats, SourceAdapter
 
 log = logging.getLogger(__name__)
@@ -131,10 +131,10 @@ class TwogisPlacesAdapter(SourceAdapter):
         if cached:
             return cached
         result = await self._get(ctx, conn, "/2.0/region/search",
-                                 {"q": settings.twogis_region}, stats)
+                                 {"q": settings.twogis_region or settings.default_city}, stats)
         items = result.get("items", [])
         if not items or "id" not in items[0]:
-            raise RuntimeError(f"region not found for {settings.twogis_region!r}")
+            raise RuntimeError(f"region not found for {settings.twogis_region or settings.default_city!r}")
         region_id = str(items[0]["id"])
         self._kv_set(conn, "twogis:region_id", region_id)
         return region_id
@@ -200,7 +200,7 @@ class TwogisPlacesAdapter(SourceAdapter):
             name=name[:300],
             rubric=rubric,
             address=address,
-            city=settings.twogis_region,
+            city=settings.twogis_region or settings.default_city,
             lat=lat,
             lon=lon,
             schedule=item.get("schedule") if isinstance(item.get("schedule"), dict) else None,

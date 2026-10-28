@@ -1,66 +1,26 @@
 """JSON-LD Event -> RawEvent normalization.
 
-Dates: naive values are Europe/Minsk local, stored as UTC-aware.
-Prices: BYN numbers; "Уточняйте" and friends -> None.
-Cities: only Minsk passes (others are kept out of the MVP catalog).
+Dates: naive values use the configured timezone, stored as UTC-aware.
+Prices: numbers in the configured currency; "Уточняйте" -> None.
+Cities: only the configured target city passes (MVP catalog scope).
 """
 from __future__ import annotations
 
-import hashlib
 import logging
 import re
-from dataclasses import dataclass, field
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-log = logging.getLogger(__name__)
+from .core.config import settings
+from .models.catalog import RawEvent, VenueRow  # re-exported for adapters
 
-MINSK_TZ = ZoneInfo("Europe/Minsk")
+log = logging.getLogger(__name__)
 
 CATEGORIES = {"concert", "theatre", "exhibition", "film", "sport", "kids", "other"}
 
 PRICE_RE = re.compile(r"(\d[\d\s]*(?:[.,]\d+)?)")
 AGE_RE = re.compile(r"(\d+)\s*\+")
 NON_PRICE = re.compile(r"уточняйте|договорная|бесплатно|free", re.I)
-
-
-@dataclass
-class RawEvent:
-    source: str
-    source_id: str
-    source_url: str
-    title: str
-    description: str | None = None
-    category: str = "other"
-    start_at: datetime | None = None
-    end_at: datetime | None = None
-    venue_name: str | None = None
-    address: str | None = None
-    city: str = "Минск"
-    lat: float | None = None
-    lon: float | None = None
-    price_min: float | None = None
-    price_max: float | None = None
-    currency: str = "BYN"
-    age_limit: int | None = None
-    ticket_url: str | None = None
-    image_url: str | None = None
-    organizer: str | None = None
-    status: str = "scheduled"
-    raw: dict = field(default_factory=dict)
-
-    @property
-    def dedup_key(self) -> str:
-        base = "|".join([
-            _norm(self.title),
-            self.start_at.isoformat() if self.start_at else "",
-            _norm(self.venue_name or ""),
-        ])
-        return hashlib.sha1(base.encode()).hexdigest()
-
-
-def _norm(value: str) -> str:
-    return re.sub(r"\s+", " ", value.strip().casefold())
 
 
 def parse_datetime(value: str | None) -> datetime | None:
@@ -72,7 +32,7 @@ def parse_datetime(value: str | None) -> datetime | None:
     except ValueError:
         return None
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=MINSK_TZ)
+        parsed = parsed.replace(tzinfo=ZoneInfo(settings.default_timezone))
     return parsed.astimezone(ZoneInfo("UTC"))
 
 
@@ -114,9 +74,12 @@ def _location_strings(location) -> str:
     return " ".join(parts)
 
 
-def is_minsk(location) -> bool:
+def is_target_city(location, city: str | None = None) -> bool:
+    target = (city or settings.default_city).casefold()
     text = _location_strings(location).casefold()
-    return "минск" in text or "minsk" in text
+    if target in text:
+        return True
+    return target == "минск" and "minsk" in text
 
 
 def _first_image(image) -> str | None:
@@ -138,7 +101,7 @@ def normalize_jsonld(source: str, source_id: str, source_url: str, category: str
                      data: dict, now_utc: datetime) -> RawEvent | None:
     """Returns None when the card must be skipped (past, non-Minsk, ...)."""
     location = data.get("location", "")
-    if not is_minsk(location):
+    if not is_target_city(location):
         return None
     end_at = parse_datetime(data.get("endDate"))
     if end_at is not None and end_at < now_utc:
@@ -164,9 +127,10 @@ def normalize_jsonld(source: str, source_id: str, source_url: str, category: str
         end_at=end_at,
         venue_name=(location.get("name") if isinstance(location, dict) else None),
         address=_location_strings(location) or None,
+        city=settings.default_city,
         price_min=price_min,
         price_max=price_max,
-        currency=str(offers.get("priceCurrency", "BYN") or "BYN"),
+        currency=str(offers.get("priceCurrency") or settings.default_currency),
         age_limit=parse_age(str(data.get("typicalAgeRange", "") or "")),
         ticket_url=offers.get("url") if isinstance(offers.get("url"), str) else None,
         image_url=_first_image(data.get("image")),
@@ -174,20 +138,3 @@ def normalize_jsonld(source: str, source_id: str, source_url: str, category: str
         if isinstance(data.get("organizer"), dict) else None,
         raw=data,
     )
-
-
-@dataclass
-class VenueRow:
-    source: str = "twogis"
-    source_id: str = ""
-    name: str = ""
-    rubric: str | None = None
-    address: str | None = None
-    city: str = "Минск"
-    lat: float | None = None
-    lon: float | None = None
-    schedule: dict | None = None
-    rating: float | None = None
-    review_count: int | None = None
-    source_url: str | None = None
-    raw: dict = field(default_factory=dict)

@@ -10,7 +10,7 @@ import re
 import psycopg
 import pytest
 
-from app import db
+from app.core import db
 
 TEST_DB = "assistant_pytest"
 
@@ -31,13 +31,24 @@ def pg_url() -> str:
 
 
 @pytest.fixture()
-def conn():
+def database_url():
     try:
         url = pg_url()
         db.run_migrations(url)
     except Exception as exc:  # noqa: BLE001 — no postgres here, skip
         pytest.skip(f"no test postgres: {exc}")
     with db.get_conn(url) as connection:
+        connection.execute("TRUNCATE booking_holds, dialogue_runs")
+        connection.commit()
+    yield url
+    with db.get_conn(url) as connection:
+        connection.execute("TRUNCATE booking_holds, dialogue_runs")
+        connection.commit()
+
+
+@pytest.fixture()
+def conn(database_url):
+    with db.get_conn(database_url) as connection:
         yield connection
         connection.rollback()
         connection.execute("TRUNCATE booking_holds, dialogue_runs")

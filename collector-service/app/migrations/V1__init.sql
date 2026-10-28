@@ -1,4 +1,4 @@
--- Collector schema: unified playbill events (see SCRAPPING.md §4).
+-- Collector schema: unified playbill events.
 CREATE TABLE IF NOT EXISTS collected_events (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     source TEXT NOT NULL,

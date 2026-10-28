@@ -1,6 +1,6 @@
 'use client'
 
-// Client-side query structuring (course.md §7): deterministic rules that turn
+// Client-side query structuring: deterministic rules that turn
 // free text into a first StateContract. The server re-validates everything,
 // asks for missing slots, and owns turn_count — this is only a first draft.
 import type { StateContract } from './types'
@@ -21,6 +21,10 @@ const CATEGORY_KEYWORDS: Array<[RegExp, string]> = [
   [/детск|для детей/i, 'kids'],
   [/ресторан|кафе|бар|клуб|кофейн|еда|ужин|обед/i, 'restaurant'],
 ]
+
+// Domain defaults are configuration, not logic.
+const DEFAULT_CITY = process.env.NEXT_PUBLIC_DEFAULT_CITY ?? 'Минск'
+const DEFAULT_LANGUAGE = process.env.NEXT_PUBLIC_DEFAULT_LANGUAGE ?? 'ru'
 
 export interface ParsedQuery {
   rawExpression: string
@@ -155,11 +159,11 @@ export function contractFromParsed(parsed: ParsedQuery, previous?: StateContract
     needs_clarification: false,
     clarification_prompt: null,
     hard_filters: {
-      location: { city: 'Минск' },
+      location: { city: DEFAULT_CITY },
       party_size: parsed.partySize,
     },
     negative_filters: { exclude_tags: parsed.excludeTags },
-    semantic_payload: { vector_query: parsed.vectorQuery, language: 'ru' },
+    semantic_payload: { vector_query: parsed.vectorQuery, language: DEFAULT_LANGUAGE },
     context_state: {
       turn_count: previousTurn,
       session_id: previous?.context_state.session_id ?? `web_${Date.now()}`,

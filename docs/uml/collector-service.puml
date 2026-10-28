@@ -1,0 +1,156 @@
+@startuml collector-service
+skinparam linetype ortho
+skinparam nodesep 90
+skinparam ranksep 110
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+
+title collector-service — ingestion, embedding, ops
+
+package "api (controllers)" as api {
+  class CollectRouter {
+    +GET /sources
+    +POST /collect/{source}
+    +POST /collect/probe
+    +GET /collect/health
+    +POST /collect/alert-check
+  }
+  class CatalogRouter {
+    +GET /events
+    +GET /events/search
+    +GET /venues/search
+  }
+  class EmbedRouter {
+    +POST /embed/{source}
+    +POST /embed/venues
+  }
+  class OpsRouter {
+    +GET /actuator/health
+    +GET /metrics
+  }
+}
+
+package "services" as services {
+  class CollectService {
+    -PoliteClient http
+    +sources: list
+    +collect(source, limit)
+    +probe(source, url)
+    +record_run(...)
+  }
+  class EmbedService {
+    -EmbeddingProvider embedder
+    -VectorStore vector
+    -VectorStore vector_venues
+    +embed_events(source, limit, cap)
+    +embed_venues(limit)
+  }
+  class OpsService {
+    +collect_health()
+    +alert_check()
+    +metrics()
+  }
+}
+
+package "sources (adapters)" as sources {
+  abstract class SourceAdapter {
+    +name
+    +collect(ctx): RunStats
+  }
+  class TicketproAdapter
+  class RelaxAdapter
+  class AfishaMeAdapter
+  class TelegramAdapter
+  class TwogisPlacesAdapter {
+    +parse_item(item, rubric)
+    +fix_coords(lat, lon)
+    +bbox()
+  }
+  class CollectContext {
+    +http
+    +db_url
+    +max_urls
+  }
+  class RunStats {
+    +fetched
+    +parsed
+    +parse_errors
+    +duplicates
+    +new_events
+  }
+}
+
+package "repositories" as repos {
+  class StoreRepository {
+    +upsert_events(conn, events)
+    +upsert_venues(conn, venues)
+    +merge_decision(...)
+  }
+  class QueriesRepository {
+    +list_events(...)
+    +search_events(...)
+    +search_venues(...)
+    +unembedded_events(...)
+    +mark_events_embedded(...)
+  }
+  class RunsRepository {
+    +record(conn, ...)
+    +health(conn, window)
+    +metrics(conn)
+  }
+}
+
+package "infrastructure" as infra {
+  class PoliteClient {
+    +get(source, url, before_attempt)
+  }
+  class QuotaGuard {
+    +try_consume(conn, provider, month, cap, reserve)
+    +used(conn, provider, month)
+  }
+  class LlamaServerEmbedding
+  class QdrantStore
+  class MigrationRunner {
+    +migration_files()
+    +run_migrations(url)
+  }
+}
+
+CollectRouter --> CollectService
+CatalogRouter ..> QueriesRepository
+EmbedRouter --> EmbedService
+OpsRouter --> OpsService
+
+CollectService "1" o-- "*" SourceAdapter
+CollectService --> PoliteClient
+CollectService ..> RunsRepository
+SourceAdapter <|.. TicketproAdapter
+SourceAdapter <|.. RelaxAdapter
+SourceAdapter <|.. AfishaMeAdapter
+SourceAdapter <|.. TelegramAdapter
+SourceAdapter <|.. TwogisPlacesAdapter
+SourceAdapter ..> CollectContext
+SourceAdapter ..> RunStats
+SourceAdapter ..> StoreRepository
+TwogisPlacesAdapter ..> QuotaGuard : per HTTP attempt
+
+EmbedService --> LlamaServerEmbedding
+EmbedService --> QdrantStore
+EmbedService ..> QueriesRepository
+OpsService ..> RunsRepository
+MigrationRunner ..> QueriesRepository
+
+note right of TwogisPlacesAdapter
+  locale is omitted unless configured:
+  2GIS returned an empty list for
+  unsupported locale values.
+end note
+
+note bottom of CollectService
+  Every adapter run writes exactly one
+  source_runs row, including failures.
+  Scheduler calls the same service under
+  pg_try_advisory_lock('collect:<source>').
+end note
+
+@enduml

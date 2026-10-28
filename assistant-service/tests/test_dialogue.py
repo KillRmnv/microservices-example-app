@@ -1,11 +1,14 @@
 import httpx
 import pytest
 
-from app.contract import StateContract
-from app.dialogue import run_search_turn
-from app.search import CollectorClient, SearchRequest
-from app.tools import BookingClient
-from app.vector import InMemoryStore
+from app.api.schemas.contract import BudgetFilter, StateContract
+from app.clients.booking import BookingClient
+from app.clients.collector import CollectorClient
+from app.clients.vector import InMemoryStore
+from app.core.config import Settings
+from app.models.weather import Weather
+from app.services.dialogue_service import DialogueService
+from app.services.search_service import SearchService
 
 
 class FakeEmbedder:
@@ -28,6 +31,16 @@ class FakeCollector(CollectorClient):
 
     async def search_lexical(self, query, city, category, limit):
         return self._rows[:limit]
+
+
+class FakeWeather:
+    def __init__(self, weather=None):
+        self.weather = weather or Weather(
+            date="2026-10-24", temp_max=11.0,
+            precipitation_probability=10, weathercode=1)
+
+    async def forecast(self, date, lat, lon):
+        return self.weather
 
 
 def booking_handler(request: httpx.Request) -> httpx.Response:
@@ -53,26 +66,29 @@ def make_contract(**overrides) -> StateContract:
     return StateContract.model_validate(base)
 
 
-def weather_handler(request: httpx.Request) -> httpx.Response:
-    return httpx.Response(200, json={"daily": {
-        "temperature_2m_max": [11.0],
-        "precipitation_probability_max": [10],
-        "weathercode": [1],
-    }})
+def make_service(store, collector, weather=None) -> DialogueService:
+    booking = BookingClient("http://booking:8082",
+                            transport=httpx.MockTransport(booking_handler))
+    return DialogueService(
+        search=SearchService(FakeEmbedder(), store, collector),
+        weather=weather or FakeWeather(),
+        booking=booking,
+        db_url="",
+        settings=Settings(),
+    )
+
+
+def two_event_store() -> InMemoryStore:
+    return InMemoryStore([
+        ("aaa", [1.0, 0.0, 0.0], {"title": "Джазовый вечер"}),
+        ("7", [0.9, 0.1, 0.0], {"title": "Концерт в филармонии"}),
+    ])
 
 
 @pytest.mark.asyncio
 async def test_search_turn_returns_messages():
-    store = InMemoryStore([
-        ("aaa", [1.0, 0.0, 0.0], {"title": "Джазовый вечер"}),
-        ("7", [0.9, 0.1, 0.0], {"title": "Концерт в филармонии"}),
-    ])
-    booking = BookingClient("http://booking:8082",
-                            transport=httpx.MockTransport(booking_handler))
-    response = await run_search_turn(
-        make_contract(), embedder=FakeEmbedder(), store=store,
-        collector=FakeCollector(collector_rows()), booking=booking,
-        weather_transport=httpx.MockTransport(weather_handler))
+    service = make_service(two_event_store(), FakeCollector(collector_rows()))
+    response = await service.search_turn(make_contract())
     kinds = [message.kind for message in response.messages]
     assert kinds == ["filters", "weather", "results"]
     cards = response.messages[-1].results
@@ -81,35 +97,32 @@ async def test_search_turn_returns_messages():
     assert "Внешняя афиша" in scraped.meta
     booked = next(card for card in cards if card.event_id == "7")
     assert booked.meta == "осталось мало"  # 2 active tickets < 10
+    assert booked.price == "от 60 руб."
 
 
 @pytest.mark.asyncio
 async def test_search_turn_budget_filters_expensive():
-    store = InMemoryStore([
-        ("aaa", [1.0, 0.0, 0.0], {"title": "Джазовый вечер"}),
-        ("7", [0.9, 0.1, 0.0], {"title": "Концерт в филармонии"}),
-    ])
     contract = make_contract()
-    from app.contract import BudgetFilter
     contract.hard_filters.budget = BudgetFilter(max_price_per_person=30.0)
-    booking = BookingClient("http://booking:8082",
-                            transport=httpx.MockTransport(booking_handler))
-    response = await run_search_turn(
-        contract, embedder=FakeEmbedder(), store=store,
-        collector=FakeCollector(collector_rows()), booking=booking,
-        weather_transport=httpx.MockTransport(weather_handler))
+    service = make_service(two_event_store(), FakeCollector(collector_rows()))
+    response = await service.search_turn(contract)
     ids = {card.event_id for card in response.messages[-1].results}
     assert ids == {"aaa"}  # 120 > 30 dropped, 25 kept
 
 
 @pytest.mark.asyncio
 async def test_search_turn_empty_results_message():
-    store = InMemoryStore()
-    booking = BookingClient("http://booking:8082",
-                            transport=httpx.MockTransport(booking_handler))
-    response = await run_search_turn(
-        make_contract(), embedder=FakeEmbedder(), store=store,
-        collector=FakeCollector([]), booking=booking,
-        weather_transport=httpx.MockTransport(weather_handler))
+    service = make_service(InMemoryStore(), FakeCollector([]))
+    response = await service.search_turn(make_contract())
     assert response.messages[-1].kind == "assistant"
     assert "ничего не нашлось" in response.messages[-1].text
+
+
+@pytest.mark.asyncio
+async def test_search_turn_uses_english_catalog():
+    contract = make_contract()
+    contract.semantic_payload.language = "en"
+    service = make_service(two_event_store(), FakeCollector(collector_rows()))
+    response = await service.search_turn(contract)
+    assert response.messages[0].text == "Search conditions are locked in."
+    assert response.messages[-1].text == "Here is what we found:"
