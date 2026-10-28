@@ -51,7 +51,8 @@ def search_venues(conn, q: str, city: str | None, rubric: str | None,
 def unembedded_events(conn, source: str, limit: int | None) -> list:
     params: list = []
     query = ("SELECT id, title, venue_name, description, city, category,"
-             " start_at FROM collected_events WHERE embedded_at IS NULL")
+             " price_min, price_max, start_at FROM collected_events"
+             " WHERE embedded_at IS NULL")
     if source != "all":
         query += " AND source = %s"
         params.append(source)
@@ -84,3 +85,17 @@ def mark_venues_embedded(conn, ids: list) -> None:
         "UPDATE collected_venues SET embedded_at = now() WHERE id = ANY(%s)",
         (ids,))
     conn.commit()
+
+
+def all_events_for_reindex(conn) -> list:
+    """Every event row with the fields needed for hybrid reindex."""
+    return conn.execute(
+        "SELECT id, title, venue_name, description, city, category,"
+        " price_min, price_max, start_at FROM collected_events"
+        " ORDER BY fetched_at").fetchall()
+
+
+def all_venues_for_reindex(conn) -> list:
+    return conn.execute(
+        "SELECT id, name, rubric, address, city FROM collected_venues"
+        " ORDER BY fetched_at").fetchall()

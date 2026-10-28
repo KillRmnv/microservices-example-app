@@ -15,6 +15,10 @@ class FakeEmbed:
     async def embed_venues(self, limit=None):
         return 0, 0
 
+    async def reindex_hybrid(self):
+        return {"events": {"patched": 0, "stored": 0, "rows": 0},
+                "venues": {"patched": 0, "stored": 0, "rows": 0}}
+
 
 def test_fixed_paths_are_not_swallowed_by_path_params(database_url):
     app = create_app()
@@ -34,3 +38,11 @@ def test_fixed_paths_are_not_swallowed_by_path_params(database_url):
     venues = client.post("/embed/venues")
     assert venues.status_code == 200
     assert venues.json()["embedded"] == 0
+
+    denied = client.post("/embed/reindex-hybrid")
+    assert denied.status_code == 400
+    assert denied.json()["code"] == "validation_error"
+
+    reindexed = client.post("/embed/reindex-hybrid?confirm=true")
+    assert reindexed.status_code == 200
+    assert reindexed.json()["events"]["patched"] == 0

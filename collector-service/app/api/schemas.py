@@ -44,3 +44,15 @@ class VenuesResponse(BaseModel):
 class AlertResponse(BaseModel):
     degraded: list[str]
     alert_sent: bool
+
+
+class ReindexCollection(BaseModel):
+    patched: int
+    stored: int
+    rows: int
+
+
+class ReindexResponse(BaseModel):
+    events: ReindexCollection
+    venues: ReindexCollection
+    duration_s: float = 0.0

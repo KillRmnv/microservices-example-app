@@ -9,6 +9,7 @@ from app.core.config import Settings
 from app.models.weather import Weather
 from app.services.dialogue_service import DialogueService
 from app.services.search_service import SearchService
+from app.sparse import encode_sparse
 
 
 class FakeEmbedder:
@@ -79,10 +80,20 @@ def make_service(store, collector, weather=None) -> DialogueService:
 
 
 def two_event_store() -> InMemoryStore:
-    return InMemoryStore([
-        ("aaa", [1.0, 0.0, 0.0], {"title": "Джазовый вечер"}),
-        ("7", [0.9, 0.1, 0.0], {"title": "Концерт в филармонии"}),
-    ])
+    """Hybrid payloads carry price_min, like reindexed Qdrant points."""
+    return InMemoryStore(
+        [
+            ("aaa", [1.0, 0.0, 0.0],
+             {"title": "Джазовый вечер", "city": "Минск", "price_min": 25.0}),
+            ("7", [0.9, 0.1, 0.0],
+             {"title": "Концерт в филармонии", "city": "Минск",
+              "price_min": 120.0}),
+        ],
+        {
+            "aaa": encode_sparse("Джазовый вечер"),
+            "7": encode_sparse("Концерт в филармонии"),
+        },
+    )
 
 
 @pytest.mark.asyncio

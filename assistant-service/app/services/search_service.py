@@ -1,8 +1,9 @@
-"""Hybrid search engine: dense + lexical -> RRF -> filter pipeline.
+"""Hybrid search engine: Qdrant dense+sparse fused server-side (RRF).
 
-The engine performs one dense call, one lexical call, one fusion pass and
-one post-filter pass; filters are composable specifications, not branches
-inside this module.
+One Qdrant hybrid call carries exact-match filters; price stays a Python
+post-filter because unknown prices must pass. When Qdrant hybrid fails
+(missing sparse config, outage), the engine falls back to the collector
+lexical endpoint fused in Python — the old path, kept for resilience.
 """
 from __future__ import annotations
 
@@ -10,7 +11,7 @@ import logging
 
 from ..clients.collector import CollectorClient
 from ..clients.embeddings import EmbeddingProvider
-from ..clients.vector import ScoredHit, VectorStore
+from ..clients.vector import VectorStore
 from ..filters import (
     CategoryFilter,
     CityFilter,
@@ -20,9 +21,12 @@ from ..filters import (
     RubricFilter,
 )
 from ..models.search import FusedHit, SearchPlan
+from ..sparse import SparseVector, encode_sparse
 from .fusion import fuse_search
 
 log = logging.getLogger(__name__)
+
+HYBRID_ORIGIN = "hybrid"
 
 
 class SearchService:
@@ -34,16 +38,16 @@ class SearchService:
         self._collector = collector
         self._candidate_multiplier = max(1, candidate_multiplier)
 
-    async def _dense(self, query: str, limit: int,
-                     must: dict[str, str]) -> list[ScoredHit]:
-        if not query.strip():
-            return []
-        try:
-            vector = (await self._embedder.embed([query]))[0]
-            return await self._store.search(vector, limit, must or None)
-        except Exception as exc:  # noqa: BLE001 — dense is optional, lexical is not
-            log.warning("dense search failed, lexical only: %s", exc)
-            return []
+    async def _encode_query(self, query: str) -> tuple[list[float] | None,
+                                                      SparseVector | None]:
+        """Dense via embedder (optional), sparse local (never fails)."""
+        dense: list[float] | None = None
+        if query.strip():
+            try:
+                dense = (await self._embedder.embed([query]))[0]
+            except Exception as exc:  # noqa: BLE001 — sparse still works
+                log.warning("dense embed failed, sparse only: %s", exc)
+        return dense, encode_sparse(query)
 
     async def events(self, plan: SearchPlan) -> list[FusedHit]:
         pipeline = FilterPipeline()
@@ -67,8 +71,27 @@ class SearchService:
                       *, venues: bool) -> list[FusedHit]:
         candidates = plan.limit * self._candidate_multiplier
         must = pipeline.qdrant_must()
+        dense, sparse = await self._encode_query(plan.vector_query)
+        try:
+            if dense is None and sparse is None:
+                raise ValueError("empty query")
+            hits = await self._store.hybrid_search(dense, sparse, candidates,
+                                                   must or None)
+            fused = [FusedHit(id=hit.id, score=hit.score, origins=[HYBRID_ORIGIN],
+                              payload=dict(hit.payload)) for hit in hits]
+        except Exception as exc:  # noqa: BLE001 — lexical fallback
+            log.warning("qdrant hybrid failed, lexical fallback: %s", exc)
+            fused = await self._lexical_fallback(plan, pipeline, candidates,
+                                                 venues)
+            return self._finish_fallback(fused, pipeline, plan, venues)
+        if plan.max_price_per_person is not None and not venues:
+            prices = {hit.id: hit.payload.get("price_min") for hit in fused}
+            pipeline.add(MaxPriceFilter(plan.max_price_per_person, prices))
+        return [hit for hit in fused if pipeline.matches(hit)][:plan.limit]
+
+    async def _lexical_fallback(self, plan: SearchPlan, pipeline: FilterPipeline,
+                                candidates: int, venues: bool) -> list[FusedHit]:
         params = pipeline.lexical_params()
-        dense = await self._dense(plan.vector_query, candidates, must)
         if venues:
             rows = await self._collector.search_venues_lexical(
                 plan.vector_query, params.get("city"), params.get("rubric"),
@@ -78,30 +101,17 @@ class SearchService:
                 plan.vector_query, params.get("city"), params.get("category"),
                 candidates)
         lexical_by_id = {str(row["id"]): row for row in rows}
-        dense_ids = [(hit.id, dict(hit.payload)) for hit in dense]
-        fused = fuse_search(dense_ids, list(lexical_by_id), candidates)
-        # Price lives only in the lexical row, so the filter is built after it.
-        if plan.max_price_per_person is not None:
-            prices = {doc_id: row.get("price_min")
-                      for doc_id, row in lexical_by_id.items()}
-            pipeline.add(MaxPriceFilter(plan.max_price_per_person, prices))
-        return self._finish(fused, lexical_by_id, pipeline, plan.limit, venues)
-
-    @staticmethod
-    def _finish(fused: list[FusedHit], lexical_by_id: dict[str, dict],
-                pipeline: FilterPipeline, limit: int, venues: bool) -> list[FusedHit]:
-        """One pass: backfill payload from lexical rows and apply filters."""
-        result: list[FusedHit] = []
+        fused = fuse_search([], list(lexical_by_id), candidates)
         for hit in fused:
-            row = lexical_by_id.get(hit.id)
-            if row is not None:
-                keys = ("name", "rubric", "address") if venues else (
-                    "title", "category", "city")
-                for key in keys:
-                    if not hit.payload.get(key) and row.get(key):
-                        hit.payload[key] = row[key]
-            if pipeline.matches(hit):
-                result.append(hit)
-                if len(result) >= limit:
-                    break
-        return result
+            hit.payload.update({k: v for k, v in
+                                lexical_by_id[hit.id].items() if v is not None})
+        return fused
+
+    def _finish_fallback(self, fused: list[FusedHit], pipeline: FilterPipeline,
+                         plan: SearchPlan, venues: bool) -> list[FusedHit]:
+        """Old path: backfill payload from lexical rows, then filter."""
+        if plan.max_price_per_person is not None and not venues:
+            prices = {hit.id: hit.payload.get("price_min") for hit in fused}
+            pipeline.add(MaxPriceFilter(plan.max_price_per_person, prices))
+        result = [hit for hit in fused if pipeline.matches(hit)]
+        return result[:plan.limit]

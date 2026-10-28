@@ -84,6 +84,59 @@ def test_embed_events_marks_rows(database_url, conn):
     assert left == 0
 
 
+def test_embed_events_stores_sparse_and_price_payload(database_url, conn):
+    conn.execute(
+        """INSERT INTO collected_events
+               (source, source_id, source_url, title, venue_name, description,
+                price_min, price_max)
+           VALUES ('ticketpro', 'e9', 'http://x/9', 'Джазовый вечер',
+                   'Филармония', 'Тихий джаз', 25, 60)""")
+    conn.commit()
+    store = MemoryStore()
+
+    async def run():
+        service = EmbedService(database_url, FakeEmbedder(), store,
+                               MemoryStore(), Settings())
+        return await service.embed_events("ticketpro")
+
+    assert asyncio.run(run()) == (1, 0)
+    points = asyncio.run(store.scroll_all())
+    assert len(points) == 1
+    assert points[0].sparse  # sparse indexed alongside dense
+    assert points[0].payload["price_min"] == 25.0
+    assert points[0].payload["price_max"] == 60.0
+
+
+def test_reindex_hybrid_patches_legacy_points(database_url, conn):
+    from app.vector import VectorPoint
+
+    conn.execute(
+        """INSERT INTO collected_events
+               (source, source_id, source_url, title, venue_name, price_min)
+           VALUES ('relax', 'r1', 'http://x/r1', 'Концерт у Немиги',
+                   'Клуб', 40)""")
+    conn.commit()
+    row_id = str(conn.execute(
+        "SELECT id FROM collected_events WHERE source_id = 'r1'").fetchone()["id"])
+    store = MemoryStore()
+
+    async def run():
+        # Legacy dense-only point, as created before hybrid search.
+        await store.upsert([VectorPoint(id=row_id, vector=[1.0, 0.0, 0.0],
+                                        payload={"title": "Концерт у Немиги"})])
+        service = EmbedService(database_url, FakeEmbedder(), store,
+                               MemoryStore(), Settings())
+        return await service.reindex_hybrid()
+
+    result = asyncio.run(run())
+    assert result["events"]["patched"] == 1
+    assert result["events"]["rows"] == 1
+    (point,) = asyncio.run(store.scroll_all())
+    assert point.vector == [1.0, 0.0, 0.0]  # dense preserved
+    assert point.sparse  # sparse merged from Postgres text
+    assert point.payload["price_min"] == 40.0
+
+
 def test_ops_service_health_and_metrics(database_url, conn):
     conn.execute(
         """INSERT INTO source_runs (source, status, started_at, finished_at,
