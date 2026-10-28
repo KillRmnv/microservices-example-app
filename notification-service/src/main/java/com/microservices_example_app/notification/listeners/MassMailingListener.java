@@ -3,6 +3,7 @@ package com.microservices_example_app.notification.listeners;
 import com.microservices_example_app.notification.dto.MassDeleteEventMailingEvent;
 import com.microservices_example_app.notification.dto.MassUpdateEventMailingEvent;
 import com.microservices_example_app.notification.service.MassMailingEmailService;
+import com.microservices_example_app.notification.util.KafkaMdc;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.annotation.KafkaListener;
@@ -21,12 +22,17 @@ public class MassMailingListener {
             containerFactory = "massDeleteKafkaListenerContainerFactory"
     )
     public void handleMassDeleteEvent(MassDeleteEventMailingEvent event) {
-        log.info("Received MassDeleteEventMailingEvent: {} users, sourceService={}",
-                event.getUsers().size(), event.getSourceService());
+        KafkaMdc.begin();
         try {
-            massMailingEmailService.sendMassDeleteEventMailing(event);
-        } catch (Exception e) {
-            log.error("Failed to send mass delete mailing: {}", e.getMessage(), e);
+            log.info("Received MassDeleteEventMailingEvent: {} users, sourceService={}",
+                    event.getUsers().size(), event.getSourceService());
+            try {
+                massMailingEmailService.sendMassDeleteEventMailing(event);
+            } catch (Exception e) {
+                log.error("Failed to send mass delete mailing: {}", e.getMessage(), e);
+            }
+        } finally {
+            KafkaMdc.end();
         }
     }
 
@@ -36,12 +42,17 @@ public class MassMailingListener {
             containerFactory = "massUpdateKafkaListenerContainerFactory"
     )
     public void handleMassUpdateEvent(MassUpdateEventMailingEvent event) {
-        log.info("Received MassUpdateEventMailingEvent: {} users, sourceService={}",
-                event.getUsers().size(), event.getSourceService());
+        KafkaMdc.begin();
         try {
-            massMailingEmailService.sendMassUpdateEventMailing(event);
-        } catch (Exception e) {
-            log.error("Failed to send mass update mailing: {}", e.getMessage(), e);
+            log.info("Received MassUpdateEventMailingEvent: {} users, sourceService={}",
+                    event.getUsers().size(), event.getSourceService());
+            try {
+                massMailingEmailService.sendMassUpdateEventMailing(event);
+            } catch (Exception e) {
+                log.error("Failed to send mass update mailing: {}", e.getMessage(), e);
+            }
+        } finally {
+            KafkaMdc.end();
         }
     }
 }

@@ -3,6 +3,7 @@ package com.microservices_example_app.users.dto;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.Setter;
@@ -10,6 +11,7 @@ import lombok.Setter;
 @AllArgsConstructor
 @Getter
 @Setter
+@Schema(description = "Registration request for a new user account")
 public class UserRegistrationRequestDto {
     @NotBlank(message = "Username must not be blank")
     private String username;

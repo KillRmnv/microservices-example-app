@@ -2,11 +2,13 @@ package com.microservices_example_app.users.dto;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 
 @AllArgsConstructor
 @Getter
+@Schema(description = "Login credentials")
 public class UserLoginRequestDto {
     @NotBlank(message = "Email must not be blank")
     @Email(message = "Email must be valid")

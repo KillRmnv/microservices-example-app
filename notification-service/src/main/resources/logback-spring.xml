@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <!-- Structured JSON logging (LogstashEncoder). Default appender is JSON.
+         Activate the 'text' Spring profile (SPRING_PROFILES_ACTIVE=text) for plain-text logs. -->
+    <springProperty name="APP_NAME" source="spring.application.name" defaultValue="notification-service"/>
+
+    <appender name="JSON_CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <customFields>{"service":"notification-service"}</customFields>
+            <!-- Defense in depth: mask sensitive JSON fields even if code logs them by accident -->
+            <jsonGeneratorDecorator class="net.logstash.logback.decorate.MaskingJsonGeneratorDecorator">
+                <defaultMask>****</defaultMask>
+                <pathMask>
+                    <path>password</path>
+                    <path>newPassword</path>
+                    <path>passwordHash</path>
+                    <path>token</path>
+                    <path>resetToken</path>
+                    <path>resetUrl</path>
+                    <path>authorization</path>
+                    <path>cookie</path>
+                    <path>set-cookie</path>
+                    <path>secret</path>
+                    <path>clientSecret</path>
+                    <path>apiKey</path>
+                    <path>api_key</path>
+                    <path>dsn</path>
+                </pathMask>
+            </jsonGeneratorDecorator>
+        </encoder>
+    </appender>
+
+    <appender name="TEXT_CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} [requestId=%X{requestId} userId=%X{userId} traceId=%X{traceId}] - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <springProfile name="!text">
+        <root level="INFO">
+            <appender-ref ref="JSON_CONSOLE"/>
+        </root>
+    </springProfile>
+
+    <springProfile name="text">
+        <root level="INFO">
+            <appender-ref ref="TEXT_CONSOLE"/>
+        </root>
+    </springProfile>
+</configuration>

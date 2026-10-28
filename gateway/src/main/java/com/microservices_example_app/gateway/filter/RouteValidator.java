@@ -23,10 +23,18 @@ public class RouteValidator {
             "/users/auth/validate-reset-token"
     );
 
+    private static final List<String> OPEN_API_PREFIXES = List.of(
+            "/v3/api-docs",
+            "/swagger-ui",
+            "/webjars/",
+            "/swagger-resources"
+    );
+
     public final Predicate<ServerHttpRequest> isSecured =
             request -> {
                 String path = request.getURI().getPath();
-                boolean isOpen = OPEN_API_ENDPOINTS.contains(path);
+                boolean isOpen = OPEN_API_ENDPOINTS.contains(path)
+                        || OPEN_API_PREFIXES.stream().anyMatch(path::startsWith);
                 log.info("RouteValidator: path={}, isOpenEndpoint={}, isSecured={}", path, isOpen, !isOpen);
                 return !isOpen;
             };

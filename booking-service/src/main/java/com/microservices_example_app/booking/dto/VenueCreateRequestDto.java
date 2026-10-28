@@ -1,5 +1,6 @@
 package com.microservices_example_app.booking.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -11,6 +12,7 @@ import lombok.Setter;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@Schema(description = "Request to create a new venue")
 public class VenueCreateRequestDto {
     private Integer townId;
     private String place;

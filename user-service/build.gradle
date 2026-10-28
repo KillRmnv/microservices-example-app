@@ -46,6 +46,10 @@ dependencies {
 	implementation "com.password4j:password4j:${password4jVersion}"
 	implementation "com.bucket4j:bucket4j-core:${bucket4jVersion}"
 
+	implementation "net.logstash.logback:logstash-logback-encoder:${logstashEncoderVersion}"
+
+	implementation "org.springdoc:springdoc-openapi-starter-webmvc-ui:${springdocVersion}"
+
 	compileOnly "org.projectlombok:lombok:${lombokVersion}"
 	annotationProcessor "org.projectlombok:lombok:${lombokVersion}"
 	testCompileOnly "org.projectlombok:lombok:${lombokVersion}"

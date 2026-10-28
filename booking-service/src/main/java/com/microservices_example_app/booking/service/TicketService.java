@@ -13,6 +13,7 @@ import com.microservices_example_app.booking.repository.EventRepository;
 import com.microservices_example_app.booking.repository.TicketRepository;
 import com.microservices_example_app.booking.specification.TicketSpecification;
 import com.microservices_example_app.booking.utils.JwtRequestUserExtractor;
+import com.microservices_example_app.booking.util.SensitiveMask;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -66,7 +67,7 @@ public class TicketService {
         );
 
         notificationKafkaBookingProducer.sendSuccessfulBookingEvent(bookingEvent);
-        log.info("Successful booking event sent for ticket id={}, email={}", saved.getId(), email);
+        log.info("Successful booking event sent for ticket id={}, email={}", saved.getId(), SensitiveMask.maskEmail(email));
 
         return toResponseDto(saved);
     }
@@ -138,7 +139,7 @@ public class TicketService {
         ticketRepository.delete(ticket);
 
         notificationKafkaBookingProducer.sendSuccessfulTicketRefundEvent(refundEvent);
-        log.info("Successful ticket refund event sent for ticket id={}, email={}", id, email);
+        log.info("Successful ticket refund event sent for ticket id={}, email={}", id, SensitiveMask.maskEmail(email));
     }
 
     @Transactional

@@ -5,6 +5,9 @@ import com.microservices_example_app.booking.service.SeatService;
 import com.microservices_example_app.booking.utils.JwtRequestUserExtractor;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
@@ -16,11 +19,13 @@ import java.util.List;
 @RequestMapping("/booking/seats")
 @RequiredArgsConstructor
 @Slf4j
+@Tag(name = "Seats", description = "Venue seat management")
 public class SeatController {
 
     private final SeatService seatService;
     private final JwtRequestUserExtractor jwtRequestUserExtractor;
 
+    @Operation(summary = "Create a new seat")
     @PostMapping
     public SeatResponseDto create(@Valid @RequestBody SeatCreateRequestDto requestDto) {
         requireEventManagerOrAdmin();
@@ -28,23 +33,26 @@ public class SeatController {
         return seatService.create(requestDto);
     }
 
+    @Operation(summary = "Get a seat by id")
     @GetMapping("/{id}")
-    public SeatResponseDto getById(@PathVariable Integer id) {
+    public SeatResponseDto getById(@Parameter(description = "Seat id") @PathVariable Integer id) {
         log.info("Fetching seat with id: {}", id);
         return seatService.getById(id);
     }
 
+    @Operation(summary = "Search seats by filter with pagination")
     @GetMapping("/search")
     public List<SeatResponseDto> searchByFilter(@Valid @ModelAttribute SeatSearchRequestDto filter,
-                                                @RequestParam(defaultValue = "1") int page,
-                                                @RequestParam(defaultValue = "10") int size) {
+                                                @Parameter(description = "One-based page number") @RequestParam(defaultValue = "1") int page,
+                                                @Parameter(description = "Page size") @RequestParam(defaultValue = "10") int size) {
         log.info("Searching seats by filter: venueId={}, sector={}, row={}, number={}",
                 filter.getVenueId(), filter.getSector(), filter.getRow(), filter.getNumber());
         return seatService.searchByFilter(filter, page, size);
     }
 
+    @Operation(summary = "Update a seat")
     @PutMapping("/{id}")
-    public SeatResponseDto updateById(@PathVariable Integer id,
+    public SeatResponseDto updateById(@Parameter(description = "Seat id") @PathVariable Integer id,
                                       @Valid @RequestBody SeatUpdateRequestDto requestDto) {
         requireEventManagerOrAdmin();
         log.info("Updating seat with id: {}", id);
@@ -52,13 +60,15 @@ public class SeatController {
         return seatService.updateSeatById(requestDto);
     }
 
+    @Operation(summary = "Delete a seat")
     @DeleteMapping("/{id}")
-    public void deleteById(@PathVariable Integer id) {
+    public void deleteById(@Parameter(description = "Seat id") @PathVariable Integer id) {
         requireEventManagerOrAdmin();
         log.info("Deleting seat with id: {}", id);
         seatService.deleteById(id);
     }
 
+    @Operation(summary = "Delete seats matching a filter")
     @DeleteMapping("/search")
     public long deleteByFilter(@Valid @RequestBody SeatDeleteRequestDto requestDto) {
         requireEventManagerOrAdmin();

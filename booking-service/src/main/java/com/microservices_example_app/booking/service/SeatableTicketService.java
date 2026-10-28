@@ -15,6 +15,7 @@ import com.microservices_example_app.booking.repository.SeatRepository;
 import com.microservices_example_app.booking.repository.SeatableTicketRepository;
 import com.microservices_example_app.booking.specification.SeatableTicketSpecification;
 import com.microservices_example_app.booking.utils.JwtRequestUserExtractor;
+import com.microservices_example_app.booking.util.SensitiveMask;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -74,7 +75,7 @@ public class SeatableTicketService {
         );
 
         notificationKafkaBookingProducer.sendSuccessfulBookingEvent(bookingEvent);
-        log.info("Successful seatable booking event sent for ticket id={}, email={}", saved.getId(), email);
+        log.info("Successful seatable booking event sent for ticket id={}, email={}", saved.getId(), SensitiveMask.maskEmail(email));
 
         return toResponseDto(saved);
     }
@@ -118,7 +119,7 @@ public class SeatableTicketService {
         );
 
         notificationKafkaBookingProducer.sendSuccessfulTicketRefundEvent(refundEvent);
-        log.info("Successful seatable refund event sent for ticket id={}, email={}", id, email);
+        log.info("Successful seatable refund event sent for ticket id={}, email={}", id, SensitiveMask.maskEmail(email));
     }
 
 

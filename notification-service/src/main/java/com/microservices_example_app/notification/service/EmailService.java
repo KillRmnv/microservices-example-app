@@ -7,6 +7,7 @@ import com.microservices_example_app.notification.dto.TicketRefundEvent;
 import com.microservices_example_app.notification.dto.UserDeletedEvent;
 import com.microservices_example_app.notification.dto.UserUpdatedEvent;
 import com.microservices_example_app.notification.exceptions.EmailSendingException;
+import com.microservices_example_app.notification.util.SensitiveMask;
 import lombok.AllArgsConstructor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -27,7 +28,7 @@ public class EmailService {
     private String senderEmail;
     public void sendTicketRefundEmail(TicketRefundEvent event) {
         log.info("Sending ticket refund email: email={}, username={}, eventTitle={}, sourceService={}",
-                event.getEmail(), event.getUsername(), event.getEventTitle(), event.getSourceService());
+                SensitiveMask.maskEmail(event.getEmail()), event.getUsername(), event.getEventTitle(), event.getSourceService());
 
         SimpleMailMessage message = new SimpleMailMessage();
         message.setFrom(senderEmail);
@@ -48,7 +49,7 @@ public class EmailService {
     }
     public void sendBookingSuccessEmail(SuccessfulBookingEvent event) {
         log.info("Sending booking success email: email={}, username={}, sourceService={}",
-                event.getEmail(), event.getUsername(), event.getSourceService());
+                SensitiveMask.maskEmail(event.getEmail()), event.getUsername(), event.getSourceService());
 
         SimpleMailMessage message = new SimpleMailMessage();
         message.setFrom(senderEmail);
@@ -68,7 +69,7 @@ public class EmailService {
 
     public void sendSuccessfulRegistrationEmail(SuccessfulRegistrationEmailEvent event) {
         log.info("Sending successful registration email: email={}, username={}, sourceService={}",
-                event.getEmail(), event.getUsername(), event.getSourceService());
+                SensitiveMask.maskEmail(event.getEmail()), event.getUsername(), event.getSourceService());
 
         SimpleMailMessage message = new SimpleMailMessage();
         message.setFrom(senderEmail);
@@ -88,7 +89,7 @@ public class EmailService {
 
     public void sendForgetPasswordEmail(ForgetPasswordEvent event) {
         log.info("Sending forgot password email: email={}, sourceService={}",
-                event.getEmail(), event.getSourceService());
+                SensitiveMask.maskEmail(event.getEmail()), event.getSourceService());
 
         SimpleMailMessage message = new SimpleMailMessage();
         message.setFrom(senderEmail);
@@ -114,17 +115,17 @@ public class EmailService {
         try {
             mailSender.send(message);
             log.info("Email sent successfully: type={}, recipient={}, sourceService={}",
-                    emailType, recipientEmail, sourceService);
+                    emailType, SensitiveMask.maskEmail(recipientEmail), sourceService);
         } catch (MailException ex) {
             log.error("Failed to send email: type={}, recipient={}, sourceService={}, reason={}",
-                    emailType, recipientEmail, sourceService, ex.getMessage(), ex);
-            throw new EmailSendingException("Failed to send " + emailType + " email to " + recipientEmail, ex);
+                    emailType, SensitiveMask.maskEmail(recipientEmail), sourceService, ex.getMessage(), ex);
+            throw new EmailSendingException("Failed to send " + emailType + " email", ex);
         }
     }
 
     public void sendUserDeletedEmail(UserDeletedEvent event) {
         log.info("Sending user deleted email: email={}, username={}, sourceService={}",
-                event.getEmail(), event.getUsername(), event.getSourceService());
+                SensitiveMask.maskEmail(event.getEmail()), event.getUsername(), event.getSourceService());
 
         SimpleMailMessage message = new SimpleMailMessage();
         message.setFrom(senderEmail);
@@ -144,7 +145,7 @@ public class EmailService {
 
     public void sendUserUpdatedEmail(UserUpdatedEvent event) {
         log.info("Sending user updated email: email={}, username={}, role={}, sourceService={}",
-                event.getEmail(), event.getUsername(), event.getRole(), event.getSourceService());
+                SensitiveMask.maskEmail(event.getEmail()), event.getUsername(), event.getRole(), event.getSourceService());
 
         SimpleMailMessage message = new SimpleMailMessage();
         message.setFrom(senderEmail);

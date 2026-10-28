@@ -13,6 +13,7 @@ import com.microservices_example_app.users.producers.NotificationKafkaAuthentica
 import com.microservices_example_app.users.repository.RoleRepository;
 import com.microservices_example_app.users.repository.UserRepository;
 import com.microservices_example_app.users.utils.JwtUtil;
+import com.microservices_example_app.users.util.SensitiveMask;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -40,7 +41,7 @@ public  class UserService {
 
     @Transactional
     public UserRegistrationDto register(String email, String password, String role, String username, Boolean isSystem) {
-        log.info("Registering new user: email={}, username={}, role={}", email, username, role);
+        log.info("Registering new user: email={}, username={}, role={}", SensitiveMask.maskEmail(email), username, role);
 
         Role customerRole = roleRepository.findByName(role)
                 .orElseThrow(() -> {
@@ -59,7 +60,7 @@ public  class UserService {
                 .build();
 
         User saved = userDao.save(user);
-        log.info("User registered successfully: id={}, email={}", saved.getId(), saved.getEmail());
+        log.info("User registered successfully: id={}, email={}", saved.getId(), SensitiveMask.maskEmail(saved.getEmail()));
         try {
             SuccessfulRegistrationEmailEvent event = new SuccessfulRegistrationEmailEvent(saved.getEmail(), serviceName, saved.getUsername());
             authenticationProducer.sendSuccessfulRegistrationEmail(event);
@@ -71,16 +72,16 @@ public  class UserService {
 
     @Transactional(readOnly = true)
     public UserLoginResponseDto login(String email, String password) {
-        log.info("Login attempt for email={}", email);
+        log.info("Login attempt for email={}", SensitiveMask.maskEmail(email));
 
         User user = userDao.findByEmail(email)
                 .orElseThrow(() -> {
-                    log.warn("Login failed: user not found for email={}", email);
+                    log.warn("Login failed: user not found for email={}", SensitiveMask.maskEmail(email));
                     return new UserNotFoundException("Invalid email or password");
                 });
 
         if (!passwordService.verify(password, user.getPasswordHash())) {
-            log.warn("Login failed: invalid password for email={}", email);
+            log.warn("Login failed: invalid password for email={}", SensitiveMask.maskEmail(email));
             throw new IllegalArgumentException("Invalid email or password");
         }
 
@@ -91,30 +92,30 @@ public  class UserService {
                 user.getUserRole().getName()
         );
 
-        log.info("Login successful: userId={}, email={}, role={}", user.getId(), user.getEmail(), user.getUserRole().getName());
+        log.info("Login successful: userId={}, email={}, role={}", user.getId(), SensitiveMask.maskEmail(user.getEmail()), user.getUserRole().getName());
         return new UserLoginResponseDto(token, user.getId(), user.getUserRole().getName());
     }
 
     @Transactional(readOnly = true)
     public UserResponseDto getByEmail(String email) {
-        log.debug("Fetching user by email={}", email);
+        log.debug("Fetching user by email={}", SensitiveMask.maskEmail(email));
 
         User user = userDao.findByEmail(email)
                 .orElseThrow(() -> {
-                    log.warn("User not found by email={}", email);
+                    log.warn("User not found by email={}", SensitiveMask.maskEmail(email));
                     return new UserNotFoundException("User not found: " + email);
                 });
 
-        log.debug("User found by email={}: id={}", email, user.getId());
+        log.debug("User found by email={}: id={}", SensitiveMask.maskEmail(email), user.getId());
         return toResponseDto(user);
     }
     @Transactional
     public void restorePassword(String email) {
-        log.info("Password restore requested for email={}", email);
+        log.info("Password restore requested for email={}", SensitiveMask.maskEmail(email));
         try {
             userDao.findByEmail(email).
                     ifPresentOrElse(u -> {
-                        log.info("User with id {} trying to restore password via {}", u.getId(), u.getEmail());
+                        log.info("User with id {} trying to restore password via {}", u.getId(), SensitiveMask.maskEmail(u.getEmail()));
                         String token = JwtUtil.generatePasswordResetToken(u.getId(), email);
                         String link = resetPasswordUrl + "?token=" + token;
                         ForgetPasswordEvent event = new ForgetPasswordEvent(email, serviceName, link);
@@ -249,7 +250,7 @@ public  class UserService {
     @Transactional
     public long deleteByFilter(UserDeleteRequestDto userDto) {
         log.info("Deleting users by filter: email={}, username={}, role={}",
-                userDto.getEmail(), userDto.getUsername(), userDto.getRole());
+                SensitiveMask.maskEmail(userDto.getEmail()), userDto.getUsername(), userDto.getRole());
 
         Specification<User> spec = Specification
                 .where(UserSpecification.hasEmail(userDto.getEmail()))
@@ -280,7 +281,7 @@ public  class UserService {
     @Transactional(readOnly = true)
     public List<UserResponseDto> searchByFilter(UserSearchRequestDto filter) {
         log.debug("Searching users by filter: email={}, username={}, role={}",
-                filter.getEmail(), filter.getUsername(), filter.getRole());
+                SensitiveMask.maskEmail(filter.getEmail()), filter.getUsername(), filter.getRole());
 
         Specification<User> spec = Specification.where(UserSpecification.hasEmail(filter.getEmail())).
                 and(UserSpecification.hasUsername(filter.getUsername()));
@@ -306,7 +307,7 @@ public  class UserService {
     @Transactional(readOnly = true)
     public List<UserResponseDto> searchByFilter(UserSearchRequestDto filter, int page, int size) {
         log.debug("Searching users by filter with page: email={}, username={}, role={}, page={}, size={}",
-                filter.getEmail(), filter.getUsername(), filter.getRole(), page, size);
+                SensitiveMask.maskEmail(filter.getEmail()), filter.getUsername(), filter.getRole(), page, size);
 
         if (page < 1) {
             log.warn("Invalid page value: {}", page);
@@ -362,7 +363,7 @@ public  class UserService {
             userDao.findByEmail(request.getEmail())
                     .filter(existing -> existing.getId() != user.getId())
                     .ifPresent(existing -> {
-                        log.warn("Update failed: email already in use email={}", request.getEmail());
+                        log.warn("Update failed: email already in use email={}", SensitiveMask.maskEmail(request.getEmail()));
                         throw new IllegalArgumentException("Email already in use: " + request.getEmail());
                     });
             builder.email(request.getEmail());

@@ -93,6 +93,12 @@ spring:
                 maxAge: 3600
 jwt:
   secret: ${JWT_SECRET:your-super-secret-key-at-least-32-characters-long!}
+springdoc:
+  api-docs:
+    enabled: ${SPRINGDOC_API_DOCS_ENABLED:true}
+  swagger-ui:
+    enabled: ${SPRINGDOC_SWAGGER_UI_ENABLED:true}
+  paths-to-exclude: /actuator/**,/fallback/**
 management:
   endpoints:
     web:

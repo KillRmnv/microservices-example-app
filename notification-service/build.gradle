@@ -32,6 +32,8 @@ dependencies {
 	implementation "tools.jackson.core:jackson-databind:${jackson3Version}"
 	implementation "tools.jackson.core:jackson-core:${jackson3Version}"
 
+	implementation "net.logstash.logback:logstash-logback-encoder:${logstashEncoderVersion}"
+
 	compileOnly "org.projectlombok:lombok:${lombokVersion}"
 	annotationProcessor "org.projectlombok:lombok:${lombokVersion}"
 	testCompileOnly "org.projectlombok:lombok:${lombokVersion}"

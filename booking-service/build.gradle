@@ -39,6 +39,8 @@ dependencies {
 
 	implementation "org.redisson:redisson-spring-boot-starter:${redissonVersion}"
 
+	implementation "org.springdoc:springdoc-openapi-starter-webmvc-ui:${springdocVersion}"
+
 	compileOnly "org.projectlombok:lombok:${lombokVersion}"
 	annotationProcessor "org.projectlombok:lombok:${lombokVersion}"
 	testCompileOnly "org.projectlombok:lombok:${lombokVersion}"
@@ -57,6 +59,8 @@ dependencies {
 	implementation "io.jsonwebtoken:jjwt-api:${jwtVersion}"
 	implementation "io.jsonwebtoken:jjwt-impl:${jwtVersion}"
 	implementation "io.jsonwebtoken:jjwt-jackson:${jwtVersion}"
+
+	implementation "net.logstash.logback:logstash-logback-encoder:${logstashEncoderVersion}"
 }
 tasks.named('test') {
 	useJUnitPlatform {

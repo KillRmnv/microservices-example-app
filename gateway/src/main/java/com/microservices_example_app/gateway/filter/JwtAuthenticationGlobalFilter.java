@@ -1,5 +1,6 @@
 package com.microservices_example_app.gateway.filter;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.microservices_example_app.gateway.filter.RouteValidator;
 import com.microservices_example_app.gateway.utils.JwtUtil;
 import io.jsonwebtoken.Claims;
@@ -17,6 +18,9 @@ import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.UUID;
 
 @Component
 @Slf4j
@@ -76,21 +80,43 @@ public class JwtAuthenticationGlobalFilter implements GlobalFilter, Ordered {
         return chain.filter(exchange.mutate().request(mutatedRequest).build());
     }
 
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+
     private Mono<Void> unauthorized(ServerWebExchange exchange, String message) {
         exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
-        exchange.getResponse().getHeaders().setContentType(MediaType.APPLICATION_JSON);
+        exchange.getResponse().getHeaders().setContentType(MediaType.APPLICATION_PROBLEM_JSON);
 
-        String body = """
-                {
-                  "status": 401,
-                  "error": "Unauthorized",
-                  "message": "%s"
-                }
-                """.formatted(message);
+        ServerHttpRequest request = exchange.getRequest();
+        String incomingTraceId = request.getHeaders().getFirst("X-Request-ID");
+        String traceId = (incomingTraceId != null && !incomingTraceId.isBlank())
+                ? incomingTraceId : UUID.randomUUID().toString();
+
+        // Build the RFC 9457 body explicitly: a plain ObjectMapper does not apply
+        // Spring's ProblemDetail Jackson mixin, so serializing ProblemDetail
+        // directly would nest custom properties under "properties".
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("type", "https://dosug.example/problems/unauthorized");
+        body.put("title", HttpStatus.UNAUTHORIZED.getReasonPhrase());
+        body.put("status", HttpStatus.UNAUTHORIZED.value());
+        body.put("detail", message);
+        body.put("instance", request.getPath().value());
+        body.put("code", "unauthorized");
+        body.put("traceId", traceId);
+
+        byte[] bytes;
+        try {
+            bytes = OBJECT_MAPPER.writeValueAsBytes(body);
+        } catch (Exception e) {
+            log.error("Failed to serialize ProblemDetail", e);
+            bytes = ("{\"type\":\"https://dosug.example/problems/unauthorized\","
+                    + "\"title\":\"Unauthorized\",\"status\":401,\"detail\":\"Unauthorized\","
+                    + "\"code\":\"unauthorized\",\"traceId\":\"" + traceId + "\"}")
+                    .getBytes(StandardCharsets.UTF_8);
+        }
 
         DataBuffer buffer = exchange.getResponse()
                 .bufferFactory()
-                .wrap(body.getBytes(StandardCharsets.UTF_8));
+                .wrap(bytes);
 
         return exchange.getResponse().writeWith(Mono.just(buffer));
     }
