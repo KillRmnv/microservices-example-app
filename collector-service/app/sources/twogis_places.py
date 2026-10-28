@@ -28,23 +28,23 @@ def bbox() -> tuple[float, float, float, float]:
     return values[0], values[1], values[2], values[3]
 
 
-def in_bbox(lat: float, lon: float, box: tuple[float, float, float, float] | None = None) -> bool:
+def in_bbox(latitude: float, longitude: float, box: tuple[float, float, float, float] | None = None) -> bool:
     south, north, west, east = box or bbox()
-    return south <= lat <= north and west <= lon <= east
+    return south <= latitude <= north and west <= longitude <= east
 
 
-def fix_coords(lat: float | None, lon: float | None) -> tuple[float | None, float | None]:
+def fix_coords(latitude: float | None, longitude: float | None) -> tuple[float | None, float | None]:
     """Recover swapped coordinates when only the swapped variant is in bounds."""
-    if lat is None or lon is None:
-        return lat, lon
+    if latitude is None or longitude is None:
+        return latitude, longitude
     box = bbox()
-    if in_bbox(lat, lon, box):
-        return lat, lon
-    if in_bbox(lon, lat, box):
-        log.warning("2GIS point looks swapped, recovering: (%s, %s)", lat, lon)
-        return lon, lat
-    log.warning("2GIS point outside catalog bbox, kept as-is: (%s, %s)", lat, lon)
-    return lat, lon
+    if in_bbox(latitude, longitude, box):
+        return latitude, longitude
+    if in_bbox(longitude, latitude, box):
+        log.warning("2GIS point looks swapped, recovering: (%s, %s)", latitude, longitude)
+        return longitude, latitude
+    log.warning("2GIS point outside catalog bbox, kept as-is: (%s, %s)", latitude, longitude)
+    return latitude, longitude
 
 FIELDS = ("items.point,items.address_name,items.full_address_name,"
           "items.rubrics,items.schedule,items.reviews,items.name_ex,items.name")
@@ -171,8 +171,8 @@ class TwogisPlacesAdapter(SourceAdapter):
         name = name.strip()
         if not name:
             return None
-        lat, lon = normalize_point(item.get("point"))
-        lat, lon = fix_coords(lat, lon)
+        latitude, longitude = normalize_point(item.get("point"))
+        latitude, longitude = fix_coords(latitude, longitude)
         rubrics = item.get("rubrics") or []
         rubric = rubric_name
         if rubrics and isinstance(rubrics[0], dict) and rubrics[0].get("name"):
@@ -201,8 +201,8 @@ class TwogisPlacesAdapter(SourceAdapter):
             rubric=rubric,
             address=address,
             city=settings.twogis_region or settings.default_city,
-            lat=lat,
-            lon=lon,
+            latitude=latitude,
+            longitude=longitude,
             schedule=item.get("schedule") if isinstance(item.get("schedule"), dict) else None,
             rating=rating,
             review_count=review_count,
@@ -223,10 +223,12 @@ class TwogisPlacesAdapter(SourceAdapter):
                     await self._collect_rubric(ctx, conn, stats, region_id, name,
                                               settings.twogis_page_size, max_pages)
                 except QuotaExhausted:
+                    stats.quota_stopped = True
                     log.warning("2GIS quota exhausted, stopping run")
                     break
                 except Exception as exc:  # noqa: BLE001 — one rubric must not kill the run
-                    stats.parse_errors += 1
+                    stats.fetch_errors += 1
+                    conn.rollback()
                     log.warning("2GIS rubric %r failed: %s", name, exc)
         if stats.fetched == 0:
             raise RuntimeError("2GIS collect fetched nothing (key/quota?)")
@@ -267,7 +269,8 @@ class TwogisPlacesAdapter(SourceAdapter):
             if venues:
                 merged = upsert_venues(conn, venues)
                 stats.parsed += merged.parsed
-                stats.new_events += merged.new_events
+                stats.rows_inserted += merged.rows_inserted
+                stats.rows_updated += merged.rows_updated
                 stats.duplicates += merged.duplicates
             conn.commit()
             log.info("2GIS rubric %r page %d: %d items", name, page, len(items))

@@ -47,6 +47,9 @@ def render_metrics(data: dict[str, list]) -> str:
         lines.append(
             f'collector_parse_errors_total{{source="{row["source"]}"}}'
             f' {row["errors"] or 0}')
+        lines.append(
+            f'collector_fetch_errors_total{{source="{row["source"]}"}}'
+            f' {row["fetch_errors"] or 0}')
     for row in data["last"]:
         lines.append(
             f'collector_last_run_unixtime{{source="{row["source"]}"}}'

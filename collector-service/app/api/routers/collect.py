@@ -46,4 +46,5 @@ async def alert_check(
 async def collect_source(source: str, limit: int | None = None,
                          service: CollectService = Depends(get_collect_service)) -> dict:
     stats = await service.collect(source, limit)
-    return {"source": source, "status": "ok", **stats.__dict__}
+    return {"source": source, "status": service.run_status(stats),
+            **stats.__dict__}

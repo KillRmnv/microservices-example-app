@@ -49,9 +49,10 @@ def test_probe_failure_is_recorded_then_mapped(conn):
     with pytest.raises(UpstreamError):
         asyncio.run(service.probe("probe", "https://example.com/"))
     row = conn.execute(
-        "SELECT status, parse_errors FROM source_runs"
+        "SELECT status, parse_errors, fetch_errors FROM source_runs"
         " WHERE source = 'probe'").fetchone()
-    assert row["status"] == "error" and row["parse_errors"] == 1
+    assert row["status"] == "error" and row["fetch_errors"] == 1
+    assert row["parse_errors"] == 0
 
 
 class FakeEmbedder:
@@ -140,7 +141,7 @@ def test_reindex_hybrid_patches_legacy_points(database_url, conn):
 def test_ops_service_health_and_metrics(database_url, conn):
     conn.execute(
         """INSERT INTO source_runs (source, status, started_at, finished_at,
-                                    fetched, parsed, new_events)
+                                    fetched, parsed, rows_inserted)
            VALUES ('ticketpro', 'ok', now(), now(), 1, 1, 5)""")
     conn.commit()
     settings = Settings(ops_alert_window=2)

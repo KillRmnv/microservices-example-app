@@ -19,6 +19,7 @@ from .core.config import settings
 from .services.collect_service import CollectService
 from .services.embed_service import EmbedService
 from .services.ops_service import OpsService
+from .sources.base import RunStats
 
 log = logging.getLogger(__name__)
 
@@ -48,6 +49,7 @@ async def run_source_job(app: FastAPI, source: str) -> None:
         if not locked:
             log.warning("collect %s skipped: previous run still holds the lock",
                         source)
+            collect.record_run(source, "skipped", RunStats(), None, 0.0)
             return
         try:
             await collect.collect(source)

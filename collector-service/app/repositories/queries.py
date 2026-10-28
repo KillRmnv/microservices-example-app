@@ -6,7 +6,7 @@ EVENT_COLUMNS = (
     " venue_name, address, city, price_min, price_max, currency"
 )
 VENUE_COLUMNS = (
-    "id, source, name, rubric, address, city, lat, lon,"
+    "id, source, name, rubric, address, city, latitude, longitude,"
     " rating, review_count"
 )
 

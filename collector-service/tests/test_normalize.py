@@ -34,11 +34,15 @@ def test_parse_price_variants():
     assert parse_price("Уточняйте") == (None, None)
     assert parse_price("") == (None, None)
     assert parse_price(None) == (None, None)
+    # Years/phones glued into one huge number are noise, not a price.
+    assert parse_price("12000000000") == (None, None)
+    assert parse_price("45 - 12000000000") == (45.0, 45.0)
 
 
 def test_parse_age():
     assert parse_age("12+") == 12
     assert parse_age("Рок") is None
+    assert parse_age("99+") is None
 
 
 def test_is_target_city():

@@ -9,9 +9,10 @@ def test_metrics_format(database_url):
             """INSERT INTO dialogue_runs (session_id, turn, action, needs_clarification)
                VALUES ('s1', 1, 'search', false), ('s1', 2, 'search', false)""")
         conn.execute(
-            """INSERT INTO booking_holds (session_id, event_id, zone, price, status)
-               VALUES ('s1', 1, 'BASIC', 10, 'PENDING'),
-                      ('s1', 2, 'BASIC', 10, 'CONFIRMED')""")
+            """INSERT INTO booking_holds (session_id, event_id, zone, price, status,
+                                          confirmed_at)
+               VALUES ('s1', 1, 'BASIC', 10, 'PENDING', NULL),
+                      ('s1', 2, 'BASIC', 10, 'CONFIRMED', now())""")
         conn.commit()
         text = MetricsService(database_url).render()
         conn.execute("TRUNCATE booking_holds, dialogue_runs")

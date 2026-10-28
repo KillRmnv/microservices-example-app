@@ -70,7 +70,8 @@ class TelegramAdapter(SourceAdapter):
                 try:
                     await self._collect_channel(ctx, conn, stats, now, channel, max_pages)
                 except Exception as exc:  # noqa: BLE001 — one channel must not kill the run
-                    stats.parse_errors += 1
+                    stats.fetch_errors += 1
+                    conn.rollback()
                     log.warning("telegram channel %s failed: %s", channel, exc)
         if stats.fetched == 0:
             raise RuntimeError("all telegram channels failed")
@@ -89,6 +90,8 @@ class TelegramAdapter(SourceAdapter):
                 break
             events: list[RawEvent] = []
             for message in messages:
+                if not (message.get("text") or "").strip():
+                    continue  # service messages carry no event
                 event = self.normalize(channel, message, now)
                 if event is None:
                     stats.parse_errors += 1
@@ -96,7 +99,8 @@ class TelegramAdapter(SourceAdapter):
                 stats.parsed += 1
                 events.append(event)
             merged = upsert_events(conn, events)
-            stats.new_events += merged.new_events
+            stats.rows_inserted += merged.rows_inserted
+            stats.rows_updated += merged.rows_updated
             stats.duplicates += merged.duplicates
             conn.commit()
             ids = [message["id"] for message in messages]

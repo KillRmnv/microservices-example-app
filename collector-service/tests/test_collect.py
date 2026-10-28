@@ -42,7 +42,7 @@ def test_ticketpro_collects_first_page_only(conn):
     stats = asyncio.run(TicketproAdapter().collect(make_ctx(handler)))
     assert stats.parsed == 6  # 1 Minsk event x 6 listings
     # Same card URL in every listing -> upserted once (idempotent re-crawl).
-    assert stats.new_events == 1
+    assert stats.rows_inserted == 1
     rows = conn.execute("SELECT title, category FROM collected_events").fetchall()
     assert len(rows) == 1
     # Same card re-crawled under every listing: last write wins (refresh).
@@ -102,7 +102,7 @@ def test_afisha_me_collects_cards(conn):
     import asyncio
     stats = asyncio.run(AfishaMeAdapter().collect(make_ctx(handler)))
     assert stats.parsed == 3  # same card url in 3 sitemaps
-    assert stats.new_events == 1  # upserted once, re-crawls are not "duplicates"
+    assert stats.rows_inserted == 1  # upserted once, re-crawls are not "duplicates"
     assert stats.duplicates == 0
     row = conn.execute(
         "SELECT title, venue_name, price_min, age_limit FROM collected_events").fetchone()
@@ -128,12 +128,30 @@ def test_cross_source_merge_keeps_fuller_record(conn):
                     venue_name="Тестовый зал", price_min=30.0)
     assert thin.dedup_key == full.dedup_key
     stats = upsert_events(conn, [thin])
-    assert stats.new_events == 1 and stats.duplicates == 0
+    assert stats.rows_inserted == 1 and stats.duplicates == 0
     stats = upsert_events(conn, [full])
-    assert stats.new_events == 0 and stats.duplicates == 1
+    assert stats.rows_inserted == 0 and stats.duplicates == 1
     conn.commit()
     rows = conn.execute("SELECT description, price_min FROM collected_events").fetchall()
     assert len(rows) == 1  # no second row: twin updated in place
     assert rows[0]["description"] == "Полное описание"
     sources = conn.execute("SELECT source FROM event_sources").fetchall()
     assert {row["source"] for row in sources} == {"afisha_me", "ticketpro"}
+
+
+def test_bad_row_is_isolated_by_savepoint(conn):
+    from app.models.catalog import RawEvent
+    from app.repositories.store import upsert_events
+
+    bad = RawEvent(source="ticketpro", source_id="bad-1",
+                   source_url="https://example.com/bad", title="Overflow",
+                   category="concert", price_min=1e12, price_max=1e12)
+    good = RawEvent(source="ticketpro", source_id="good-1",
+                    source_url="https://example.com/good", title="Fine",
+                    category="concert")
+    stats = upsert_events(conn, [bad, good])
+    assert stats.parse_errors == 1  # bad row rejected, batch survives
+    assert stats.rows_inserted == 1
+    titles = [row["title"] for row in
+              conn.execute("SELECT title FROM collected_events").fetchall()]
+    assert titles == ["Fine"]

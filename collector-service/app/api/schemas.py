@@ -15,8 +15,10 @@ class CollectResponse(BaseModel):
     fetched: int = 0
     parsed: int = 0
     parse_errors: int = 0
+    fetch_errors: int = 0
     duplicates: int = 0
-    new_events: int = 0
+    rows_inserted: int = 0
+    rows_updated: int = 0
 
 
 class EmbedResponse(BaseModel):

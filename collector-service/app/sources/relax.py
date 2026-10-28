@@ -61,12 +61,12 @@ class RelaxAdapter(SourceAdapter):
                 try:
                     card = await ctx.http.get(self.name, url)
                 except Exception as exc:  # noqa: BLE001 — one card must not kill the run
-                    stats.parse_errors += 1
+                    stats.fetch_errors += 1
                     log.warning("relax card %s failed: %s", url, exc)
                     continue
                 stats.fetched += 1
                 if card.status_code != 200:
-                    stats.parse_errors += 1
+                    stats.fetch_errors += 1
                     continue
                 found = extract_json_ld_events(card.text)
                 if not found:
@@ -85,7 +85,8 @@ class RelaxAdapter(SourceAdapter):
                 if not events:
                     continue
                 merged = upsert_events(conn, events)
-                stats.new_events += merged.new_events
+                stats.rows_inserted += merged.rows_inserted
+                stats.rows_updated += merged.rows_updated
                 stats.duplicates += merged.duplicates
                 conn.commit()
         return stats

@@ -42,9 +42,19 @@ class CollectService:
         return adapter
 
     def record_run(self, source: str, status: str, stats: RunStats,
-                   error: str | None, duration_s: float) -> None:
+                   error: str | None, duration_s: float,
+                   error_code: str | None = None) -> None:
         with db.get_conn(self._db_url) as conn:
-            runs.record(conn, source, status, stats, error, duration_s)
+            runs.record(conn, source, status, stats, error, duration_s,
+                        error_code)
+
+    @staticmethod
+    def run_status(stats: RunStats) -> str:
+        if stats.quota_stopped:
+            return "quota_exhausted"
+        if stats.parse_errors or stats.fetch_errors:
+            return "partial"
+        return "ok"
 
     async def collect(self, source: str, limit: int | None = None) -> RunStats:
         adapter = self.adapter(source)
@@ -58,7 +68,8 @@ class CollectService:
             self.record_run(source, "error", stats, str(exc),
                             time.monotonic() - started)
             raise UpstreamError(f"collect failed: {exc}") from exc
-        self.record_run(source, "ok", stats, None, time.monotonic() - started)
+        status = self.run_status(stats)
+        self.record_run(source, status, stats, None, time.monotonic() - started)
         return stats
 
     async def probe(self, source: str, url: str) -> dict:
@@ -67,7 +78,7 @@ class CollectService:
         try:
             response = await self._http.get(source, url)
         except Exception as exc:  # noqa: BLE001 — recorded, then surfaced
-            stats.parse_errors = 1
+            stats.fetch_errors = 1
             self.record_run(source, "error", stats, str(exc),
                             time.monotonic() - started)
             raise UpstreamError(f"fetch failed: {exc}") from exc

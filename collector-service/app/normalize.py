@@ -22,6 +22,11 @@ PRICE_RE = re.compile(r"(\d[\d\s]*(?:[.,]\d+)?)")
 AGE_RE = re.compile(r"(\d+)\s*\+")
 NON_PRICE = re.compile(r"уточняйте|договорная|бесплатно|free", re.I)
 
+# Sanity bounds: a ticket above this is text noise (phone, year range,
+# concatenated digits), not a price. Keeps NUMERIC(12,2) safe.
+MAX_PRICE = 1_000_000.0
+MAX_AGE = 21
+
 
 def parse_datetime(value: str | None) -> datetime | None:
     if not value:
@@ -43,9 +48,11 @@ def parse_price(text: str | None) -> tuple[float | None, float | None]:
     numbers = []
     for match in PRICE_RE.findall(text):
         try:
-            numbers.append(float(match.replace(" ", "").replace(",", ".")))
+            value = float(match.replace(" ", "").replace(",", "."))
         except ValueError:
             continue
+        if 0 <= value <= MAX_PRICE:
+            numbers.append(value)
     if not numbers:
         return None, None
     return min(numbers), max(numbers)
@@ -55,7 +62,10 @@ def parse_age(text: str | None) -> int | None:
     if not text:
         return None
     match = AGE_RE.search(text)
-    return int(match.group(1)) if match else None
+    if match is None:
+        return None
+    age = int(match.group(1))
+    return age if 0 <= age <= MAX_AGE else None
 
 
 def _location_strings(location) -> str:
@@ -112,6 +122,12 @@ def normalize_jsonld(source: str, source_id: str, source_url: str, category: str
         low, _ = parse_price(str(offers.get("lowPrice", "") or ""))
         _, high = parse_price(str(offers.get("highPrice", "") or ""))
         price_min, price_max = low, high
+    start_at = parse_datetime(data.get("startDate"))
+    if end_at is not None and start_at is not None and end_at < start_at:
+        # Sources often publish a date-only endDate (midnight); a backwards
+        # end is garbage, not information — drop it instead of the event.
+        log.debug("dropping backwards end_at %s for start %s", end_at, start_at)
+        end_at = None
     geo = (location.get("geo", {}) if isinstance(location, dict) else {}) or {}
     title = (data.get("name") or "").strip()
     if not title:
@@ -123,7 +139,7 @@ def normalize_jsonld(source: str, source_id: str, source_url: str, category: str
         title=title,
         description=(data.get("description") or "").strip() or None,
         category=category if category in CATEGORIES else "other",
-        start_at=parse_datetime(data.get("startDate")),
+        start_at=start_at,
         end_at=end_at,
         venue_name=(location.get("name") if isinstance(location, dict) else None),
         address=_location_strings(location) or None,

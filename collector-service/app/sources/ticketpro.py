@@ -42,7 +42,8 @@ class TicketproAdapter(SourceAdapter):
                 try:
                     await self._collect_listing(ctx, conn, stats, now, path, category)
                 except Exception as exc:  # noqa: BLE001 — one listing must not kill the run
-                    stats.parse_errors += 1
+                    stats.fetch_errors += 1
+                    conn.rollback()
                     log.warning("ticketpro listing %s failed: %s", path, exc)
         if stats.fetched == 0:
             raise RuntimeError("all ticketpro listings failed")
@@ -76,7 +77,8 @@ class TicketproAdapter(SourceAdapter):
                 stats.parsed += 1
                 events.append(event)
             merged = upsert_events(conn, events)
-            stats.new_events += merged.new_events
+            stats.rows_inserted += merged.rows_inserted
+            stats.rows_updated += merged.rows_updated
             stats.duplicates += merged.duplicates
             conn.commit()
             log.info("ticketpro %s page %d: %d cards", path, page, len(cards))

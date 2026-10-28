@@ -14,8 +14,11 @@ def test_hold_lifecycle(conn):
 
 def test_expired_hold_cannot_confirm(conn):
     hold = holds.create(conn, "s1", 7, "BASIC", 50.0, party_size=1)
+    # Age the row in place: backdate both timestamps so the CHECK
+    # (expires_at > created_at) still holds while the hold is past due.
     conn.execute(
-        "UPDATE booking_holds SET expires_at = now() - make_interval(mins => 1)"
+        "UPDATE booking_holds SET created_at = now() - make_interval(mins => 20),"
+        " expires_at = now() - make_interval(mins => 10)"
         " WHERE id = %s",
         (hold.id,),
     )
@@ -30,7 +33,8 @@ def test_sweep_expires_only_pending_past_due(conn):
     live = holds.create(conn, "s1", 1, "BASIC", 10.0, party_size=1)
     old = holds.create(conn, "s1", 2, "BASIC", 10.0, party_size=1)
     conn.execute(
-        "UPDATE booking_holds SET expires_at = now() - make_interval(mins => 1)"
+        "UPDATE booking_holds SET created_at = now() - make_interval(mins => 20),"
+        " expires_at = now() - make_interval(mins => 10)"
         " WHERE id = %s",
         (old.id,),
     )

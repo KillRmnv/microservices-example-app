@@ -8,11 +8,14 @@ from dataclasses import dataclass, field
 
 @dataclass
 class RunStats:
-    fetched: int = 0
-    parsed: int = 0
-    parse_errors: int = 0
-    duplicates: int = 0
-    new_events: int = 0
+    fetched: int = 0  # HTTP requests performed (pages, cards, API calls)
+    parsed: int = 0  # source items successfully parsed
+    parse_errors: int = 0  # items that failed parsing (markup broken)
+    fetch_errors: int = 0  # requests that failed (network, HTTP errors)
+    duplicates: int = 0  # items merged into an existing logical event
+    rows_inserted: int = 0  # new event/venue rows written
+    rows_updated: int = 0  # known rows refreshed on re-crawl
+    quota_stopped: bool = False  # billable quota hit mid-run
 
 
 @dataclass

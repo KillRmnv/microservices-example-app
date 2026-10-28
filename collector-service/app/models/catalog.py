@@ -17,11 +17,12 @@ class RawEvent:
     category: str = "other"
     start_at: datetime | None = None
     end_at: datetime | None = None
+    venue_id: str | None = None
     venue_name: str | None = None
     address: str | None = None
     city: str = ""
-    lat: float | None = None
-    lon: float | None = None
+    latitude: float | None = None
+    longitude: float | None = None
     price_min: float | None = None
     price_max: float | None = None
     currency: str = ""
@@ -54,8 +55,8 @@ class VenueRow:
     rubric: str | None = None
     address: str | None = None
     city: str = ""
-    lat: float | None = None
-    lon: float | None = None
+    latitude: float | None = None
+    longitude: float | None = None
     schedule: dict | None = None
     rating: float | None = None
     review_count: int | None = None

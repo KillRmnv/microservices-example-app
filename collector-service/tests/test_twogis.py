@@ -38,7 +38,7 @@ def test_parse_item_from_documented_shape():
     assert venue.name == "Тестовая кофейня"
     assert venue.rubric == "Кофейни"
     assert venue.address == "Минск, улица Тестовая, 1"
-    assert (venue.lat, venue.lon) == (53.9056, 27.5539)
+    assert (venue.latitude, venue.longitude) == (53.9056, 27.5539)
     assert venue.rating == 4.7
     assert venue.review_count == 32
     assert venue.schedule["Mon"]["working_hours"][0]["from"] == "09:00"
@@ -64,14 +64,14 @@ def test_quota_guard_stops_at_cap_minus_reserve(conn):
 
 def test_upsert_venues_idempotent(conn):
     venue = VenueRow(source_id="7001", name="Кофейня", rubric="Кофейни",
-                     address="Минск", lat=53.9, lon=27.5)
+                     address="Минск", latitude=53.9, longitude=27.5)
     stats = upsert_venues(conn, [venue])
-    assert stats.new_events == 1 and stats.parsed == 1
+    assert stats.rows_inserted == 1 and stats.parsed == 1
     stats = upsert_venues(conn, [venue])
-    assert stats.new_events == 0
+    assert stats.rows_inserted == 0
     conn.commit()
-    rows = conn.execute("SELECT name, lat FROM collected_venues").fetchall()
-    assert len(rows) == 1 and float(rows[0]["lat"]) == 53.9
+    rows = conn.execute("SELECT name, latitude FROM collected_venues").fetchall()
+    assert len(rows) == 1 and float(rows[0]["latitude"]) == 53.9
 
 
 def test_twogis_collect_two_pages_then_quota(conn):
@@ -119,7 +119,7 @@ def test_twogis_collect_two_pages_then_quota(conn):
          config_module.settings.twogis_reserve,
          config_module.settings.twogis_page_size) = saved
     assert stats.parsed == 2  # 2 pages x 1 item, upserted once
-    assert stats.new_events == 1
+    assert stats.rows_inserted == 1
     rows = conn.execute("SELECT name FROM collected_venues").fetchall()
     assert len(rows) == 1
 

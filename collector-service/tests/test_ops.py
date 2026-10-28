@@ -12,12 +12,12 @@ def test_schedule_map_parsing():
     assert settings.schedule_map() == {"ticketpro": 21600, "relax": 86400}
 
 
-def _seed_run(conn, source, status, new_events, parse_errors=0):
+def _seed_run(conn, source, status, rows_inserted, parse_errors=0):
     conn.execute(
         """INSERT INTO source_runs (source, status, started_at, finished_at,
-                                    fetched, parsed, parse_errors, new_events)
+                                    fetched, parsed, parse_errors, rows_inserted)
            VALUES (%s, %s, now(), now(), 1, 1, %s, %s)""",
-        (source, status, parse_errors, new_events),
+        (source, status, parse_errors, rows_inserted),
     )
     conn.commit()
 

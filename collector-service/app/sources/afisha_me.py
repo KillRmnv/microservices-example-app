@@ -49,12 +49,12 @@ class AfishaMeAdapter(SourceAdapter):
                     try:
                         card = await ctx.http.get(self.name, url)
                     except Exception as exc:  # noqa: BLE001 — per-card resilience
-                        stats.parse_errors += 1
+                        stats.fetch_errors += 1
                         log.warning("afisha.me card %s failed: %s", url, exc)
                         continue
                     stats.fetched += 1
                     if card.status_code != 200:
-                        stats.parse_errors += 1
+                        stats.fetch_errors += 1
                         continue
                     event = self.normalize(url, category, card.text, now)
                     if event is None:
@@ -63,7 +63,8 @@ class AfishaMeAdapter(SourceAdapter):
                         continue  # past showtime / unparsable: intentional skip
                     stats.parsed += 1
                     merged = upsert_events(conn, [event])
-                    stats.new_events += merged.new_events
+                    stats.rows_inserted += merged.rows_inserted
+                    stats.rows_updated += merged.rows_updated
                     stats.duplicates += merged.duplicates
                     conn.commit()
         return stats

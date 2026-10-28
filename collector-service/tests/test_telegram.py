@@ -90,7 +90,7 @@ def test_telegram_collect_paginates(conn):
     import asyncio
     stats = asyncio.run(TelegramAdapter(channels=["minsk_kuda"], max_pages=5).collect(ctx))
     assert stats.parsed == 2
-    assert stats.new_events == 2
+    assert stats.rows_inserted == 2
     assert any("before=1101" in url for url in seen)  # min(1108, 1102) - 1
     rows = conn.execute("SELECT source_id FROM collected_events").fetchall()
     assert {row["source_id"] for row in rows} == {"minsk_kuda/1108", "minsk_kuda/1102"}
