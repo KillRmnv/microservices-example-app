@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     qdrant_vector_size: int = 1024  # bge-m3
     llama_embed_url: str = "http://localhost:8088"
     embed_batch_size: int = 32
+    # Periodic embed catch-up for rows that arrive outside a collect run
+    # (booking catalog, manual SQL). 0 disables the job.
+    embed_catchup_interval_s: int = 600
 
     # Telegram: verify channels against the Mininform list before adding!
     telegram_channels: str = "minsk_kuda,kuda_shodit_by"
@@ -39,6 +42,15 @@ class Settings(BaseSettings):
     scheduler_enabled: bool = True
     schedules: str = ("ticketpro:21600,relax:86400,afisha_me:86400,"
                       "telegram:1200")
+
+    # Booking catalog stream (Kafka). Empty bootstrap disables the consumer.
+    booking_catalog_enabled: bool = False
+    kafka_bootstrap_servers: str = "kafka:9092"
+    booking_catalog_topic: str = "booking.catalog"
+    booking_catalog_group: str = "collector-catalog"
+    # booking-service town names are English in the demo seed; map them onto
+    # the default catalog city vocabulary (configurable, not hardcoded).
+    booking_city_map: str = "Minsk:Минск,Grodno:Гродно,Brest:Брест"
 
     # Ops alerting: POST degraded sources here (ntfy/Slack/healthchecks).
     ops_webhook_url: str = ""
@@ -61,6 +73,13 @@ class Settings(BaseSettings):
     # Test set first; expand after the trial ("кафе,рестораны,бары,кинотеатры,
     # театры,музеи,клубы,выставки,караоке,парки,библиотеки,спортзалы,...").
     twogis_rubrics: str = "кафе,кинотеатры,театры,музеи"
+
+    def city_alias(self, name: str) -> str:
+        for chunk in self.booking_city_map.split(","):
+            source, _, target = chunk.partition(":")
+            if source.strip() == name.strip() and target.strip():
+                return target.strip()
+        return name
 
     def schedule_map(self) -> dict[str, int]:
         result = {}

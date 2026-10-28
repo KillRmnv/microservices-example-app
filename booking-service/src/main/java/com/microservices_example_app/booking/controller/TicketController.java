@@ -30,7 +30,7 @@ public class TicketController {
 
     @Operation(summary = "Get a ticket by id")
     @GetMapping("/{id}")
-    public TicketResponseDto getById(@Parameter(description = "Ticket id") @PathVariable Integer id) {
+    public TicketResponseDto getById(@Parameter(description = "Ticket id") @PathVariable Long id) {
         log.info("Fetching ticket with id: {}", id);
         return ticketService.getById(id);
     }
@@ -47,7 +47,7 @@ public class TicketController {
 
     @Operation(summary = "Update a ticket")
     @PutMapping("/{id}")
-    public TicketResponseDto updateById(@Parameter(description = "Ticket id") @PathVariable Integer id,
+    public TicketResponseDto updateById(@Parameter(description = "Ticket id") @PathVariable Long id,
                                         @Valid @RequestBody TicketUpdateRequestDto requestDto) {
         log.info("Updating ticket with id: {}", id);
         requestDto.setId(id);
@@ -56,7 +56,7 @@ public class TicketController {
 
     @Operation(summary = "Delete a ticket")
     @DeleteMapping("/{id}")
-    public void deleteById(@Parameter(description = "Ticket id") @PathVariable Integer id) {
+    public void deleteById(@Parameter(description = "Ticket id") @PathVariable Long id) {
         log.info("Deleting ticket with id: {}", id);
         ticketService.deleteById(id);
     }
@@ -69,7 +69,7 @@ public class TicketController {
     }
     @Operation(summary = "Refund a ticket")
     @PostMapping("/{id}/refund")
-    public TicketResponseDto refund(@Parameter(description = "Ticket id") @PathVariable Integer id) {
+    public TicketResponseDto refund(@Parameter(description = "Ticket id") @PathVariable Long id) {
         log.info("Refunding ticket with id: {}", id);
         return ticketService.refund(id);
     }

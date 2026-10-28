@@ -23,6 +23,7 @@ INSERT INTO sources (code, display_name, kind, priority) VALUES
     ('24afisha', '24afisha', 'scraper', 50),
     ('telegram', 'Telegram previews', 'scraper', 60),
     ('twogis_places', '2GIS Places', 'api', 70),
+    ('booking', 'Booking service', 'api', 5),
     ('probe', 'Manual probe', 'debug', 100);
 
 -- ------------------------------------------------------------- categories
@@ -104,6 +105,8 @@ CREATE TABLE collected_events (
     source_id TEXT NOT NULL,
     source_url TEXT NOT NULL,
     primary_source_id INT REFERENCES sources (id),
+    -- Set for rows mirrored from booking-service: their id is the bookable id.
+    booking_event_id BIGINT UNIQUE,
     title TEXT NOT NULL,
     description TEXT,
     category TEXT NOT NULL DEFAULT 'other',

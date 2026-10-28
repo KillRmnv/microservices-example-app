@@ -1,0 +1,166 @@
+@startuml
+skinparam linetype ortho
+skinparam nodesep 60
+skinparam ranksep 80
+title collector_db — mirrored playbill, lookups and search
+
+entity "sources" as sources {
+  * id : integer
+  + code : text
+  + display_name : text
+  + kind : text
+  + priority : integer
+  + enabled : boolean
+}
+
+entity "categories" as categories {
+  * id : integer
+  + code : text
+  + display_name : text
+  + sort_order : integer
+  parent_id : integer
+}
+
+entity "currencies" as currencies {
+  * code : character(3)
+  + name : text
+  symbol : text
+  + minor_unit : integer
+}
+
+entity "cities" as cities {
+  * id : integer
+  + name : text
+  + timezone : text
+  + center_lat : numeric
+  + center_lon : numeric
+}
+
+entity "collected_events" as collected_events {
+  * id : uuid
+  + source : text
+  + source_id : text
+  + source_url : text
+  primary_source_id : integer
+  booking_event_id : bigint
+  + title : text
+  description : text
+  + category : text
+  category_id : integer
+  start_at : timestamp with time zone
+  end_at : timestamp with time zone
+  venue_id : uuid
+  venue_name : text
+  address : text
+  + city : text
+  city_id : integer
+  latitude : numeric
+  longitude : numeric
+  price_min : numeric
+  price_max : numeric
+  + currency : character(3)
+  currency_code : character(3)
+  age_limit : integer
+  ticket_url : text
+  image_url : text
+  organizer : text
+  + status : text
+  + first_seen_at : timestamp with time zone
+  + last_seen_at : timestamp with time zone
+  + updated_at : timestamp with time zone
+  + fetched_at : timestamp with time zone
+  embedded_at : timestamp with time zone
+  search_vector : tsvector
+  raw : jsonb
+  dedup_key : text
+}
+
+entity "collected_venues" as collected_venues {
+  * id : uuid
+  + source : text
+  + source_id : text
+  + name : text
+  rubric : text
+  address : text
+  + city : text
+  city_id : integer
+  latitude : numeric
+  longitude : numeric
+  schedule : jsonb
+  rating : numeric
+  review_count : integer
+  source_url : text
+  + fetched_at : timestamp with time zone
+  embedded_at : timestamp with time zone
+  search_vector : tsvector
+  raw : jsonb
+}
+
+entity "event_sources" as event_sources {
+  * event_id : uuid
+  * source : text
+  * source_url : text
+  source_id : integer
+  + is_primary : boolean
+  + first_seen_at : timestamp with time zone
+  + last_seen_at : timestamp with time zone
+}
+
+entity "screenings" as screenings {
+  * id : uuid
+  event_id : uuid
+  + cinema : text
+  + start_at : timestamp with time zone
+  price : numeric
+}
+
+entity "source_runs" as source_runs {
+  * id : bigint
+  + source : text
+  source_id : integer
+  + status : text
+  + started_at : timestamp with time zone
+  finished_at : timestamp with time zone
+  duration_s : double precision
+  + fetched : integer
+  + parsed : integer
+  + parse_errors : integer
+  + fetch_errors : integer
+  + duplicates : integer
+  + rows_inserted : integer
+  + rows_updated : integer
+  + quota_stopped : boolean
+  error_code : text
+  error : text
+}
+
+entity "api_quota" as api_quota {
+  * provider : text
+  * month : text
+  + used : integer
+}
+
+entity "twogis_rubrics" as twogis_rubrics {
+  * name : text
+  rubric_id : text
+  + fetched_at : timestamp with time zone
+}
+
+entity "collector_kv" as collector_kv {
+  * key : text
+  value : text
+  + updated_at : timestamp with time zone
+}
+
+collected_events }o--|| sources : "primary_source_id → id"
+collected_events }o--|| categories : "category_id → id"
+collected_events }o--|| cities : "city_id → id"
+collected_events }o--|| currencies : "currency_code → code"
+collected_events }o--|| collected_venues : "venue_id → id"
+collected_venues }o--|| cities : "city_id → id"
+event_sources }o--|| collected_events : "event_id → id\non delete CASCADE"
+event_sources }o--|| sources : "source_id → id"
+screenings }o--|| collected_events : "event_id → id\non delete CASCADE"
+source_runs }o--|| sources : "source_id → id"
+categories }o--|| categories : "parent_id → id"
+@enduml

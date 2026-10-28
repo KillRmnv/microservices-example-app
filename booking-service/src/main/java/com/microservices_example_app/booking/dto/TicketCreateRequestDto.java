@@ -17,9 +17,9 @@ import java.math.BigDecimal;
 @AllArgsConstructor
 @Schema(description = "Request to create a general-admission ticket")
 public class TicketCreateRequestDto {
-    private Integer eventId;
+    private Long eventId;
     private Zone zone;
     private BigDecimal price;
     private Boolean active;
-    private Integer userId;
+    private Long userId;
 }

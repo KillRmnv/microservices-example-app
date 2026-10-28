@@ -10,7 +10,7 @@ import logging
 
 import psycopg
 
-from ..models.catalog import RawEvent, VenueRow
+from ..models.catalog import CatalogEvent, RawEvent, VenueRow
 from ..core.config import settings
 from ..sources.base import RunStats
 
@@ -202,6 +202,72 @@ def _upsert_one(conn, lookups: Lookups, event: RawEvent, stats: RunStats) -> Non
              event.title, event.source_url, twin["id"]),
         )
         stats.rows_updated += 1
+
+
+CATALOG_UPSERT_SQL = """
+INSERT INTO collected_events
+    (source, source_id, source_url, primary_source_id, booking_event_id,
+     title, description, category, category_id, start_at, end_at,
+     venue_name, city, city_id, currency, currency_code, status, raw)
+VALUES ('booking', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+        'scheduled', %s)
+ON CONFLICT (source, source_id) DO UPDATE SET
+    booking_event_id = EXCLUDED.booking_event_id,
+    title = EXCLUDED.title,
+    category = EXCLUDED.category,
+    category_id = EXCLUDED.category_id,
+    start_at = EXCLUDED.start_at,
+    end_at = EXCLUDED.end_at,
+    venue_name = EXCLUDED.venue_name,
+    city = EXCLUDED.city,
+    city_id = EXCLUDED.city_id,
+    raw = EXCLUDED.raw,
+    last_seen_at = now(),
+    fetched_at = now(),
+    embedded_at = NULL
+WHERE collected_events.title IS DISTINCT FROM EXCLUDED.title
+   OR collected_events.category IS DISTINCT FROM EXCLUDED.category
+   OR collected_events.start_at IS DISTINCT FROM EXCLUDED.start_at
+   OR collected_events.end_at IS DISTINCT FROM EXCLUDED.end_at
+   OR collected_events.venue_name IS DISTINCT FROM EXCLUDED.venue_name
+   OR collected_events.city IS DISTINCT FROM EXCLUDED.city
+RETURNING id
+"""
+
+
+def upsert_catalog_event(conn, event: CatalogEvent) -> str | None:
+    """Mirror one booking-service event; returns the row id when it changed."""
+    import json
+
+    lookups = Lookups(conn)
+    row = conn.execute(CATALOG_UPSERT_SQL, (
+        str(event.id),
+        f"booking://events/{event.id}",
+        lookups.sources.get("booking"),
+        event.id,
+        event.title,
+        None,
+        event.category,
+        lookups.categories.get(event.category),
+        event.starts_at,
+        event.ends_at,
+        event.venue_name or None,
+        event.city or settings.default_city,
+        lookups.cities.get(event.city or settings.default_city),
+        settings.default_currency,
+        settings.default_currency,
+        json.dumps(event.raw, ensure_ascii=False, default=str),
+    )).fetchone()
+    return row["id"] if row is not None else None
+
+
+def delete_catalog_event(conn, booking_id: int) -> str | None:
+    """Drop a mirrored event; returns the Qdrant point id to delete."""
+    row = conn.execute(
+        "DELETE FROM collected_events"
+        " WHERE source = 'booking' AND source_id = %s RETURNING id",
+        (str(booking_id),)).fetchone()
+    return row["id"] if row is not None else None
 
 
 VENUE_UPSERT_SQL = """

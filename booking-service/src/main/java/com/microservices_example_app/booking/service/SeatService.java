@@ -42,7 +42,7 @@ public class SeatService {
     }
 
     @Transactional
-    public SeatResponseDto getById(Integer id) {
+    public SeatResponseDto getById(Long id) {
         log.info("Fetching seat with id: {}", id);
         Seat seat = seatRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("Seat not found"));
@@ -73,7 +73,7 @@ public class SeatService {
     }
 
     @Transactional
-    public void deleteById(Integer id) {
+    public void deleteById(Long id) {
         if (id == null || id < 1) {
             throw new IllegalArgumentException("Seat id must be positive");
         }

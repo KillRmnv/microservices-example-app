@@ -9,12 +9,12 @@ import java.util.List;
 import java.util.Optional;
 
 @Repository
-public interface SeatableTicketRepository extends JpaRepository<SeatableTicket, Integer>, JpaSpecificationExecutor<SeatableTicket> {
-    List<SeatableTicket> findByEventId(Integer eventId);
+public interface SeatableTicketRepository extends JpaRepository<SeatableTicket, Long>, JpaSpecificationExecutor<SeatableTicket> {
+    List<SeatableTicket> findByEventId(Long eventId);
 
-    List<SeatableTicket> findBySeatId(Integer seatId);
+    List<SeatableTicket> findBySeatId(Long seatId);
 
-    Optional<SeatableTicket> findByEventIdAndSeatId(Integer eventId, Integer seatId);
+    Optional<SeatableTicket> findByEventIdAndSeatId(Long eventId, Long seatId);
 
-    boolean existsByEventIdAndSeatId(Integer eventId, Integer seatId);
+    boolean existsByEventIdAndSeatId(Long eventId, Long seatId);
 }

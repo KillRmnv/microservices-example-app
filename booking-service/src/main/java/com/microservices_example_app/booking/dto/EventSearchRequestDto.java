@@ -16,7 +16,8 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 public class EventSearchRequestDto {
     private String title;
-    private Integer venueId;
+    private Long venueId;
+    private String category;
     private EventAdmissionMode admissionMode;
     private LocalDateTime startsFrom;
     private LocalDateTime startsTo;

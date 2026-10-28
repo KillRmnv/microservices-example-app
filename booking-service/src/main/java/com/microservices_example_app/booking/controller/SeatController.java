@@ -35,7 +35,7 @@ public class SeatController {
 
     @Operation(summary = "Get a seat by id")
     @GetMapping("/{id}")
-    public SeatResponseDto getById(@Parameter(description = "Seat id") @PathVariable Integer id) {
+    public SeatResponseDto getById(@Parameter(description = "Seat id") @PathVariable Long id) {
         log.info("Fetching seat with id: {}", id);
         return seatService.getById(id);
     }
@@ -52,7 +52,7 @@ public class SeatController {
 
     @Operation(summary = "Update a seat")
     @PutMapping("/{id}")
-    public SeatResponseDto updateById(@Parameter(description = "Seat id") @PathVariable Integer id,
+    public SeatResponseDto updateById(@Parameter(description = "Seat id") @PathVariable Long id,
                                       @Valid @RequestBody SeatUpdateRequestDto requestDto) {
         requireEventManagerOrAdmin();
         log.info("Updating seat with id: {}", id);
@@ -62,7 +62,7 @@ public class SeatController {
 
     @Operation(summary = "Delete a seat")
     @DeleteMapping("/{id}")
-    public void deleteById(@Parameter(description = "Seat id") @PathVariable Integer id) {
+    public void deleteById(@Parameter(description = "Seat id") @PathVariable Long id) {
         requireEventManagerOrAdmin();
         log.info("Deleting seat with id: {}", id);
         seatService.deleteById(id);

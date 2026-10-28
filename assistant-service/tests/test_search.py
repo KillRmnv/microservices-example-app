@@ -1,3 +1,5 @@
+import asyncio
+
 import httpx
 import pytest
 
@@ -218,3 +220,32 @@ async def test_hybrid_search_venues():
         SearchPlan(vector_query="кофейня", limit=2))
     assert hits[0].id == "v1"
     assert all(hit.origins == [HYBRID_ORIGIN] for hit in hits)
+
+
+class SlowEmbedder:
+    dim = 3
+
+    async def embed(self, texts):
+        await asyncio.sleep(5)
+        return [[1.0, 0.0, 0.0] for _ in texts]
+
+
+@pytest.mark.asyncio
+async def test_slow_embedder_does_not_stall_query():
+    store = hybrid_store(
+        ("e1", [0.0, 1.0, 0.0], {"title": "Джазовый вечер"}, "джазовый вечер"),
+    )
+    svc = SearchService(SlowEmbedder(), store, ExplodingCollector(),
+                        query_timeout_s=0.01)
+    hits = await svc.events(SearchPlan(vector_query="джазовый", limit=2))
+    # Sparse alone still answers; the query never waits on the model server.
+    assert [hit.id for hit in hits] == ["e1"]
+
+
+@pytest.mark.asyncio
+async def test_empty_vector_index_falls_back_to_lexical():
+    collector = FakeCollector([{"id": "e9", "title": "Только в Postgres"}])
+    hits = await service(InMemoryStore(), collector).events(
+        SearchPlan(vector_query="x", limit=3))
+    assert [hit.id for hit in hits] == ["e9"]
+    assert hits[0].origins == ["lexical"]

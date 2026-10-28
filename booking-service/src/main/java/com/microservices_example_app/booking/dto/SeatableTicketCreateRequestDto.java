@@ -17,10 +17,10 @@ import java.math.BigDecimal;
 @AllArgsConstructor
 @Schema(description = "Request to create a ticket bound to a specific seat")
 public class SeatableTicketCreateRequestDto {
-    private Integer eventId;
-    private Integer seatId;
+    private Long eventId;
+    private Long seatId;
     private Zone zone;
     private BigDecimal price;
     private Boolean active;
-    private Integer userId;
+    private Long userId;
 }

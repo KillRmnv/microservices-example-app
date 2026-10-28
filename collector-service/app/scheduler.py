@@ -66,6 +66,20 @@ async def run_source_job(app: FastAPI, source: str) -> None:
         log.warning("scheduled alert check failed: %s", exc)
 
 
+async def embed_catchup_job(app: FastAPI) -> None:
+    """Embed rows that arrived outside a collect run (booking catalog)."""
+    embed: EmbedService = app.state.embed
+    with advisory_lock(app.state.db_url, "embed:catchup") as locked:
+        if not locked:
+            return
+        try:
+            embedded, _ = await embed.embed_events(cap=EMBED_CATCHUP_CAP)
+            if embedded:
+                log.info("periodic embed catch-up: %d", embedded)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("periodic embed catch-up failed: %s", exc)
+
+
 def start_scheduler(app: FastAPI) -> None:
     if not settings.scheduler_enabled:
         log.info("scheduler disabled")
@@ -78,6 +92,14 @@ def start_scheduler(app: FastAPI) -> None:
             next_run_time=None,  # first run after one full interval, not at boot
         )
         log.info("scheduled collect %s every %ss", source, seconds)
+    if settings.embed_catchup_interval_s > 0:
+        scheduler.add_job(
+            embed_catchup_job,
+            IntervalTrigger(seconds=settings.embed_catchup_interval_s),
+            args=[app], id="embed-catchup", max_instances=1, coalesce=True,
+            next_run_time=None,
+        )
+        log.info("embed catch-up every %ss", settings.embed_catchup_interval_s)
     scheduler.start()
     app.state.scheduler = scheduler
 

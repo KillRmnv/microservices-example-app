@@ -11,20 +11,20 @@ import java.util.Arrays;
 import java.util.List;
 
 @Repository
-public interface TicketRepository extends JpaRepository<Ticket, Integer>, JpaSpecificationExecutor<Ticket> {
-    List<Ticket> findByEventId(Integer eventId);
+public interface TicketRepository extends JpaRepository<Ticket, Long>, JpaSpecificationExecutor<Ticket> {
+    List<Ticket> findByEventId(Long eventId);
 
-    List<Ticket> findByUserId(Integer userId);
+    List<Ticket> findByUserId(Long userId);
 
     List<Ticket> findByActive(boolean active);
 
-    List<Ticket> findByEventIdAndZone(Integer eventId, Zone zone);
+    List<Ticket> findByEventIdAndZone(Long eventId, Zone zone);
 
-    List<Ticket> findByEventIdAndPriceLessThanEqual(Integer eventId, BigDecimal price);
+    List<Ticket> findByEventIdAndPriceLessThanEqual(Long eventId, BigDecimal price);
 
-    List<Ticket> findByEventIdInAndUserIdIsNotNull(List<Integer> eventIds);
+    List<Ticket> findByEventIdInAndUserIdIsNotNull(List<Long> eventIds);
 
-    List<Ticket> findByEventIdInAndUserIdIsNotNullOrderByIdDesc(List<Integer> eventIds);
+    List<Ticket> findByEventIdInAndUserIdIsNotNullOrderByIdDesc(List<Long> eventIds);
 
-    List<Ticket> findByEventIdIn(List<Integer> list);
+    List<Ticket> findByEventIdIn(List<Long> list);
 }

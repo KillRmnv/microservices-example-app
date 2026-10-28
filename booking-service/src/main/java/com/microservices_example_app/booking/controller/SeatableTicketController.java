@@ -30,7 +30,7 @@ public class SeatableTicketController {
 
     @Operation(summary = "Get a seatable ticket by id")
     @GetMapping("/{id}")
-    public SeatableTicketResponseDto getById(@Parameter(description = "Seatable ticket id") @PathVariable Integer id) {
+    public SeatableTicketResponseDto getById(@Parameter(description = "Seatable ticket id") @PathVariable Long id) {
         log.info("Fetching seatable ticket with id: {}", id);
         return seatableTicketService.getById(id);
     }
@@ -47,7 +47,7 @@ public class SeatableTicketController {
 
     @Operation(summary = "Update a seatable ticket")
     @PutMapping("/{id}")
-    public SeatableTicketResponseDto updateById(@Parameter(description = "Seatable ticket id") @PathVariable Integer id,
+    public SeatableTicketResponseDto updateById(@Parameter(description = "Seatable ticket id") @PathVariable Long id,
                                                 @Valid @RequestBody SeatableTicketUpdateRequestDto requestDto) {
         log.info("Updating seatable ticket with id: {}", id);
         requestDto.setId(id);
@@ -55,13 +55,13 @@ public class SeatableTicketController {
     }
     @Operation(summary = "Refund a seatable ticket")
     @PostMapping("/{id}/refund")
-    public SeatableTicketResponseDto refund(@Parameter(description = "Seatable ticket id") @PathVariable Integer id) {
+    public SeatableTicketResponseDto refund(@Parameter(description = "Seatable ticket id") @PathVariable Long id) {
         log.info("Refunding seatable ticket with id: {}", id);
         return seatableTicketService.refund(id);
     }
     @Operation(summary = "Delete a seatable ticket")
     @DeleteMapping("/{id}")
-    public void deleteById(@Parameter(description = "Seatable ticket id") @PathVariable Integer id) {
+    public void deleteById(@Parameter(description = "Seatable ticket id") @PathVariable Long id) {
         log.info("Deleting seatable ticket with id: {}", id);
         seatableTicketService.deleteById(id);
     }

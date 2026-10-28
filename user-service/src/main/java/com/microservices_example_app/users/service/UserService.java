@@ -136,7 +136,7 @@ public  class UserService {
             throw new IllegalArgumentException("Invalid or expired reset token");
         }
         
-        Integer userId = JwtUtil.extractUserIdFromPasswordResetToken(token);
+        Long userId = JwtUtil.extractUserIdFromPasswordResetToken(token);
         log.info("Extracted user ID from token: {}", userId);
         
         User user = userDao.findById(userId)
@@ -202,7 +202,7 @@ public  class UserService {
     }
 
     @Transactional(readOnly = true)
-    public UserResponseDto getById(int id) {
+    public UserResponseDto getById(Long id) {
         log.debug("Fetching user by id={}", id);
         User user = userDao.findById(id)
                 .orElseThrow(() -> {

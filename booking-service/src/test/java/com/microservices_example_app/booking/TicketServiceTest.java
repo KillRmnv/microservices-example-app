@@ -64,14 +64,14 @@ class TicketServiceTest {
     @Test
     void create_shouldCreateTicketAndSendBookingEvent() {
         TicketCreateRequestDto request = new TicketCreateRequestDto();
-        request.setEventId(10);
+        request.setEventId(10L);
         request.setZone(Zone.VIP);
         request.setPrice(BigDecimal.valueOf(150));
         request.setActive(true);
-        request.setUserId(999);
+        request.setUserId(999L);
 
         Event event = Event.builder()
-                .id(10)
+                .id(10L)
                 .title("Rock Concert")
                 .startsAt(LocalDateTime.now().plusDays(1))
                 .endsAt(LocalDateTime.now().plusDays(1).plusHours(2))
@@ -79,16 +79,16 @@ class TicketServiceTest {
                 .build();
 
         Ticket savedTicket = Ticket.builder()
-                .id(100)
+                .id(100L)
                 .event(event)
                 .zone(Zone.VIP)
                 .price(BigDecimal.valueOf(150))
                 .active(true)
-                .userId(77)
+                .userId(77L)
                 .build();
 
-        when(eventRepository.findById(10)).thenReturn(Optional.of(event));
-        when(jwtRequestUserExtractor.extractUserId()).thenReturn(77);
+        when(eventRepository.findById(10L)).thenReturn(Optional.of(event));
+        when(jwtRequestUserExtractor.extractUserId()).thenReturn(77L);
         when(jwtRequestUserExtractor.extractEmail()).thenReturn("test@mail.com");
         when(jwtRequestUserExtractor.extractUsername()).thenReturn("alex");
         when(ticketRepository.save(any(Ticket.class))).thenReturn(savedTicket);
@@ -102,8 +102,8 @@ class TicketServiceTest {
         assertThat(result.getUserId()).isEqualTo(77);
 
         verify(ticketRepository).save(argThat(ticket ->
-                ticket.getUserId().equals(77)
-                        && ticket.getEvent().getId().equals(10)
+                ticket.getUserId().equals(77L)
+                        && ticket.getEvent().getId().equals(10L)
                         && ticket.getZone() == Zone.VIP
         ));
 
@@ -113,9 +113,9 @@ class TicketServiceTest {
     @Test
     void create_shouldThrowWhenEventNotFound() {
         TicketCreateRequestDto request = new TicketCreateRequestDto();
-        request.setEventId(10);
+        request.setEventId(10L);
 
-        when(eventRepository.findById(10)).thenReturn(Optional.empty());
+        when(eventRepository.findById(10L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> ticketService.create(request))
                 .isInstanceOf(NotFoundException.class)
@@ -128,25 +128,25 @@ class TicketServiceTest {
     @Test
     void deleteById_shouldDeleteOwnTicketAndSendRefundEvent() {
         Event event = Event.builder()
-                .id(10)
+                .id(10L)
                 .title("Rock Concert")
                 .build();
 
         Ticket ticket = Ticket.builder()
-                .id(100)
+                .id(100L)
                 .event(event)
-                .userId(77)
+                .userId(77L)
                 .zone(Zone.VIP)
                 .price(BigDecimal.valueOf(120))
                 .active(true)
                 .build();
 
-        when(ticketRepository.findById(100)).thenReturn(Optional.of(ticket));
-        when(jwtRequestUserExtractor.extractUserId()).thenReturn(77);
+        when(ticketRepository.findById(100L)).thenReturn(Optional.of(ticket));
+        when(jwtRequestUserExtractor.extractUserId()).thenReturn(77L);
         when(jwtRequestUserExtractor.extractEmail()).thenReturn("test@mail.com");
         when(jwtRequestUserExtractor.extractUsername()).thenReturn("alex");
 
-        ticketService.deleteById(100);
+        ticketService.deleteById(100L);
 
         verify(ticketRepository).delete(ticket);
         verify(notificationKafkaBookingProducer).sendSuccessfulTicketRefundEvent(any(SuccessfulTicketRefundEvent.class));
@@ -154,9 +154,9 @@ class TicketServiceTest {
 
     @Test
     void deleteById_shouldThrowWhenTicketNotFound() {
-        when(ticketRepository.findById(100)).thenReturn(Optional.empty());
+        when(ticketRepository.findById(100L)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> ticketService.deleteById(100))
+        assertThatThrownBy(() -> ticketService.deleteById(100L))
                 .isInstanceOf(NotFoundException.class)
                 .hasMessage("Ticket not found");
 
@@ -167,22 +167,22 @@ class TicketServiceTest {
     @Test
     void deleteById_shouldThrowWhenDeletingForeignTicket() {
         Event event = Event.builder()
-                .id(10)
+                .id(10L)
                 .title("Rock Concert")
                 .build();
 
         Ticket ticket = Ticket.builder()
-                .id(100)
+                .id(100L)
                 .event(event)
-                .userId(88)
+                .userId(88L)
                 .build();
 
-        when(ticketRepository.findById(100)).thenReturn(Optional.of(ticket));
-        when(jwtRequestUserExtractor.extractUserId()).thenReturn(77);
+        when(ticketRepository.findById(100L)).thenReturn(Optional.of(ticket));
+        when(jwtRequestUserExtractor.extractUserId()).thenReturn(77L);
         when(jwtRequestUserExtractor.extractEmail()).thenReturn("test@mail.com");
         when(jwtRequestUserExtractor.extractUsername()).thenReturn("alex");
 
-        assertThatThrownBy(() -> ticketService.deleteById(100))
+        assertThatThrownBy(() -> ticketService.deleteById(100L))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("You can delete only your own ticket");
 
@@ -193,34 +193,34 @@ class TicketServiceTest {
     @Test
     void updateTicketById_shouldUpdateTicket() {
         TicketUpdateRequestDto request = new TicketUpdateRequestDto();
-        request.setId(100);
+        request.setId(100L);
         request.setZone(Zone.FAN_ZONE);
         request.setPrice(BigDecimal.valueOf(300));
 
         Event event = Event.builder()
-                .id(10)
+                .id(10L)
                 .title("Rock Concert")
                 .build();
 
         Ticket existing = Ticket.builder()
-                .id(100)
+                .id(100L)
                 .event(event)
                 .zone(Zone.VIP)
                 .price(BigDecimal.valueOf(100))
                 .active(true)
-                .userId(77)
+                .userId(77L)
                 .build();
 
         Ticket updated = Ticket.builder()
-                .id(100)
+                .id(100L)
                 .event(event)
                 .zone(Zone.FAN_ZONE)
                 .price(BigDecimal.valueOf(300))
                 .active(true)
-                .userId(77)
+                .userId(77L)
                 .build();
 
-        when(ticketRepository.findById(100)).thenReturn(Optional.of(existing));
+        when(ticketRepository.findById(100L)).thenReturn(Optional.of(existing));
         when(ticketRepository.save(any(Ticket.class))).thenReturn(updated);
 
         TicketResponseDto result = ticketService.updateTicketById(request);
@@ -232,10 +232,10 @@ class TicketServiceTest {
 
     @Test
     void getById_shouldReturnTicket() {
-        Event event = Event.builder().id(10).title("Rock Concert").build();
-        Ticket ticket = Ticket.builder().id(100).event(event).zone(Zone.VIP).price(BigDecimal.valueOf(150)).active(true).userId(77).build();
-        when(ticketRepository.findById(100)).thenReturn(Optional.of(ticket));
-        TicketResponseDto result = ticketService.getById(100);
+        Event event = Event.builder().id(10L).title("Rock Concert").build();
+        Ticket ticket = Ticket.builder().id(100L).event(event).zone(Zone.VIP).price(BigDecimal.valueOf(150)).active(true).userId(77L).build();
+        when(ticketRepository.findById(100L)).thenReturn(Optional.of(ticket));
+        TicketResponseDto result = ticketService.getById(100L);
         assertThat(result.getId()).isEqualTo(100);
         assertThat(result.getEventId()).isEqualTo(10);
         assertThat(result.getEventTitle()).isEqualTo("Rock Concert");
@@ -244,8 +244,8 @@ class TicketServiceTest {
 
     @Test
     void getById_shouldThrowWhenTicketNotFound() {
-        when(ticketRepository.findById(100)).thenReturn(Optional.empty());
-        assertThatThrownBy(() -> ticketService.getById(100))
+        when(ticketRepository.findById(100L)).thenReturn(Optional.empty());
+        assertThatThrownBy(() -> ticketService.getById(100L))
                 .isInstanceOf(NotFoundException.class)
                 .hasMessage("Ticket not found");
     }
@@ -253,10 +253,10 @@ class TicketServiceTest {
     @Test
     void searchByFilter_shouldReturnTickets() {
         TicketSearchRequestDto filter = new TicketSearchRequestDto();
-        filter.setEventId(10);
+        filter.setEventId(10L);
         filter.setZone(Zone.VIP);
-        Event event = Event.builder().id(10).title("Rock Concert").build();
-        Ticket ticket = Ticket.builder().id(100).event(event).zone(Zone.VIP).price(BigDecimal.valueOf(150)).active(true).userId(77).build();
+        Event event = Event.builder().id(10L).title("Rock Concert").build();
+        Ticket ticket = Ticket.builder().id(100L).event(event).zone(Zone.VIP).price(BigDecimal.valueOf(150)).active(true).userId(77L).build();
         when(ticketRepository.findAll(any(Specification.class), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(ticket)));
         List<TicketResponseDto> result = ticketService.searchByFilter(filter, 1, 10);
@@ -283,10 +283,10 @@ class TicketServiceTest {
     @Test
     void deleteByFilter_shouldDeleteMatchedTicketsAndReturnCount() {
         TicketDeleteRequestDto request = new TicketDeleteRequestDto();
-        request.setEventId(10);
+        request.setEventId(10L);
         request.setZone(Zone.VIP);
-        Event event = Event.builder().id(10).title("Rock Concert").build();
-        Ticket ticket = Ticket.builder().id(100).event(event).zone(Zone.VIP).userId(77).build();
+        Event event = Event.builder().id(10L).title("Rock Concert").build();
+        Ticket ticket = Ticket.builder().id(100L).event(event).zone(Zone.VIP).userId(77L).build();
         when(ticketRepository.findAll(any(Specification.class))).thenReturn(List.of(ticket));
         long result = ticketService.deleteByFilter(request);
         assertThat(result).isEqualTo(1);
@@ -304,51 +304,51 @@ class TicketServiceTest {
 
     @Test
     void refund_shouldRefundOwnActiveTicket() {
-        Event event = Event.builder().id(10).title("Rock Concert").build();
-        Ticket ticket = Ticket.builder().id(100).event(event).zone(Zone.VIP).price(BigDecimal.valueOf(150)).active(true).userId(77).build();
-        when(ticketRepository.findById(100)).thenReturn(Optional.of(ticket));
-        when(jwtRequestUserExtractor.extractUserId()).thenReturn(77);
+        Event event = Event.builder().id(10L).title("Rock Concert").build();
+        Ticket ticket = Ticket.builder().id(100L).event(event).zone(Zone.VIP).price(BigDecimal.valueOf(150)).active(true).userId(77L).build();
+        when(ticketRepository.findById(100L)).thenReturn(Optional.of(ticket));
+        when(jwtRequestUserExtractor.extractUserId()).thenReturn(77L);
         when(jwtRequestUserExtractor.extractEmail()).thenReturn("test@mail.com");
         when(jwtRequestUserExtractor.extractUsername()).thenReturn("alex");
         when(ticketRepository.save(any(Ticket.class))).thenReturn(ticket);
-        TicketResponseDto result = ticketService.refund(100);
+        TicketResponseDto result = ticketService.refund(100L);
         assertThat(result).isNotNull();
         verify(notificationKafkaBookingProducer).sendSuccessfulTicketRefundEvent(any());
     }
 
     @Test
     void refund_shouldThrowWhenTicketNotFound() {
-        when(ticketRepository.findById(100)).thenReturn(Optional.empty());
-        assertThatThrownBy(() -> ticketService.refund(100))
+        when(ticketRepository.findById(100L)).thenReturn(Optional.empty());
+        assertThatThrownBy(() -> ticketService.refund(100L))
                 .isInstanceOf(NotFoundException.class)
                 .hasMessage("Ticket not found");
     }
 
     @Test
     void refund_shouldThrowWhenForeignTicket() {
-        Event event = Event.builder().id(10).title("Rock Concert").build();
-        Ticket ticket = Ticket.builder().id(100).event(event).zone(Zone.VIP).userId(88).build();
-        when(ticketRepository.findById(100)).thenReturn(Optional.of(ticket));
-        when(jwtRequestUserExtractor.extractUserId()).thenReturn(77);
-        assertThatThrownBy(() -> ticketService.refund(100))
+        Event event = Event.builder().id(10L).title("Rock Concert").build();
+        Ticket ticket = Ticket.builder().id(100L).event(event).zone(Zone.VIP).userId(88L).build();
+        when(ticketRepository.findById(100L)).thenReturn(Optional.of(ticket));
+        when(jwtRequestUserExtractor.extractUserId()).thenReturn(77L);
+        assertThatThrownBy(() -> ticketService.refund(100L))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("You can refund only your own ticket");
     }
 
     @Test
     void refund_shouldThrowWhenTicketAlreadyInactive() {
-        Event event = Event.builder().id(10).title("Rock Concert").build();
-        Ticket ticket = Ticket.builder().id(100).event(event).zone(Zone.VIP).active(false).userId(77).build();
-        when(ticketRepository.findById(100)).thenReturn(Optional.of(ticket));
-        when(jwtRequestUserExtractor.extractUserId()).thenReturn(77);
-        assertThatThrownBy(() -> ticketService.refund(100))
+        Event event = Event.builder().id(10L).title("Rock Concert").build();
+        Ticket ticket = Ticket.builder().id(100L).event(event).zone(Zone.VIP).active(false).userId(77L).build();
+        when(ticketRepository.findById(100L)).thenReturn(Optional.of(ticket));
+        when(jwtRequestUserExtractor.extractUserId()).thenReturn(77L);
+        assertThatThrownBy(() -> ticketService.refund(100L))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Ticket is already inactive");
     }
 
     @Test
     void refund_shouldThrowWhenIdNegative() {
-        assertThatThrownBy(() -> ticketService.refund(-1))
+        assertThatThrownBy(() -> ticketService.refund(-1L))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Ticket id must be positive");
     }
@@ -356,9 +356,9 @@ class TicketServiceTest {
     @Test
     void updateTicketById_shouldThrowWhenTicketNotFound() {
         TicketUpdateRequestDto request = new TicketUpdateRequestDto();
-        request.setId(100);
-        when(ticketRepository.findById(100)).thenReturn(Optional.empty());
-        when(jwtRequestUserExtractor.extractUserId()).thenReturn(77);
+        request.setId(100L);
+        when(ticketRepository.findById(100L)).thenReturn(Optional.empty());
+        when(jwtRequestUserExtractor.extractUserId()).thenReturn(77L);
         assertThatThrownBy(() -> ticketService.updateTicketById(request))
                 .isInstanceOf(NotFoundException.class)
                 .hasMessage("No ticket with id=100");
@@ -367,13 +367,13 @@ class TicketServiceTest {
     @Test
     void updateTicketById_shouldSendKafkaWhenUserIdChanges() {
         TicketUpdateRequestDto request = new TicketUpdateRequestDto();
-        request.setId(100);
+        request.setId(100L);
         request.setZone(Zone.FAN_ZONE);
-        Event event = Event.builder().id(10).title("Rock Concert").build();
-        Ticket existing = Ticket.builder().id(100).event(event).zone(Zone.VIP).price(BigDecimal.valueOf(100)).active(true).userId(77).build();
-        Ticket updated = Ticket.builder().id(100).event(event).zone(Zone.FAN_ZONE).price(BigDecimal.valueOf(100)).active(true).userId(88).build();
-        when(ticketRepository.findById(100)).thenReturn(Optional.of(existing));
-        when(jwtRequestUserExtractor.extractUserId()).thenReturn(88);
+        Event event = Event.builder().id(10L).title("Rock Concert").build();
+        Ticket existing = Ticket.builder().id(100L).event(event).zone(Zone.VIP).price(BigDecimal.valueOf(100)).active(true).userId(77L).build();
+        Ticket updated = Ticket.builder().id(100L).event(event).zone(Zone.FAN_ZONE).price(BigDecimal.valueOf(100)).active(true).userId(88L).build();
+        when(ticketRepository.findById(100L)).thenReturn(Optional.of(existing));
+        when(jwtRequestUserExtractor.extractUserId()).thenReturn(88L);
         when(jwtRequestUserExtractor.extractEmail()).thenReturn("new@mail.com");
         when(jwtRequestUserExtractor.extractUsername()).thenReturn("newuser");
         when(ticketRepository.save(any(Ticket.class))).thenReturn(updated);
@@ -385,7 +385,7 @@ class TicketServiceTest {
     @Test
     void updateTicketById_shouldThrowWhenIdNegative() {
         TicketUpdateRequestDto request = new TicketUpdateRequestDto();
-        request.setId(-1);
+        request.setId(-1L);
         assertThatThrownBy(() -> ticketService.updateTicketById(request))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Ticket id must be positive");
@@ -395,14 +395,14 @@ class TicketServiceTest {
     @Test
     void create_shouldSetActiveFalseWhenRequestActiveFalse() {
         TicketCreateRequestDto request = new TicketCreateRequestDto();
-        request.setEventId(10);
+        request.setEventId(10L);
         request.setZone(Zone.VIP);
         request.setPrice(BigDecimal.valueOf(150));
         request.setActive(false);
-        Event event = Event.builder().id(10).title("Rock Concert").startsAt(LocalDateTime.now().plusDays(1)).endsAt(LocalDateTime.now().plusDays(1).plusHours(2)).admissionMode(EventAdmissionMode.GENERAL).build();
-        Ticket savedTicket = Ticket.builder().id(100).event(event).zone(Zone.VIP).price(BigDecimal.valueOf(150)).active(false).userId(77).build();
-        when(eventRepository.findById(10)).thenReturn(Optional.of(event));
-        when(jwtRequestUserExtractor.extractUserId()).thenReturn(77);
+        Event event = Event.builder().id(10L).title("Rock Concert").startsAt(LocalDateTime.now().plusDays(1)).endsAt(LocalDateTime.now().plusDays(1).plusHours(2)).admissionMode(EventAdmissionMode.GENERAL).build();
+        Ticket savedTicket = Ticket.builder().id(100L).event(event).zone(Zone.VIP).price(BigDecimal.valueOf(150)).active(false).userId(77L).build();
+        when(eventRepository.findById(10L)).thenReturn(Optional.of(event));
+        when(jwtRequestUserExtractor.extractUserId()).thenReturn(77L);
         when(jwtRequestUserExtractor.extractEmail()).thenReturn("test@mail.com");
         when(jwtRequestUserExtractor.extractUsername()).thenReturn("alex");
         when(ticketRepository.save(any(Ticket.class))).thenReturn(savedTicket);
@@ -413,14 +413,14 @@ class TicketServiceTest {
     @Test
     void create_shouldSetActiveFalseWhenRequestActiveNull() {
         TicketCreateRequestDto request = new TicketCreateRequestDto();
-        request.setEventId(10);
+        request.setEventId(10L);
         request.setZone(Zone.VIP);
         request.setPrice(BigDecimal.valueOf(150));
         request.setActive(null);
-        Event event = Event.builder().id(10).title("Rock Concert").startsAt(LocalDateTime.now().plusDays(1)).endsAt(LocalDateTime.now().plusDays(1).plusHours(2)).admissionMode(EventAdmissionMode.GENERAL).build();
-        Ticket savedTicket = Ticket.builder().id(100).event(event).zone(Zone.VIP).price(BigDecimal.valueOf(150)).active(false).userId(77).build();
-        when(eventRepository.findById(10)).thenReturn(Optional.of(event));
-        when(jwtRequestUserExtractor.extractUserId()).thenReturn(77);
+        Event event = Event.builder().id(10L).title("Rock Concert").startsAt(LocalDateTime.now().plusDays(1)).endsAt(LocalDateTime.now().plusDays(1).plusHours(2)).admissionMode(EventAdmissionMode.GENERAL).build();
+        Ticket savedTicket = Ticket.builder().id(100L).event(event).zone(Zone.VIP).price(BigDecimal.valueOf(150)).active(false).userId(77L).build();
+        when(eventRepository.findById(10L)).thenReturn(Optional.of(event));
+        when(jwtRequestUserExtractor.extractUserId()).thenReturn(77L);
         when(jwtRequestUserExtractor.extractEmail()).thenReturn("test@mail.com");
         when(jwtRequestUserExtractor.extractUsername()).thenReturn("alex");
         when(ticketRepository.save(any(Ticket.class))).thenReturn(savedTicket);
@@ -431,11 +431,11 @@ class TicketServiceTest {
 
     @Test
     void deleteById_shouldThrowWhenTicketHasNoOwner() {
-        Event event = Event.builder().id(10).title("Rock Concert").build();
-        Ticket ticket = Ticket.builder().id(100).event(event).userId(null).zone(Zone.VIP).price(BigDecimal.valueOf(120)).active(true).build();
-        when(ticketRepository.findById(100)).thenReturn(Optional.of(ticket));
-        when(jwtRequestUserExtractor.extractUserId()).thenReturn(77);
-        assertThatThrownBy(() -> ticketService.deleteById(100))
+        Event event = Event.builder().id(10L).title("Rock Concert").build();
+        Ticket ticket = Ticket.builder().id(100L).event(event).userId(null).zone(Zone.VIP).price(BigDecimal.valueOf(120)).active(true).build();
+        when(ticketRepository.findById(100L)).thenReturn(Optional.of(ticket));
+        when(jwtRequestUserExtractor.extractUserId()).thenReturn(77L);
+        assertThatThrownBy(() -> ticketService.deleteById(100L))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("You can delete only your own ticket");
         verify(ticketRepository, never()).delete(any(Ticket.class));
@@ -445,13 +445,13 @@ class TicketServiceTest {
     @Test
     void updateTicketById_shouldNotSendKafkaWhenSameUserId() {
         TicketUpdateRequestDto request = new TicketUpdateRequestDto();
-        request.setId(100);
+        request.setId(100L);
         request.setZone(Zone.FAN_ZONE);
-        Event event = Event.builder().id(10).title("Rock Concert").build();
-        Ticket existing = Ticket.builder().id(100).event(event).zone(Zone.VIP).price(BigDecimal.valueOf(100)).active(true).userId(77).build();
-        Ticket updated = Ticket.builder().id(100).event(event).zone(Zone.FAN_ZONE).price(BigDecimal.valueOf(100)).active(true).userId(77).build();
-        when(ticketRepository.findById(100)).thenReturn(Optional.of(existing));
-        when(jwtRequestUserExtractor.extractUserId()).thenReturn(77);
+        Event event = Event.builder().id(10L).title("Rock Concert").build();
+        Ticket existing = Ticket.builder().id(100L).event(event).zone(Zone.VIP).price(BigDecimal.valueOf(100)).active(true).userId(77L).build();
+        Ticket updated = Ticket.builder().id(100L).event(event).zone(Zone.FAN_ZONE).price(BigDecimal.valueOf(100)).active(true).userId(77L).build();
+        when(ticketRepository.findById(100L)).thenReturn(Optional.of(existing));
+        when(jwtRequestUserExtractor.extractUserId()).thenReturn(77L);
         when(ticketRepository.save(any(Ticket.class))).thenReturn(updated);
         ticketService.updateTicketById(request);
         verify(notificationKafkaBookingProducer, never()).sendSuccessfulTicketRefundEvent(any());
@@ -462,13 +462,13 @@ class TicketServiceTest {
     @Test
     void updateTicketById_shouldSendKafkaWhenPreviousUserIdIsNull() {
         TicketUpdateRequestDto request = new TicketUpdateRequestDto();
-        request.setId(100);
+        request.setId(100L);
         request.setZone(Zone.FAN_ZONE);
-        Event event = Event.builder().id(10).title("Rock Concert").build();
-        Ticket existing = Ticket.builder().id(100).event(event).zone(Zone.VIP).price(BigDecimal.valueOf(100)).active(true).userId(null).build();
-        Ticket updated = Ticket.builder().id(100).event(event).zone(Zone.FAN_ZONE).price(BigDecimal.valueOf(100)).active(true).userId(77).build();
-        when(ticketRepository.findById(100)).thenReturn(Optional.of(existing));
-        when(jwtRequestUserExtractor.extractUserId()).thenReturn(77);
+        Event event = Event.builder().id(10L).title("Rock Concert").build();
+        Ticket existing = Ticket.builder().id(100L).event(event).zone(Zone.VIP).price(BigDecimal.valueOf(100)).active(true).userId(null).build();
+        Ticket updated = Ticket.builder().id(100L).event(event).zone(Zone.FAN_ZONE).price(BigDecimal.valueOf(100)).active(true).userId(77L).build();
+        when(ticketRepository.findById(100L)).thenReturn(Optional.of(existing));
+        when(jwtRequestUserExtractor.extractUserId()).thenReturn(77L);
         when(jwtRequestUserExtractor.extractEmail()).thenReturn("test@mail.com");
         when(jwtRequestUserExtractor.extractUsername()).thenReturn("alex");
         when(ticketRepository.save(any(Ticket.class))).thenReturn(updated);

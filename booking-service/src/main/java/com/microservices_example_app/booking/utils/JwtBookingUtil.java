@@ -55,8 +55,8 @@ public final class JwtBookingUtil {
         return parseToken(token).getSubject();
     }
 
-    public static Integer extractUserId(String token) {
-        return parseToken(token).get("id", Integer.class);
+    public static Long extractUserId(String token) {
+        return parseToken(token).get("id", Long.class);
     }
 
     public static String extractToken(HttpServletRequest request) {

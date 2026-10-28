@@ -66,6 +66,11 @@ class VectorStore(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    async def delete(self, ids: list[str]) -> None:
+        """Drop points by id (catalog tombstones)."""
+        raise NotImplementedError
+
+    @abstractmethod
     async def count(self) -> int:
         raise NotImplementedError
 
@@ -192,6 +197,14 @@ class QdrantStore(VectorStore):
                            payload=dict(point.payload or {}))
                 for point in hits.points]
 
+    async def delete(self, ids: list[str]) -> None:
+        if not ids:
+            return
+        models = self._models
+        await self._client.delete(
+            self._collection,
+            points_selector=models.PointIdsList(points=ids))
+
     async def count(self) -> int:
         return (await self._client.count(self._collection)).count
 
@@ -234,6 +247,10 @@ class MemoryStore(VectorStore):
                                     payload=payload))
         scored.sort(key=lambda hit: hit.score, reverse=True)
         return scored[:limit]
+
+    async def delete(self, ids: list[str]) -> None:
+        for point_id in ids:
+            self._points.pop(point_id, None)
 
     async def count(self) -> int:
         return len(self._points)

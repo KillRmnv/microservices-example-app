@@ -13,7 +13,7 @@ import lombok.Setter;
 @Setter
 @Schema(description = "Filter identifying users to delete")
 public class UserDeleteRequestDto {
-    private int id;
+    private Long id;
     private String username;
     private String email;
     private String role;

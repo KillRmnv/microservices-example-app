@@ -40,6 +40,8 @@ def _event_payload(row) -> dict:
         "start_at": row["start_at"].isoformat() if row["start_at"] else "",
         "price_min": float(row["price_min"]) if row["price_min"] is not None else None,
         "price_max": float(row["price_max"]) if row["price_max"] is not None else None,
+        "booking_event_id": (int(row["booking_event_id"])
+                             if row["booking_event_id"] is not None else None),
     }
 
 

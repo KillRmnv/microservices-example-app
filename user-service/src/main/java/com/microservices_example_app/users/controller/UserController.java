@@ -39,7 +39,7 @@ public class UserController {
     @Operation(summary = "Get a user by id")
     @GetMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<UserResponseDto> getById(@Parameter(description = "User id") @PathVariable int id) {
+    public ResponseEntity<UserResponseDto> getById(@Parameter(description = "User id") @PathVariable Long id) {
         log.info("Request received: get user by id={}", id);
         UserResponseDto user = userService.getById(id);
         log.info("Successfully returned user with id={}", id);

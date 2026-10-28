@@ -9,20 +9,20 @@ import java.util.List;
 import java.util.Optional;
 
 @Repository
-public interface SeatRepository extends JpaRepository<Seat, Integer>, JpaSpecificationExecutor<Seat> {
-    List<Seat> findByVenueId(Integer venueId);
+public interface SeatRepository extends JpaRepository<Seat, Long>, JpaSpecificationExecutor<Seat> {
+    List<Seat> findByVenueId(Long venueId);
 
-    List<Seat> findByVenueIdAndSectorIgnoreCase(Integer venueId, String sector);
+    List<Seat> findByVenueIdAndSectorIgnoreCase(Long venueId, String sector);
 
     Optional<Seat> findByVenueIdAndSectorIgnoreCaseAndRowIgnoreCaseAndNumber(
-            Integer venueId,
+            Long venueId,
             String sector,
             String row,
             String number
     );
 
     boolean existsByVenueIdAndSectorIgnoreCaseAndRowIgnoreCaseAndNumber(
-            Integer venueId,
+            Long venueId,
             String sector,
             String row,
             String number

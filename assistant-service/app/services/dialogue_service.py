@@ -133,26 +133,42 @@ class DialogueService:
         return [self._to_card(hit, availability, language)
                 for hit, availability in zip(hits, availabilities)]
 
-    async def _availability_for(self, hit: FusedHit) -> Availability | None:
+    @staticmethod
+    def _booking_event_id(hit: FusedHit) -> int | None:
+        """booking-service event id carried in the payload, if any.
+
+        Scraped events have UUID point ids and no live inventory; catalog
+        events mirrored from booking-service carry `booking_event_id`.
+        """
+        raw = hit.payload.get("booking_event_id")
+        if raw is None:
+            raw = hit.id  # legacy points whose id already was the event id
         try:
-            event_id = int(hit.id)
+            return int(raw)
         except (TypeError, ValueError):
+            return None
+
+    async def _availability_for(self, hit: FusedHit) -> Availability | None:
+        event_id = self._booking_event_id(hit)
+        if event_id is None:
             return None  # collected (scraped) event: no live inventory
         return await self._booking.check_availability(event_id)
 
     def _to_card(self, hit: FusedHit, availability: Availability | None,
                  language: str) -> ResultCard:
         title = hit.payload.get("title") or i18n.t("card_untitled", language)
+        booking_id = self._booking_event_id(hit)
         if availability is None:
             return ResultCard(
-                event_id=hit.id, title=title,
+                event_id=str(booking_id) if booking_id is not None else hit.id,
+                title=title,
                 meta=i18n.t("card_scraped", language),
                 price=i18n.format_price(None, None,
                                         self._settings.default_currency, language),
             )
         status = STATUS_KEYS.get(availability.status, availability.status)
         return ResultCard(
-            event_id=hit.id,
+            event_id=str(booking_id) if booking_id is not None else hit.id,
             title=title,
             meta=i18n.t(status, language),
             price=i18n.format_price(availability.min_price, None,

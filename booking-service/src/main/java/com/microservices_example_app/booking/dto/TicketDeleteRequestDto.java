@@ -13,10 +13,10 @@ import lombok.Setter;
 @NoArgsConstructor
 @AllArgsConstructor
 public class TicketDeleteRequestDto {
-    private Integer eventId;
+    private Long eventId;
     private Zone zone;
     private BigDecimal minPrice;
     private BigDecimal maxPrice;
     private Boolean active;
-    private Integer userId;
+    private Long userId;
 }

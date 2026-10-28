@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from .api.routers import catalog, collect, embed, ops
+from .clients.kafka import BookingCatalogConsumer
 from .core import db
 from .core.config import settings
 from .core.logging import RequestIdMiddleware, setup_logging
@@ -48,11 +49,14 @@ async def lifespan(app: FastAPI):
     app.state.embed = EmbedService(db_url, embedder, vector, vector_venues,
                                    settings)
     app.state.ops = OpsService(db_url, settings)
+    catalog_consumer = BookingCatalogConsumer(db_url, vector, settings)
+    await catalog_consumer.start()
     start_scheduler(app)
     try:
         yield
     finally:
         stop_scheduler(app)
+        await catalog_consumer.stop()
         await http.aclose()
 
 

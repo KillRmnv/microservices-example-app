@@ -35,7 +35,7 @@ public class EventController {
 
     @Operation(summary = "Get an event by id")
     @GetMapping("/{id}")
-    public EventResponseDto getById(@Parameter(description = "Event id") @PathVariable Integer id) {
+    public EventResponseDto getById(@Parameter(description = "Event id") @PathVariable Long id) {
         log.info("Fetching event with id: {}", id);
         return eventService.getById(id);
     }
@@ -58,7 +58,7 @@ public class EventController {
 
     @Operation(summary = "Update an event")
     @PutMapping("/{id}")
-    public EventResponseDto updateById(@Parameter(description = "Event id") @PathVariable Integer id,
+    public EventResponseDto updateById(@Parameter(description = "Event id") @PathVariable Long id,
                                        @Valid @RequestBody EventUpdateRequestDto requestDto) {
         requireEventManagerOrAdmin();
         log.info("Update by id:{} , dto:{}",id,requestDto);
@@ -68,7 +68,7 @@ public class EventController {
 
     @Operation(summary = "Delete an event")
     @DeleteMapping("/{id}")
-    public void deleteById(@Parameter(description = "Event id") @PathVariable Integer id) {
+    public void deleteById(@Parameter(description = "Event id") @PathVariable Long id) {
         requireEventManagerOrAdmin();
         log.info("Deleting event with id: {}", id);
         eventService.deleteById(id);

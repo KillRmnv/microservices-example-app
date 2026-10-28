@@ -15,7 +15,7 @@ import java.math.BigDecimal;
 
 public class TicketSpecification {
 
-    public static Specification<Ticket> hasEventId(Integer eventId) {
+    public static Specification<Ticket> hasEventId(Long eventId) {
         return new Specification<Ticket>() {
             @Override
             public @Nullable Predicate toPredicate(Root<Ticket> root, CriteriaQuery<?> query, CriteriaBuilder criteriaBuilder) {
@@ -48,7 +48,7 @@ public class TicketSpecification {
         };
     }
 
-    public static Specification<Ticket> hasUserId(Integer userId) {
+    public static Specification<Ticket> hasUserId(Long userId) {
         return new Specification<Ticket>() {
             @Override
             public @Nullable Predicate toPredicate(Root<Ticket> root, CriteriaQuery<?> query, CriteriaBuilder criteriaBuilder) {

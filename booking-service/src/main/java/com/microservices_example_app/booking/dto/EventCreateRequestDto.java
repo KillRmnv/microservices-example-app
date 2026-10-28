@@ -20,6 +20,7 @@ public class EventCreateRequestDto {
     private String title;
     private LocalDateTime startsAt;
     private LocalDateTime endsAt;
-    private Integer venueId;
+    private Long venueId;
+    private String category;
     private EventAdmissionMode admissionMode;
 }

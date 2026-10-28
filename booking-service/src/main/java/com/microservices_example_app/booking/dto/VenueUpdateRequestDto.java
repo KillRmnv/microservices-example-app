@@ -12,8 +12,8 @@ import lombok.Setter;
 @Setter
 @Schema(description = "Request to update an existing venue")
 public class VenueUpdateRequestDto {
-    private Integer id;
-    private Integer townId;
+    private Long id;
+    private Long townId;
     private String place;
     private Integer capacity;
 }

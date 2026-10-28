@@ -66,50 +66,51 @@ erDiagram
     SEATS ||--o{ SEATABLE_TICKETS : "assigned to"
 
     TOWNS {
-        serial id PK
+        bigserial id PK
         varchar name UK
     }
 
     VENUES {
-        serial id PK
-        int town_id FK
+        bigserial id PK
+        bigint town_id FK
         varchar place
         int capacity "CHECK > 0"
     }
 
     EVENTS {
-        serial id PK
+        bigserial id PK
         varchar title
         timestamp starts_at "CHECK future"
         timestamp ends_at "CHECK > starts_at"
-        int venue_id FK
+        bigint venue_id FK
+        varchar category "concert | theatre | sport | ..."
         varchar admission_mode "SEATABLE | GENERAL"
     }
 
     SEATS {
-        serial id PK
+        bigserial id PK
         varchar sector
         varchar row_label
         varchar seat_number
-        int venue_id FK
+        bigint venue_id FK
     }
 
     TICKETS {
-        serial id PK
-        int event_id FK
+        bigserial id PK
+        bigint event_id FK
         varchar zone "VIP | FAN_ZONE | BASIC"
         decimal price "CHECK > 0"
         boolean active
-        int user_id "auth user, nullable"
+        bigint user_id "auth user, nullable"
     }
 
     SEATABLE_TICKETS {
-        int ticket_id PK, FK
-        int seat_id FK
+        bigint ticket_id PK, FK
+        bigint seat_id FK
     }
 
     VENUE_FULLNESS {
-        int venue_id PK, FK
+        bigint venue_id PK, FK
         int fullness "CHECK > 0"
     }
 ```
@@ -123,36 +124,129 @@ Notes
   update and raises once capacity is exceeded.
 - `active = true` is what the assistant asks for through
   `GET /booking/tickets/search?active=true`.
+- Every id is a `BIGINT` (`Long` in Java): 32-bit identity columns were
+  replaced before the first release, so URLs/JSON stay plain numbers.
+- `events.category` uses the same vocabulary as the collector
+  (`concert`, `theatre`, `exhibition`, `film`, `sport`, `kids`, `other`),
+  so mirrored events pass the assistant's category filters.
 
 ---
 
-## 3. `collector_db` — scraped playbill, dedup and search
+## 3. `collector_db` — mirrored playbill, lookups and search
 
 ```mermaid
 erDiagram
-    COLLECTED_EVENTS ||--o{ SCREENINGS : "cinema showings"
+    SOURCES ||--o{ COLLECTED_EVENTS : "primary source"
+    CATEGORIES ||--o{ COLLECTED_EVENTS : "category"
+    CITIES ||--o{ COLLECTED_EVENTS : "city"
+    CURRENCIES ||--o{ COLLECTED_EVENTS : "currency"
+    COLLECTED_VENUES ||--o{ COLLECTED_EVENTS : "venue"
+    SOURCES ||--o{ EVENT_SOURCES : "provenance"
     COLLECTED_EVENTS ||--o{ EVENT_SOURCES : "also published as"
+    COLLECTED_EVENTS ||--o{ SCREENINGS : "cinema showings"
+    CITIES ||--o{ COLLECTED_VENUES : "city"
+    SOURCES ||--o{ SOURCE_RUNS : "run log"
+
+    SOURCES {
+        serial id PK
+        text code UK "ticketpro | booking | ..."
+        text display_name
+        text kind "scraper | api | debug"
+        int priority "merge/order rank"
+        boolean enabled
+    }
+
+    CATEGORIES {
+        serial id PK
+        text code UK "concert | theatre | ..."
+        text display_name
+        int sort_order
+        int parent_id FK "nullable"
+    }
+
+    CURRENCIES {
+        char code PK "BYN | USD | EUR | RUB"
+        text name
+        text symbol
+        int minor_unit
+    }
+
+    CITIES {
+        serial id PK
+        text name UK
+        text timezone
+        numeric center_lat
+        numeric center_lon
+    }
 
     COLLECTED_EVENTS {
         uuid id PK
-        text source
+        text source "denormalised for dedup"
         text source_id "UNIQUE(source, source_id)"
         text source_url
+        int primary_source_id FK
+        bigint booking_event_id UK "mirrored booking id, nullable"
         text title
-        text category "concert | theatre | ..."
+        text description
+        text category
+        int category_id FK
         timestamptz start_at
         timestamptz end_at
+        uuid venue_id FK
         text venue_name
-        text city "default from settings"
-        numeric lat
-        numeric lon
+        text address
+        text city
+        int city_id FK
+        numeric latitude
+        numeric longitude
         numeric price_min
         numeric price_max
-        char currency "default from settings"
-        text dedup_key UK "nullable"
+        char currency
+        char currency_code FK
+        int age_limit
+        text ticket_url
+        text image_url
+        text organizer
+        text status "scheduled | cancelled | sold_out"
+        timestamptz first_seen_at
+        timestamptz last_seen_at
+        timestamptz updated_at
+        timestamptz fetched_at
         timestamptz embedded_at "Qdrant backfill marker"
         tsvector search_vector "russian, weighted A/B/C"
         jsonb raw
+        text dedup_key UK "nullable"
+    }
+
+    COLLECTED_VENUES {
+        uuid id PK
+        text source
+        text source_id "UNIQUE(source, source_id)"
+        text name
+        text rubric
+        text address
+        text city
+        int city_id FK
+        numeric latitude
+        numeric longitude
+        jsonb schedule
+        numeric rating
+        int review_count
+        text source_url
+        timestamptz fetched_at
+        timestamptz embedded_at
+        tsvector search_vector
+        jsonb raw
+    }
+
+    EVENT_SOURCES {
+        uuid event_id PK, FK
+        text source PK
+        text source_url PK
+        int source_id FK
+        boolean is_primary
+        timestamptz first_seen_at
+        timestamptz last_seen_at
     }
 
     SCREENINGS {
@@ -163,40 +257,23 @@ erDiagram
         numeric price
     }
 
-    EVENT_SOURCES {
-        uuid event_id PK, FK
-        text source PK
-        text source_url PK
-    }
-
-    COLLECTED_VENUES {
-        uuid id PK
-        text source "twogis"
-        text source_id "UNIQUE(source, source_id)"
-        text name
-        text rubric
-        text address
-        text city
-        numeric lat
-        numeric lon
-        jsonb schedule
-        numeric rating
-        int review_count
-        timestamptz embedded_at
-        tsvector search_vector
-        jsonb raw
-    }
-
     SOURCE_RUNS {
         bigserial id PK
         text source
-        text status "ok | error"
+        int source_id FK
+        text status "ok | partial | error | skipped | quota_exhausted"
         timestamptz started_at
-        int fetched
-        int parsed
+        timestamptz finished_at
+        float duration_s
+        int fetched "HTTP requests"
+        int parsed "source items parsed"
         int parse_errors
+        int fetch_errors
         int duplicates
-        int new_events
+        int rows_inserted
+        int rows_updated
+        boolean quota_stopped
+        text error_code
         text error
     }
 
@@ -211,19 +288,37 @@ erDiagram
         text rubric_id
         timestamptz fetched_at
     }
+
+    COLLECTOR_KV {
+        text key PK "2GIS region id, ..."
+        text value
+        timestamptz updated_at
+    }
 ```
 
 Notes
 
-- `dedup_key` is a partial unique index: the same logical event coming from
-  two sources is merged into one row, and `event_sources` keeps both URLs.
+- Lookup tables own the vocabularies that used to be constants in code
+  (`sources.priority` replaced `SOURCE_PRIORITY`, `categories` replaced the
+  `CATEGORIES` set). Text columns stay next to the FK ids during the
+  transition, so old queries keep working.
+- `dedup_key` is a partial unique index: the same logical scraped event from
+  two sources is merged into one row, and `event_sources` keeps every URL.
+  Rows mirrored from booking-service have `dedup_key = NULL` and never join
+  that merge — deleting a booking event must not remove its scraped twin.
+- `booking_event_id` marks a row mirrored from `booking.catalog` (Kafka).
+  Its value is the bookable id the assistant uses for availability/holds;
+  Qdrant payloads carry it next to the UUID point id.
 - `search_vector` is maintained by a trigger (title A, venue B, description C)
-  and indexed with GIN — this is the lexical half of hybrid search.
+  and indexed with GIN — this is the lexical half of hybrid search. The same
+  trigger bumps `updated_at`.
 - `source_runs` is append-only and drives `/collect/health`, alerting and the
-  Prometheus counters. A failed fetch still writes a row.
+  Prometheus counters. `fetched` counts HTTP requests, `parsed` source items,
+  `rows_inserted`/`rows_updated` rows; a failed fetch still writes a row with
+  `status = error`.
 - `api_quota` is consumed **per HTTP attempt** for billable providers and
   stops at `cap - reserve`, so the trial key never gets disabled mid-month.
-- `collector_kv` (not drawn) caches the discovered 2GIS region id.
+- `collector_kv` caches small discovered values (the 2GIS region id).
 
 ---
 
@@ -244,7 +339,7 @@ erDiagram
     BOOKING_HOLDS {
         uuid id PK
         text session_id
-        int event_id "booking-service event"
+        bigint event_id "booking-service event"
         text zone
         numeric price
         int party_size "1..20"
@@ -269,6 +364,7 @@ Notes
   - confirming a missing, taken or expired hold returns HTTP 410.
 - Real ticket locking lives in booking-service and is deferred
   (`TODO(stage-3b)`, see [`docs/TODO.md`](TODO.md)).
+- `event_id` is `BIGINT` to match the booking-service `Long` ids.
 
 ---
 
@@ -289,6 +385,7 @@ flowchart LR
     AS -->|forecast cache| RD[(Redis)]
     CS -->|events / venues vectors| QD
     CS -->|billable places API| TG[2GIS]
+    BS -.->|Kafka: booking.catalog (compacted)| CS
 ```
 
 The data model is intentionally split per service: there are no cross-database
@@ -312,5 +409,6 @@ Full class diagrams with attributes, methods and multiplicities:
 Render them with any PlantUML jar or IDE plugin, for example:
 
 ```bash
-plantuml -tsvg docs/uml/*.puml
+# PNG is the committed format (git diff stays readable).
+plantuml docs/uml/*.puml
 ```

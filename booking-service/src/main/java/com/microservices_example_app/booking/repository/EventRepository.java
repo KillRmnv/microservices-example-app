@@ -10,15 +10,15 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 @Repository
-public interface EventRepository extends JpaRepository<Event, Integer>, JpaSpecificationExecutor<Event> {
+public interface EventRepository extends JpaRepository<Event, Long>, JpaSpecificationExecutor<Event> {
     List<Event> findByTitleContainingIgnoreCase(String title);
 
-    List<Event> findByVenueId(Integer venueId);
+    List<Event> findByVenueId(Long venueId);
 
     List<Event> findByAdmissionMode(EventAdmissionMode admissionMode);
 
     List<Event> findByStartsAtBetween(LocalDateTime from, LocalDateTime to);
 
-    List<Event> findByVenueIdIn(List<Integer> venueIds);
+    List<Event> findByVenueIdIn(List<Long> venueIds);
 
 }

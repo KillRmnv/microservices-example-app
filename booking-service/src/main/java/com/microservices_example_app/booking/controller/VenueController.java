@@ -42,7 +42,7 @@ public class VenueController {
 
     @Operation(summary = "Get a venue by id")
     @GetMapping("/{id}")
-    public VenueResponseDto getById(@Parameter(description = "Venue id") @PathVariable Integer id) {
+    public VenueResponseDto getById(@Parameter(description = "Venue id") @PathVariable Long id) {
         log.info("Fetching venue with id: {}", id);
         return venueService.getById(id);
     }
@@ -59,7 +59,7 @@ public class VenueController {
 
     @Operation(summary = "Update a venue")
     @PutMapping("/{id}")
-    public VenueResponseDto updateById(@Parameter(description = "Venue id") @PathVariable Integer id,
+    public VenueResponseDto updateById(@Parameter(description = "Venue id") @PathVariable Long id,
                                        @Valid @RequestBody VenueUpdateRequestDto requestDto) {
         requireEventManagerOrAdmin();
         log.info("Updating venue with id: {}", id);
@@ -69,7 +69,7 @@ public class VenueController {
 
     @Operation(summary = "Delete a venue")
     @DeleteMapping("/{id}")
-    public void deleteById(@Parameter(description = "Venue id") @PathVariable Integer id) {
+    public void deleteById(@Parameter(description = "Venue id") @PathVariable Long id) {
         requireEventManagerOrAdmin();
         log.info("Deleting venue with id: {}", id);
         venueService.deleteById(id);

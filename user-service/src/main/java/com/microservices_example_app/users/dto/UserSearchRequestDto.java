@@ -12,7 +12,7 @@ import lombok.Setter;
 @Setter
 @Schema(description = "Filter for searching users")
 public class UserSearchRequestDto {
-    private int id;
+    private Long id;
     private String username;
     private String email;
     private String role;

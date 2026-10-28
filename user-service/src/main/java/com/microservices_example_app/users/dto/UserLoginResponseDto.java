@@ -13,7 +13,7 @@ public class UserLoginResponseDto {
     private String jwt;
     
     @JsonProperty("id")
-    private int id;
+    private Long id;
     
     @JsonProperty("role")
     private String role;

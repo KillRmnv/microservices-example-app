@@ -50,6 +50,10 @@ def booking_handler(request: httpx.Request) -> httpx.Response:
             {"id": 1, "active": True, "zone": "VIP", "price": 120.0},
             {"id": 2, "active": True, "zone": "BASIC", "price": 60.0},
         ])
+    if "eventId=42" in str(request.url):
+        return httpx.Response(200, json=[
+            {"id": 3, "active": True, "zone": "BASIC", "price": 90.0},
+        ])
     return httpx.Response(200, json=[])
 
 
@@ -137,3 +141,36 @@ async def test_search_turn_uses_english_catalog():
     response = await service.search_turn(contract)
     assert response.messages[0].text == "Search conditions are locked in."
     assert response.messages[-1].text == "Here is what we found:"
+
+
+def catalog_store() -> InMemoryStore:
+    """A mirrored booking event: UUID point id, bookable id in the payload."""
+    return InMemoryStore(
+        [
+            ("8f14e45f-ceea-467a-9c5b-3b1c1e0a1a11", [1.0, 0.0, 0.0],
+             {"title": "Симфонический вечер", "city": "Минск",
+              "price_min": None, "booking_event_id": 42}),
+        ],
+        {"8f14e45f-ceea-467a-9c5b-3b1c1e0a1a11": encode_sparse("Симфонический вечер")},
+    )
+
+
+@pytest.mark.asyncio
+async def test_catalog_hit_uses_booking_event_id():
+    rows = [{"id": "8f14e45f-ceea-467a-9c5b-3b1c1e0a1a11",
+             "title": "Симфонический вечер", "price_min": None}]
+    service = make_service(catalog_store(), FakeCollector(rows))
+    response = await service.search_turn(make_contract())
+    card = response.messages[-1].results[0]
+    # The card carries the numeric booking id, so the frontend can book it.
+    assert card.event_id == "42"
+    assert card.meta == "осталось мало"
+    assert card.price == "от 90 руб."
+
+
+@pytest.mark.asyncio
+async def test_empty_vector_index_falls_back_to_lexical():
+    service = make_service(InMemoryStore(), FakeCollector(collector_rows()))
+    response = await service.search_turn(make_contract())
+    assert response.messages[-1].kind == "results"
+    assert {card.event_id for card in response.messages[-1].results} == {"aaa", "7"}

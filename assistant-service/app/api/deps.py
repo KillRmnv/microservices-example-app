@@ -45,6 +45,7 @@ def _search_service(config: Settings, *, venues: bool) -> SearchService:
         QdrantStore(config.qdrant_url, collection),
         CollectorClient(config.collector_base_url),
         candidate_multiplier=config.search_candidate_multiplier,
+        query_timeout_s=config.query_embedding_timeout_s,
     )
 
 

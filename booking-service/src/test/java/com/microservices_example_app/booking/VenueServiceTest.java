@@ -10,6 +10,7 @@ import com.microservices_example_app.booking.model.Event;
 import com.microservices_example_app.booking.model.Ticket;
 import com.microservices_example_app.booking.model.Town;
 import com.microservices_example_app.booking.model.Venue;
+import com.microservices_example_app.booking.producers.BookingCatalogProducer;
 import com.microservices_example_app.booking.producers.NotificationKafkaUserProducer;
 import com.microservices_example_app.booking.repository.EventRepository;
 import com.microservices_example_app.booking.repository.TicketRepository;
@@ -54,6 +55,9 @@ class VenueServiceTest {
     private NotificationKafkaUserProducer kafkaUserProducer;
 
     @Mock
+    private BookingCatalogProducer catalogProducer;
+
+    @Mock
     private EntityManager entityManager;
 
     @InjectMocks
@@ -68,23 +72,23 @@ class VenueServiceTest {
     @Test
     void create_shouldCreateVenue() {
         VenueCreateRequestDto request = new VenueCreateRequestDto();
-        request.setTownId(10);
+        request.setTownId(10L);
         request.setPlace("Main Hall");
         request.setCapacity(5000);
 
         Town town = Town.builder()
-                .id(10)
+                .id(10L)
                 .name("Berlin")
                 .build();
 
         Venue savedVenue = Venue.builder()
-                .id(100)
+                .id(100L)
                 .town(town)
                 .place("Main Hall")
                 .capacity(5000)
                 .build();
 
-        when(townRepository.findById(10)).thenReturn(Optional.of(town));
+        when(townRepository.findById(10L)).thenReturn(Optional.of(town));
         when(venueRepository.save(any(Venue.class))).thenReturn(savedVenue);
 
         VenueResponseDto result = venueService.create(request);
@@ -108,9 +112,9 @@ class VenueServiceTest {
     @Test
     void create_shouldThrowWhenTownNotFound() {
         VenueCreateRequestDto request = new VenueCreateRequestDto();
-        request.setTownId(10);
+        request.setTownId(10L);
 
-        when(townRepository.findById(10)).thenReturn(Optional.empty());
+        when(townRepository.findById(10L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> venueService.create(request))
                 .isInstanceOf(NotFoundException.class)
@@ -122,20 +126,20 @@ class VenueServiceTest {
     @Test
     void getById_shouldReturnVenue() {
         Town town = Town.builder()
-                .id(10)
+                .id(10L)
                 .name("Berlin")
                 .build();
 
         Venue venue = Venue.builder()
-                .id(100)
+                .id(100L)
                 .town(town)
                 .place("Main Hall")
                 .capacity(5000)
                 .build();
 
-        when(venueRepository.findById(100)).thenReturn(Optional.of(venue));
+        when(venueRepository.findById(100L)).thenReturn(Optional.of(venue));
 
-        VenueResponseDto result = venueService.getById(100);
+        VenueResponseDto result = venueService.getById(100L);
 
         assertThat(result.getId()).isEqualTo(100);
         assertThat(result.getTownId()).isEqualTo(10);
@@ -146,9 +150,9 @@ class VenueServiceTest {
 
     @Test
     void getById_shouldThrowWhenVenueNotFound() {
-        when(venueRepository.findById(100)).thenReturn(Optional.empty());
+        when(venueRepository.findById(100L)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> venueService.getById(100))
+        assertThatThrownBy(() -> venueService.getById(100L))
                 .isInstanceOf(NotFoundException.class)
                 .hasMessage("Venue not found");
     }
@@ -156,64 +160,64 @@ class VenueServiceTest {
     @Test
     void deleteById_shouldDeleteVenue() {
         Venue venue = Venue.builder()
-                .id(100)
+                .id(100L)
                 .place("Main Hall")
                 .build();
 
-        when(venueRepository.findById(100)).thenReturn(Optional.of(venue));
-        when(eventRepository.findByVenueId(100)).thenReturn(List.of());
+        when(venueRepository.findById(100L)).thenReturn(Optional.of(venue));
+        when(eventRepository.findByVenueId(100L)).thenReturn(List.of());
 
-        venueService.deleteById(100);
+        venueService.deleteById(100L);
 
-        verify(venueRepository).findById(100);
-        verify(venueRepository).deleteById(100);
+        verify(venueRepository).findById(100L);
+        verify(venueRepository).deleteById(100L);
         verify(venueRepository).flush();
     }
 
     @Test
     void deleteById_shouldThrowWhenIdInvalid() {
-        assertThatThrownBy(() -> venueService.deleteById(0))
+        assertThatThrownBy(() -> venueService.deleteById(0L))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Venue id must be positive");
 
-        verify(venueRepository, never()).findById(anyInt());
-        verify(venueRepository, never()).deleteById(anyInt());
+        verify(venueRepository, never()).findById(anyLong());
+        verify(venueRepository, never()).deleteById(anyLong());
     }
 
     @Test
     void deleteById_shouldThrowWhenVenueNotFound() {
-        when(venueRepository.findById(100)).thenReturn(Optional.empty());
+        when(venueRepository.findById(100L)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> venueService.deleteById(100))
+        assertThatThrownBy(() -> venueService.deleteById(100L))
                 .isInstanceOf(NotFoundException.class)
                 .hasMessage("Venue not found");
 
-        verify(venueRepository).findById(100);
-        verify(venueRepository, never()).deleteById(anyInt());
+        verify(venueRepository).findById(100L);
+        verify(venueRepository, never()).deleteById(anyLong());
     }
 
     @Test
     void deleteByFilter_shouldDeleteMatchedVenuesAndReturnCount() {
         VenueDeleteRequestDto request = new VenueDeleteRequestDto();
-        request.setTownId(10);
+        request.setTownId(10L);
         request.setPlace("Main Hall");
         request.setMinCapacity(1000);
         request.setMaxCapacity(10000);
 
         Town town = Town.builder()
-                .id(10)
+                .id(10L)
                 .name("Berlin")
                 .build();
 
         Venue venue1 = Venue.builder()
-                .id(100)
+                .id(100L)
                 .town(town)
                 .place("Main Hall")
                 .capacity(5000)
                 .build();
 
         Venue venue2 = Venue.builder()
-                .id(101)
+                .id(101L)
                 .town(town)
                 .place("Main Hall")
                 .capacity(7000)
@@ -233,18 +237,18 @@ class VenueServiceTest {
     @Test
     void searchByFilter_shouldReturnVenues() {
         VenueSearchRequestDto filter = new VenueSearchRequestDto();
-        filter.setTownId(10);
+        filter.setTownId(10L);
         filter.setPlace("Main Hall");
         filter.setMinCapacity(1000);
         filter.setMaxCapacity(10000);
 
         Town town = Town.builder()
-                .id(10)
+                .id(10L)
                 .name("Berlin")
                 .build();
 
         Venue venue = Venue.builder()
-                .id(100)
+                .id(100L)
                 .town(town)
                 .place("Main Hall")
                 .capacity(5000)
@@ -285,39 +289,39 @@ class VenueServiceTest {
     @Test
     void updateVenueById_shouldUpdateVenue() {
         VenueUpdateRequestDto request = new VenueUpdateRequestDto();
-        request.setId(100);
-        request.setTownId(11);
+        request.setId(100L);
+        request.setTownId(11L);
         request.setPlace("New Hall");
         request.setCapacity(8000);
 
         Town oldTown = Town.builder()
-                .id(10)
+                .id(10L)
                 .name("Berlin")
                 .build();
 
         Town newTown = Town.builder()
-                .id(11)
+                .id(11L)
                 .name("Munich")
                 .build();
 
         Venue existing = Venue.builder()
-                .id(100)
+                .id(100L)
                 .town(oldTown)
                 .place("Old Hall")
                 .capacity(5000)
                 .build();
 
         Venue updated = Venue.builder()
-                .id(100)
+                .id(100L)
                 .town(newTown)
                 .place("New Hall")
                 .capacity(8000)
                 .build();
 
-        when(venueRepository.findById(100)).thenReturn(Optional.of(existing));
-        when(townRepository.findById(11)).thenReturn(Optional.of(newTown));
+        when(venueRepository.findById(100L)).thenReturn(Optional.of(existing));
+        when(townRepository.findById(11L)).thenReturn(Optional.of(newTown));
         when(venueRepository.save(any(Venue.class))).thenReturn(updated);
-        when(eventRepository.findByVenueId(100)).thenReturn(List.of());
+        when(eventRepository.findByVenueId(100L)).thenReturn(List.of());
 
         VenueResponseDto result = venueService.updateVenueById(request);
 
@@ -340,9 +344,9 @@ class VenueServiceTest {
     @Test
     void updateVenueById_shouldThrowWhenVenueNotFound() {
         VenueUpdateRequestDto request = new VenueUpdateRequestDto();
-        request.setId(100);
+        request.setId(100L);
 
-        when(venueRepository.findById(100)).thenReturn(Optional.empty());
+        when(venueRepository.findById(100L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> venueService.updateVenueById(request))
                 .isInstanceOf(NotFoundException.class)
@@ -354,23 +358,23 @@ class VenueServiceTest {
     @Test
     void updateVenueById_shouldThrowWhenTownNotFound() {
         VenueUpdateRequestDto request = new VenueUpdateRequestDto();
-        request.setId(100);
-        request.setTownId(11);
+        request.setId(100L);
+        request.setTownId(11L);
 
         Town oldTown = Town.builder()
-                .id(10)
+                .id(10L)
                 .name("Berlin")
                 .build();
 
         Venue existing = Venue.builder()
-                .id(100)
+                .id(100L)
                 .town(oldTown)
                 .place("Old Hall")
                 .capacity(5000)
                 .build();
 
-        when(venueRepository.findById(100)).thenReturn(Optional.of(existing));
-        when(townRepository.findById(11)).thenReturn(Optional.empty());
+        when(venueRepository.findById(100L)).thenReturn(Optional.of(existing));
+        when(townRepository.findById(11L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> venueService.updateVenueById(request))
                 .isInstanceOf(NotFoundException.class)
@@ -381,8 +385,8 @@ class VenueServiceTest {
 
     @Test
     void getAll_shouldReturnAllVenues() {
-        Town town = Town.builder().id(10).name("Berlin").build();
-        Venue venue = Venue.builder().id(100).town(town).place("Main Hall").capacity(5000).build();
+        Town town = Town.builder().id(10L).name("Berlin").build();
+        Venue venue = Venue.builder().id(100L).town(town).place("Main Hall").capacity(5000).build();
         when(venueRepository.findAll()).thenReturn(List.of(venue));
         List<VenueResponseDto> result = venueService.getAll();
         assertThat(result).hasSize(1);
@@ -399,7 +403,7 @@ class VenueServiceTest {
     @Test
     void updateVenueById_shouldThrowWhenIdNegative() {
         VenueUpdateRequestDto request = new VenueUpdateRequestDto();
-        request.setId(-1);
+        request.setId(-1L);
         assertThatThrownBy(() -> venueService.updateVenueById(request))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Venue id must be positive");
@@ -407,13 +411,13 @@ class VenueServiceTest {
 
     @Test
     void deleteById_shouldDeleteVenueWithEventsAndSendKafka() {
-        Venue venue = Venue.builder().id(100).place("Main Hall").build();
-        Event event = Event.builder().id(10).title("Concert").venue(venue).build();
-        when(venueRepository.findById(100)).thenReturn(Optional.of(venue));
-        when(eventRepository.findByVenueId(100)).thenReturn(List.of(event));
-        when(ticketRepository.findByEventIdIn(List.of(10))).thenReturn(List.of());
-        venueService.deleteById(100);
-        verify(venueRepository).deleteById(100);
+        Venue venue = Venue.builder().id(100L).place("Main Hall").build();
+        Event event = Event.builder().id(10L).title("Concert").venue(venue).build();
+        when(venueRepository.findById(100L)).thenReturn(Optional.of(venue));
+        when(eventRepository.findByVenueId(100L)).thenReturn(List.of(event));
+        when(ticketRepository.findByEventIdIn(List.of(10L))).thenReturn(List.of());
+        venueService.deleteById(100L);
+        verify(venueRepository).deleteById(100L);
         verify(kafkaUserProducer).sendDeleteEventEvent(any());
     }
 
@@ -421,20 +425,20 @@ class VenueServiceTest {
     @Test
     void updateVenueById_shouldDeactivateExcessTicketsWhenCapacityReduced() {
         VenueUpdateRequestDto request = new VenueUpdateRequestDto();
-        request.setId(100);
+        request.setId(100L);
         request.setCapacity(1);
-        Town town = Town.builder().id(10).name("Berlin").build();
-        Venue existing = Venue.builder().id(100).town(town).place("Main Hall").capacity(5).build();
-        Venue saved = Venue.builder().id(100).town(town).place("Main Hall").capacity(1).build();
-        Event event = Event.builder().id(10).title("Concert").venue(existing).build();
-        Ticket ticket1 = Ticket.builder().id(1).event(event).userId(77).active(true).build();
-        Ticket ticket2 = Ticket.builder().id(2).event(event).userId(88).active(true).build();
-        Ticket ticket3 = Ticket.builder().id(3).event(event).userId(99).active(true).build();
-        when(venueRepository.findById(100)).thenReturn(Optional.of(existing));
+        Town town = Town.builder().id(10L).name("Berlin").build();
+        Venue existing = Venue.builder().id(100L).town(town).place("Main Hall").capacity(5).build();
+        Venue saved = Venue.builder().id(100L).town(town).place("Main Hall").capacity(1).build();
+        Event event = Event.builder().id(10L).title("Concert").venue(existing).build();
+        Ticket ticket1 = Ticket.builder().id(1L).event(event).userId(77L).active(true).build();
+        Ticket ticket2 = Ticket.builder().id(2L).event(event).userId(88L).active(true).build();
+        Ticket ticket3 = Ticket.builder().id(3L).event(event).userId(99L).active(true).build();
+        when(venueRepository.findById(100L)).thenReturn(Optional.of(existing));
         when(venueRepository.save(any(Venue.class))).thenReturn(saved);
-        when(eventRepository.findByVenueId(100)).thenReturn(List.of(event));
-        when(ticketRepository.findByEventIdIn(List.of(10))).thenReturn(List.of(ticket1, ticket2, ticket3));
-        when(ticketRepository.findByEventIdInAndUserIdIsNotNullOrderByIdDesc(List.of(10))).thenReturn(List.of(ticket3, ticket2, ticket1));
+        when(eventRepository.findByVenueId(100L)).thenReturn(List.of(event));
+        when(ticketRepository.findByEventIdIn(List.of(10L))).thenReturn(List.of(ticket1, ticket2, ticket3));
+        when(ticketRepository.findByEventIdInAndUserIdIsNotNullOrderByIdDesc(List.of(10L))).thenReturn(List.of(ticket3, ticket2, ticket1));
         VenueResponseDto result = venueService.updateVenueById(request);
         assertThat(result.getCapacity()).isEqualTo(1);
         verify(ticketRepository).saveAll(argThat(tickets -> {
@@ -447,18 +451,18 @@ class VenueServiceTest {
     @Test
     void updateVenueById_shouldNotDeactivateWhenNoExcess() {
         VenueUpdateRequestDto request = new VenueUpdateRequestDto();
-        request.setId(100);
+        request.setId(100L);
         request.setCapacity(3);
-        Town town = Town.builder().id(10).name("Berlin").build();
-        Venue existing = Venue.builder().id(100).town(town).place("Main Hall").capacity(5).build();
-        Venue saved = Venue.builder().id(100).town(town).place("Main Hall").capacity(3).build();
-        Event event = Event.builder().id(10).title("Concert").venue(existing).build();
-        Ticket ticket1 = Ticket.builder().id(1).event(event).userId(77).active(true).build();
-        when(venueRepository.findById(100)).thenReturn(Optional.of(existing));
+        Town town = Town.builder().id(10L).name("Berlin").build();
+        Venue existing = Venue.builder().id(100L).town(town).place("Main Hall").capacity(5).build();
+        Venue saved = Venue.builder().id(100L).town(town).place("Main Hall").capacity(3).build();
+        Event event = Event.builder().id(10L).title("Concert").venue(existing).build();
+        Ticket ticket1 = Ticket.builder().id(1L).event(event).userId(77L).active(true).build();
+        when(venueRepository.findById(100L)).thenReturn(Optional.of(existing));
         when(venueRepository.save(any(Venue.class))).thenReturn(saved);
-        when(eventRepository.findByVenueId(100)).thenReturn(List.of(event));
-        when(ticketRepository.findByEventIdIn(List.of(10))).thenReturn(List.of(ticket1));
-        when(ticketRepository.findByEventIdInAndUserIdIsNotNullOrderByIdDesc(List.of(10))).thenReturn(List.of(ticket1));
+        when(eventRepository.findByVenueId(100L)).thenReturn(List.of(event));
+        when(ticketRepository.findByEventIdIn(List.of(10L))).thenReturn(List.of(ticket1));
+        when(ticketRepository.findByEventIdInAndUserIdIsNotNullOrderByIdDesc(List.of(10L))).thenReturn(List.of(ticket1));
         VenueResponseDto result = venueService.updateVenueById(request);
         assertThat(result.getCapacity()).isEqualTo(3);
         verify(ticketRepository, never()).saveAll(any());
@@ -468,18 +472,18 @@ class VenueServiceTest {
     @Test
     void deleteByFilter_shouldIncludeUserIdsWhenVenuesHaveEvents() {
         VenueDeleteRequestDto request = new VenueDeleteRequestDto();
-        request.setTownId(10);
-        Town town = Town.builder().id(10).name("Berlin").build();
-        Venue venue = Venue.builder().id(100).town(town).place("Main Hall").capacity(5000).build();
-        Event event = Event.builder().id(10).title("Concert").venue(venue).build();
-        Ticket ticket = Ticket.builder().id(1).event(event).userId(77).build();
+        request.setTownId(10L);
+        Town town = Town.builder().id(10L).name("Berlin").build();
+        Venue venue = Venue.builder().id(100L).town(town).place("Main Hall").capacity(5000).build();
+        Event event = Event.builder().id(10L).title("Concert").venue(venue).build();
+        Ticket ticket = Ticket.builder().id(1L).event(event).userId(77L).build();
         when(venueRepository.findAll(any(Specification.class))).thenReturn(List.of(venue));
-        when(eventRepository.findByVenueIdIn(List.of(100))).thenReturn(List.of(event));
-        when(ticketRepository.findByEventIdIn(List.of(10))).thenReturn(List.of(ticket));
+        when(eventRepository.findByVenueIdIn(List.of(100L))).thenReturn(List.of(event));
+        when(ticketRepository.findByEventIdIn(List.of(10L))).thenReturn(List.of(ticket));
         long result = venueService.deleteByFilter(request);
         assertThat(result).isEqualTo(1);
         verify(kafkaUserProducer).sendDeleteEventEvent(argThat(e ->
-                e.getUserIds().contains(77)
+                e.getUserIds().contains(77L)
         ));
     }
 
@@ -496,13 +500,13 @@ class VenueServiceTest {
     @Test
     void updateVenueById_shouldKeepFieldsWhenNull() {
         VenueUpdateRequestDto request = new VenueUpdateRequestDto();
-        request.setId(100);
-        Town town = Town.builder().id(10).name("Berlin").build();
-        Venue existing = Venue.builder().id(100).town(town).place("Main Hall").capacity(5000).build();
-        Venue saved = Venue.builder().id(100).town(town).place("Main Hall").capacity(5000).build();
-        when(venueRepository.findById(100)).thenReturn(Optional.of(existing));
+        request.setId(100L);
+        Town town = Town.builder().id(10L).name("Berlin").build();
+        Venue existing = Venue.builder().id(100L).town(town).place("Main Hall").capacity(5000).build();
+        Venue saved = Venue.builder().id(100L).town(town).place("Main Hall").capacity(5000).build();
+        when(venueRepository.findById(100L)).thenReturn(Optional.of(existing));
         when(venueRepository.save(any(Venue.class))).thenReturn(saved);
-        when(eventRepository.findByVenueId(100)).thenReturn(List.of());
+        when(eventRepository.findByVenueId(100L)).thenReturn(List.of());
         VenueResponseDto result = venueService.updateVenueById(request);
         assertThat(result.getPlace()).isEqualTo("Main Hall");
         assertThat(result.getCapacity()).isEqualTo(5000);

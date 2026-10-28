@@ -12,6 +12,6 @@ import lombok.Setter;
 @NoArgsConstructor
 @Schema(description = "Request to update an existing town")
 public class TownUpdateRequestDto {
-    private int id;
+    private Long id;
     private String name;
 }

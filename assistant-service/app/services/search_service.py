@@ -7,6 +7,7 @@ lexical endpoint fused in Python — the old path, kept for resilience.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from ..clients.collector import CollectorClient
@@ -32,11 +33,13 @@ HYBRID_ORIGIN = "hybrid"
 class SearchService:
     def __init__(self, embedder: EmbeddingProvider, store: VectorStore,
                  collector: CollectorClient, *,
-                 candidate_multiplier: int = 2) -> None:
+                 candidate_multiplier: int = 2,
+                 query_timeout_s: float = 2.0) -> None:
         self._embedder = embedder
         self._store = store
         self._collector = collector
         self._candidate_multiplier = max(1, candidate_multiplier)
+        self._query_timeout_s = query_timeout_s
 
     async def _encode_query(self, query: str) -> tuple[list[float] | None,
                                                       SparseVector | None]:
@@ -44,7 +47,11 @@ class SearchService:
         dense: list[float] | None = None
         if query.strip():
             try:
-                dense = (await self._embedder.embed([query]))[0]
+                # A query embedding must never stall the turn: without a
+                # model server the sparse half still answers in milliseconds.
+                dense = (await asyncio.wait_for(
+                    self._embedder.embed([query]),
+                    timeout=self._query_timeout_s))[0]
             except Exception as exc:  # noqa: BLE001 — sparse still works
                 log.warning("dense embed failed, sparse only: %s", exc)
         return dense, encode_sparse(query)
@@ -81,6 +88,13 @@ class SearchService:
                               payload=dict(hit.payload)) for hit in hits]
         except Exception as exc:  # noqa: BLE001 — lexical fallback
             log.warning("qdrant hybrid failed, lexical fallback: %s", exc)
+            fused = await self._lexical_fallback(plan, pipeline, candidates,
+                                                 venues)
+            return self._finish_fallback(fused, pipeline, plan, venues)
+        if not fused:
+            # Empty vector index (fresh volume, embeddings not backfilled yet)
+            # must not hide rows that the lexical half can still find.
+            log.info("hybrid returned no hits, lexical fallback")
             fused = await self._lexical_fallback(plan, pipeline, candidates,
                                                  venues)
             return self._finish_fallback(fused, pipeline, plan, venues)

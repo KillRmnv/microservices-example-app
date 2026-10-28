@@ -45,7 +45,7 @@ public class TicketService {
         Event event = eventRepository.findById(requestDto.getEventId())
                 .orElseThrow(() -> new NotFoundException("Event not found"));
 
-        Integer currentUserId = jwtRequestUserExtractor.extractUserId();
+        Long currentUserId = jwtRequestUserExtractor.extractUserId();
         String email = jwtRequestUserExtractor.extractEmail();
         String username = jwtRequestUserExtractor.extractUsername();
 
@@ -73,7 +73,7 @@ public class TicketService {
     }
 
     @Transactional
-    public TicketResponseDto getById(Integer id) {
+    public TicketResponseDto getById(Long id) {
         log.info("Fetching ticket with id: {}", id);
 
         Ticket ticket = ticketRepository.findById(id)
@@ -111,7 +111,7 @@ public class TicketService {
     }
 
     @Transactional
-    public void deleteById(Integer id) {
+    public void deleteById(Long id) {
         if (id == null || id < 1) {
             throw new IllegalArgumentException("Ticket id must be positive");
         }
@@ -119,7 +119,7 @@ public class TicketService {
         Ticket ticket = ticketRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("Ticket not found"));
 
-        Integer currentUserId = jwtRequestUserExtractor.extractUserId();
+        Long currentUserId = jwtRequestUserExtractor.extractUserId();
         String email = jwtRequestUserExtractor.extractEmail();
         String username = jwtRequestUserExtractor.extractUsername();
 
@@ -179,11 +179,11 @@ public class TicketService {
         if (request.getId() == null || request.getId() < 1) {
             throw new IllegalArgumentException("Ticket id must be positive");
         }
-        Integer currentUserId = jwtRequestUserExtractor.extractUserId();
+        Long currentUserId = jwtRequestUserExtractor.extractUserId();
         Ticket ticket = ticketRepository.findById(request.getId())
                 .orElseThrow(() -> new NotFoundException("No ticket with id=" + request.getId()));
 
-        Integer previousUserId = ticket.getUserId();
+        Long previousUserId = ticket.getUserId();
         log.info("previous userid:{}",previousUserId);
         if (request.getEventId() != null) {
             Event event = eventRepository.findById(request.getEventId())
@@ -219,7 +219,7 @@ public class TicketService {
         return toResponseDto(saved);
     }
     @Transactional
-    public TicketResponseDto refund(Integer id) {
+    public TicketResponseDto refund(Long id) {
         if (id == null || id < 1) {
             throw new IllegalArgumentException("Ticket id must be positive");
         }
@@ -227,7 +227,7 @@ public class TicketService {
         Ticket ticket = ticketRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("Ticket not found"));
 
-        Integer currentUserId = jwtRequestUserExtractor.extractUserId();
+        Long currentUserId = jwtRequestUserExtractor.extractUserId();
         String email = jwtRequestUserExtractor.extractEmail();
         String username = jwtRequestUserExtractor.extractUsername();
 

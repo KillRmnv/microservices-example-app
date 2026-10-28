@@ -17,13 +17,13 @@ import lombok.Setter;
 @AllArgsConstructor
 @Schema(description = "Request to update a seat-bound ticket")
 public class SeatableTicketUpdateRequestDto {
-    private Integer id;
-    private Integer eventId;
-    private Integer seatId;
+    private Long id;
+    private Long eventId;
+    private Long seatId;
     private Zone zone;
     private BigDecimal price;
     private Boolean active;
-    private Integer userId;
+    private Long userId;
     private String sector;
     private String row;
     private String number;

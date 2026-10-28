@@ -10,7 +10,7 @@ import lombok.Setter;
 @Setter
 public class UserUpdatedEvent {
     @NotNull(message = "User ID must not be null")
-    private Integer userId;
+    private Long userId;
     private String email;
     private String username;
     private String role;

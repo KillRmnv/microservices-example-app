@@ -12,7 +12,7 @@ import lombok.Setter;
 @NoArgsConstructor
 @Schema(description = "Fields to update on an existing user")
 public class UserUpdateRequestDto {
-    private int id;
+    private Long id;
     private String username;
     private String email;
     private String role;

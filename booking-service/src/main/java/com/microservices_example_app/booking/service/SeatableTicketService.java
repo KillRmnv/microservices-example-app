@@ -52,7 +52,7 @@ public class SeatableTicketService {
         Seat seat = seatRepository.findById(requestDto.getSeatId())
                 .orElseThrow(() -> new NotFoundException("Seat not found"));
 
-        Integer currentUserId = jwtRequestUserExtractor.extractUserId();
+        Long currentUserId = jwtRequestUserExtractor.extractUserId();
         String email = jwtRequestUserExtractor.extractEmail();
         String username = jwtRequestUserExtractor.extractUsername();
 
@@ -81,7 +81,7 @@ public class SeatableTicketService {
     }
 
     @Transactional
-    public SeatableTicketResponseDto getById(Integer id) {
+    public SeatableTicketResponseDto getById(Long id) {
         log.info("Fetching seatable ticket with id: {}", id);
 
         SeatableTicket ticket = seatableTicketRepository.findById(id)
@@ -91,7 +91,7 @@ public class SeatableTicketService {
     }
 
     @Transactional
-    public void deleteById(Integer id) {
+    public void deleteById(Long id) {
         if (id == null || id < 1) {
             throw new IllegalArgumentException("SeatableTicket id must be positive");
         }
@@ -99,7 +99,7 @@ public class SeatableTicketService {
         SeatableTicket ticket = seatableTicketRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("Seatable ticket not found"));
 
-        Integer currentUserId = jwtRequestUserExtractor.extractUserId();
+        Long currentUserId = jwtRequestUserExtractor.extractUserId();
         String email = jwtRequestUserExtractor.extractEmail();
         String username = jwtRequestUserExtractor.extractUsername();
 
@@ -165,8 +165,8 @@ public class SeatableTicketService {
         SeatableTicket ticket = seatableTicketRepository.findById(request.getId())
                 .orElseThrow(() -> new NotFoundException("No seatable ticket with id=" + request.getId()));
 
-        Integer currentUserId = jwtRequestUserExtractor.extractUserId();
-        Integer previousUserId = ticket.getUserId();
+        Long currentUserId = jwtRequestUserExtractor.extractUserId();
+        Long previousUserId = ticket.getUserId();
         log.info("previous userid:{}", previousUserId);
 
         var builder = SeatableTicket.builder().id(ticket.getId());
@@ -234,7 +234,7 @@ public class SeatableTicketService {
         return toResponseDto(saved);
     }
     @Transactional
-    public SeatableTicketResponseDto refund(Integer id) {
+    public SeatableTicketResponseDto refund(Long id) {
         if (id == null || id < 1) {
             throw new IllegalArgumentException("SeatableTicket id must be positive");
         }
@@ -242,7 +242,7 @@ public class SeatableTicketService {
         SeatableTicket ticket = seatableTicketRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("Seatable ticket not found"));
 
-        Integer currentUserId = jwtRequestUserExtractor.extractUserId();
+        Long currentUserId = jwtRequestUserExtractor.extractUserId();
         String email = jwtRequestUserExtractor.extractEmail();
         String username = jwtRequestUserExtractor.extractUsername();
 
@@ -268,7 +268,7 @@ public class SeatableTicketService {
     }
     @Transactional
     public long deleteByFilter(SeatableTicketDeleteRequestDto requestDto) {
-        Integer currentUserId = jwtRequestUserExtractor.extractUserId();
+        Long currentUserId = jwtRequestUserExtractor.extractUserId();
         if (currentUserId == null) {
             throw new IllegalArgumentException("Cannot delete by filter: user ID not available from token");
         }

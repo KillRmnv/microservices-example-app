@@ -12,11 +12,11 @@ import java.time.LocalDateTime;
 @Getter
 @Setter
 public class EventDeleteRequestDto {
-    private Integer id;
+    private Long id;
     private String title;
     private LocalDateTime startsAt;
     private LocalDateTime endsAt;
-    private Integer venueId;
+    private Long venueId;
     private String venuePlace;
     private EventAdmissionMode admissionMode;
 }

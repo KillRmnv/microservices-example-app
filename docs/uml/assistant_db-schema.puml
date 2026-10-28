@@ -1,0 +1,30 @@
+@startuml
+skinparam linetype ortho
+skinparam nodesep 60
+skinparam ranksep 80
+title assistant_db — dialogue runs and booking intents
+
+entity "booking_holds" as booking_holds {
+  * id : uuid
+  + session_id : text
+  + event_id : bigint
+  + zone : text
+  + price : numeric
+  + party_size : integer
+  + status : text
+  + created_at : timestamp with time zone
+  + expires_at : timestamp with time zone
+  confirmed_at : timestamp with time zone
+}
+
+entity "dialogue_runs" as dialogue_runs {
+  * id : bigint
+  + session_id : text
+  + turn : integer
+  + action : text
+  + needs_clarification : boolean
+  + duration_ms : integer
+  + created_at : timestamp with time zone
+}
+
+@enduml

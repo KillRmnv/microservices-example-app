@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 EVENT_COLUMNS = (
-    "id, source, source_url, title, category, start_at, end_at,"
-    " venue_name, address, city, price_min, price_max, currency"
+    "id, source, source_url, booking_event_id, title, category, start_at,"
+    " end_at, venue_name, address, city, price_min, price_max, currency"
 )
 VENUE_COLUMNS = (
     "id, source, name, rubric, address, city, latitude, longitude,"
@@ -50,9 +50,9 @@ def search_venues(conn, q: str, city: str | None, rubric: str | None,
 
 def unembedded_events(conn, source: str, limit: int | None) -> list:
     params: list = []
-    query = ("SELECT id, title, venue_name, description, city, category,"
-             " price_min, price_max, start_at FROM collected_events"
-             " WHERE embedded_at IS NULL")
+    query = ("SELECT id, booking_event_id, title, venue_name, description,"
+             " city, category, price_min, price_max, start_at"
+             " FROM collected_events WHERE embedded_at IS NULL")
     if source != "all":
         query += " AND source = %s"
         params.append(source)
@@ -90,8 +90,8 @@ def mark_venues_embedded(conn, ids: list) -> None:
 def all_events_for_reindex(conn) -> list:
     """Every event row with the fields needed for hybrid reindex."""
     return conn.execute(
-        "SELECT id, title, venue_name, description, city, category,"
-        " price_min, price_max, start_at FROM collected_events"
+        "SELECT id, booking_event_id, title, venue_name, description, city,"
+        " category, price_min, price_max, start_at FROM collected_events"
         " ORDER BY fetched_at").fetchall()
 
 

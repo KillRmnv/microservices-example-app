@@ -8,6 +8,7 @@ import com.microservices_example_app.booking.model.Event;
 import com.microservices_example_app.booking.model.Ticket;
 import com.microservices_example_app.booking.model.Town;
 import com.microservices_example_app.booking.model.Venue;
+import com.microservices_example_app.booking.producers.BookingCatalogProducer;
 import com.microservices_example_app.booking.producers.NotificationKafkaUserProducer;
 import com.microservices_example_app.booking.repository.EventRepository;
 import com.microservices_example_app.booking.repository.TicketRepository;
@@ -48,6 +49,9 @@ class TownServiceTest {
     private NotificationKafkaUserProducer kafkaUserProducer;
 
     @Mock
+    private BookingCatalogProducer catalogProducer;
+
+    @Mock
     private EntityManager entityManager;
 
     @InjectMocks
@@ -63,7 +67,7 @@ class TownServiceTest {
     void create_shouldCreateTown() {
         TownCreateRequestDto request = new TownCreateRequestDto();
         request.setName("Berlin");
-        Town saved = Town.builder().id(1).name("Berlin").build();
+        Town saved = Town.builder().id(1L).name("Berlin").build();
         when(townRepository.save(any(Town.class))).thenReturn(saved);
         TownResponseDto result = townService.create(request);
         assertThat(result).isNotNull();
@@ -73,25 +77,25 @@ class TownServiceTest {
 
     @Test
     void getById_shouldReturnTown() {
-        Town town = Town.builder().id(1).name("Berlin").build();
-        when(townRepository.findById(1)).thenReturn(Optional.of(town));
-        TownResponseDto result = townService.getById(1);
+        Town town = Town.builder().id(1L).name("Berlin").build();
+        when(townRepository.findById(1L)).thenReturn(Optional.of(town));
+        TownResponseDto result = townService.getById(1L);
         assertThat(result.getId()).isEqualTo(1);
         assertThat(result.getName()).isEqualTo("Berlin");
     }
 
     @Test
     void getById_shouldThrowWhenTownNotFound() {
-        when(townRepository.findById(1)).thenReturn(Optional.empty());
-        assertThatThrownBy(() -> townService.getById(1))
+        when(townRepository.findById(1L)).thenReturn(Optional.empty());
+        assertThatThrownBy(() -> townService.getById(1L))
                 .isInstanceOf(NotFoundException.class)
                 .hasMessage("Town not found");
     }
 
     @Test
     void getAll_shouldReturnAllTowns() {
-        Town town1 = Town.builder().id(1).name("Berlin").build();
-        Town town2 = Town.builder().id(2).name("Munich").build();
+        Town town1 = Town.builder().id(1L).name("Berlin").build();
+        Town town2 = Town.builder().id(2L).name("Munich").build();
         when(townRepository.findAll()).thenReturn(List.of(town1, town2));
         List<TownResponseDto> result = townService.getAll();
         assertThat(result).hasSize(2);
@@ -108,11 +112,11 @@ class TownServiceTest {
     @Test
     void updateTownById_shouldUpdateTown() {
         TownUpdateRequestDto request = new TownUpdateRequestDto();
-        request.setId(1);
+        request.setId(1L);
         request.setName("Munich");
-        Town existing = Town.builder().id(1).name("Berlin").build();
-        Town saved = Town.builder().id(1).name("Munich").build();
-        when(townRepository.findById(1)).thenReturn(Optional.of(existing));
+        Town existing = Town.builder().id(1L).name("Berlin").build();
+        Town saved = Town.builder().id(1L).name("Munich").build();
+        when(townRepository.findById(1L)).thenReturn(Optional.of(existing));
         when(townRepository.save(any(Town.class))).thenReturn(saved);
         TownResponseDto result = townService.updateTownById(request);
         assertThat(result.getName()).isEqualTo("Munich");
@@ -121,9 +125,9 @@ class TownServiceTest {
     @Test
     void updateTownById_shouldThrowWhenTownNotFound() {
         TownUpdateRequestDto request = new TownUpdateRequestDto();
-        request.setId(1);
+        request.setId(1L);
         request.setName("Munich");
-        when(townRepository.findById(1)).thenReturn(Optional.empty());
+        when(townRepository.findById(1L)).thenReturn(Optional.empty());
         assertThatThrownBy(() -> townService.updateTownById(request))
                 .isInstanceOf(NotFoundException.class)
                 .hasMessage("Town not found");
@@ -131,43 +135,43 @@ class TownServiceTest {
 
     @Test
     void delete_shouldDeleteTown() {
-        Town town = Town.builder().id(1).name("Berlin").build();
-        when(townRepository.findById(1)).thenReturn(Optional.of(town));
-        when(venueRepository.findByTownId(1)).thenReturn(List.of());
-        townService.delete(1);
-        verify(townRepository).deleteById(1);
+        Town town = Town.builder().id(1L).name("Berlin").build();
+        when(townRepository.findById(1L)).thenReturn(Optional.of(town));
+        when(venueRepository.findByTownId(1L)).thenReturn(List.of());
+        townService.delete(1L);
+        verify(townRepository).deleteById(1L);
         verify(townRepository).flush();
     }
 
     @Test
     void delete_shouldThrowWhenTownNotFound() {
-        when(townRepository.findById(1)).thenReturn(Optional.empty());
-        assertThatThrownBy(() -> townService.delete(1))
+        when(townRepository.findById(1L)).thenReturn(Optional.empty());
+        assertThatThrownBy(() -> townService.delete(1L))
                 .isInstanceOf(NotFoundException.class)
                 .hasMessage("Town not found");
     }
 
     @Test
     void delete_shouldSendKafkaWhenVenuesHaveEvents() {
-        Town town = Town.builder().id(1).name("Berlin").build();
-        Venue venue = Venue.builder().id(10).town(town).place("Hall").build();
-        Event event = Event.builder().id(100).title("Concert").venue(venue).build();
-        when(townRepository.findById(1)).thenReturn(Optional.of(town));
-        when(venueRepository.findByTownId(1)).thenReturn(List.of(venue));
-        when(eventRepository.findByVenueIdIn(List.of(10))).thenReturn(List.of(event));
-        when(ticketRepository.findByEventIdInAndUserIdIsNotNull(List.of(100))).thenReturn(List.of());
-        townService.delete(1);
+        Town town = Town.builder().id(1L).name("Berlin").build();
+        Venue venue = Venue.builder().id(10L).town(town).place("Hall").build();
+        Event event = Event.builder().id(100L).title("Concert").venue(venue).build();
+        when(townRepository.findById(1L)).thenReturn(Optional.of(town));
+        when(venueRepository.findByTownId(1L)).thenReturn(List.of(venue));
+        when(eventRepository.findByVenueIdIn(List.of(10L))).thenReturn(List.of(event));
+        when(ticketRepository.findByEventIdInAndUserIdIsNotNull(List.of(100L))).thenReturn(List.of());
+        townService.delete(1L);
         verify(kafkaUserProducer).sendDeleteEventEvent(any());
     }
 
     @Test
     void delete_shouldNotSendKafkaWhenNoEvents() {
-        Town town = Town.builder().id(1).name("Berlin").build();
-        Venue venue = Venue.builder().id(10).town(town).place("Hall").build();
-        when(townRepository.findById(1)).thenReturn(Optional.of(town));
-        when(venueRepository.findByTownId(1)).thenReturn(List.of(venue));
-        when(eventRepository.findByVenueIdIn(List.of(10))).thenReturn(List.of());
-        townService.delete(1);
+        Town town = Town.builder().id(1L).name("Berlin").build();
+        Venue venue = Venue.builder().id(10L).town(town).place("Hall").build();
+        when(townRepository.findById(1L)).thenReturn(Optional.of(town));
+        when(venueRepository.findByTownId(1L)).thenReturn(List.of(venue));
+        when(eventRepository.findByVenueIdIn(List.of(10L))).thenReturn(List.of());
+        townService.delete(1L);
         verify(kafkaUserProducer, never()).sendDeleteEventEvent(any());
     }
 
@@ -176,11 +180,11 @@ class TownServiceTest {
     @Test
     void updateTownById_shouldSetNullNameWhenProvided() {
         TownUpdateRequestDto request = new TownUpdateRequestDto();
-        request.setId(1);
+        request.setId(1L);
         request.setName(null);
-        Town existing = Town.builder().id(1).name("Berlin").build();
-        Town saved = Town.builder().id(1).name(null).build();
-        when(townRepository.findById(1)).thenReturn(Optional.of(existing));
+        Town existing = Town.builder().id(1L).name("Berlin").build();
+        Town saved = Town.builder().id(1L).name(null).build();
+        when(townRepository.findById(1L)).thenReturn(Optional.of(existing));
         when(townRepository.save(any(Town.class))).thenReturn(saved);
         TownResponseDto result = townService.updateTownById(request);
         assertThat(result.getName()).isNull();
@@ -188,30 +192,30 @@ class TownServiceTest {
 
     @Test
     void delete_shouldDeleteTownWithVenuesButNoEvents() {
-        Town town = Town.builder().id(1).name("Berlin").build();
-        Venue venue = Venue.builder().id(10).town(town).place("Hall").build();
-        when(townRepository.findById(1)).thenReturn(Optional.of(town));
-        when(venueRepository.findByTownId(1)).thenReturn(List.of(venue));
-        when(eventRepository.findByVenueIdIn(List.of(10))).thenReturn(List.of());
-        townService.delete(1);
-        verify(townRepository).deleteById(1);
+        Town town = Town.builder().id(1L).name("Berlin").build();
+        Venue venue = Venue.builder().id(10L).town(town).place("Hall").build();
+        when(townRepository.findById(1L)).thenReturn(Optional.of(town));
+        when(venueRepository.findByTownId(1L)).thenReturn(List.of(venue));
+        when(eventRepository.findByVenueIdIn(List.of(10L))).thenReturn(List.of());
+        townService.delete(1L);
+        verify(townRepository).deleteById(1L);
         verify(kafkaUserProducer, never()).sendDeleteEventEvent(any());
     }
 
     @Test
     void delete_shouldCollectUserIdsWhenTicketsExist() {
-        Town town = Town.builder().id(1).name("Berlin").build();
-        Venue venue = Venue.builder().id(10).town(town).place("Hall").build();
-        Event event = Event.builder().id(100).title("Concert").venue(venue).build();
-        Ticket ticket1 = Ticket.builder().id(1).event(event).userId(77).build();
-        Ticket ticket2 = Ticket.builder().id(2).event(event).userId(88).build();
-        when(townRepository.findById(1)).thenReturn(Optional.of(town));
-        when(venueRepository.findByTownId(1)).thenReturn(List.of(venue));
-        when(eventRepository.findByVenueIdIn(List.of(10))).thenReturn(List.of(event));
-        when(ticketRepository.findByEventIdInAndUserIdIsNotNull(List.of(100))).thenReturn(List.of(ticket1, ticket2));
-        townService.delete(1);
+        Town town = Town.builder().id(1L).name("Berlin").build();
+        Venue venue = Venue.builder().id(10L).town(town).place("Hall").build();
+        Event event = Event.builder().id(100L).title("Concert").venue(venue).build();
+        Ticket ticket1 = Ticket.builder().id(1L).event(event).userId(77L).build();
+        Ticket ticket2 = Ticket.builder().id(2L).event(event).userId(88L).build();
+        when(townRepository.findById(1L)).thenReturn(Optional.of(town));
+        when(venueRepository.findByTownId(1L)).thenReturn(List.of(venue));
+        when(eventRepository.findByVenueIdIn(List.of(10L))).thenReturn(List.of(event));
+        when(ticketRepository.findByEventIdInAndUserIdIsNotNull(List.of(100L))).thenReturn(List.of(ticket1, ticket2));
+        townService.delete(1L);
         verify(kafkaUserProducer).sendDeleteEventEvent(argThat(e ->
-                e.getUserIds().contains(77) && e.getUserIds().contains(88)
+                e.getUserIds().contains(77L) && e.getUserIds().contains(88L)
         ));
     }
 }

@@ -37,6 +37,8 @@ class Settings(BaseSettings):
     llama_embed_url: str = "http://localhost:8088"
     embedding_dim: int = 1024
     embedding_timeout_s: float = 120.0
+    # Query-time embed budget: the sparse half must answer without the model.
+    query_embedding_timeout_s: float = 2.0
 
     # Weather: Redis cache + retry policy.
     redis_url: str = "redis://localhost:6379/0"

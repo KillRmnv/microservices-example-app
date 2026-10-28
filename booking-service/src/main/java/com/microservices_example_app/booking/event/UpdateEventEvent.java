@@ -19,5 +19,5 @@ public class UpdateEventEvent {
     private String sourceService;
     @NotBlank(message = "Changes description must not be blank")
     private String changesDescription;
-    private List<Integer> userIds;
+    private List<Long> userIds;
 }

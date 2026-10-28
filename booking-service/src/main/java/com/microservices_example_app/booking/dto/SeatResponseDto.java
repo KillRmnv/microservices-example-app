@@ -12,10 +12,10 @@ import lombok.Setter;
 @NoArgsConstructor
 @AllArgsConstructor
 public class SeatResponseDto {
-    private Integer id;
+    private Long id;
     private String sector;
     private String row;
     private String number;
-    private Integer venueId;
+    private Long venueId;
     private String venuePlace;
 }

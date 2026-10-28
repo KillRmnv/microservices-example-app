@@ -62,3 +62,17 @@ class VenueRow:
     review_count: int | None = None
     source_url: str | None = None
     raw: dict = field(default_factory=dict)
+
+
+@dataclass
+class CatalogEvent:
+    """A bookable event mirrored from booking-service (Kafka `booking.catalog`)."""
+
+    id: int
+    title: str
+    starts_at: datetime | None = None
+    ends_at: datetime | None = None
+    venue_name: str = ""
+    city: str = ""
+    category: str = "other"
+    raw: dict = field(default_factory=dict)

@@ -15,8 +15,8 @@ import java.math.BigDecimal;
 @NoArgsConstructor
 @AllArgsConstructor
 public class TicketSearchRequestDto {
-    private Integer eventId;
-    private Integer userId;
+    private Long eventId;
+    private Long userId;
     private Zone zone;
     private Boolean active;
     private BigDecimal maxPrice;

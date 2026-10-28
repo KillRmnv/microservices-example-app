@@ -13,7 +13,7 @@ import java.math.BigDecimal;
 
 public class SeatableTicketSpecification {
 
-    public static Specification<SeatableTicket> hasEventId(Integer eventId) {
+    public static Specification<SeatableTicket> hasEventId(Long eventId) {
         return new Specification<SeatableTicket>() {
             @Override
             public @Nullable Predicate toPredicate(Root<SeatableTicket> root, CriteriaQuery<?> query, CriteriaBuilder criteriaBuilder) {
@@ -24,7 +24,7 @@ public class SeatableTicketSpecification {
         };
     }
 
-    public static Specification<SeatableTicket> hasSeatId(Integer seatId) {
+    public static Specification<SeatableTicket> hasSeatId(Long seatId) {
         return new Specification<SeatableTicket>() {
             @Override
             public @Nullable Predicate toPredicate(Root<SeatableTicket> root, CriteriaQuery<?> query, CriteriaBuilder criteriaBuilder) {
@@ -57,7 +57,7 @@ public class SeatableTicketSpecification {
         };
     }
 
-    public static Specification<SeatableTicket> hasUserId(Integer userId) {
+    public static Specification<SeatableTicket> hasUserId(Long userId) {
         return new Specification<SeatableTicket>() {
             @Override
             public @Nullable Predicate toPredicate(Root<SeatableTicket> root, CriteriaQuery<?> query, CriteriaBuilder criteriaBuilder) {

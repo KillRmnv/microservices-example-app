@@ -7,6 +7,7 @@ import com.microservices_example_app.booking.exceptions.NotFoundException;
 import com.microservices_example_app.booking.model.Event;
 import com.microservices_example_app.booking.model.Ticket;
 import com.microservices_example_app.booking.model.Venue;
+import com.microservices_example_app.booking.producers.BookingCatalogProducer;
 import com.microservices_example_app.booking.producers.NotificationKafkaBookingProducer;
 import com.microservices_example_app.booking.producers.NotificationKafkaUserProducer;
 import com.microservices_example_app.booking.repository.EventRepository;
@@ -41,6 +42,7 @@ public class EventService {
     private final EventRepository eventRepository;
     private final VenueRepository venueRepository;
     private final NotificationKafkaUserProducer kafkaUserProducer;
+    private final BookingCatalogProducer catalogProducer;
     private final TicketRepository ticketRepository;
     @PersistenceContext
     private EntityManager entityManager;
@@ -58,16 +60,19 @@ public class EventService {
                 startsAt(requestDto.getStartsAt()).
                 endsAt(requestDto.getEndsAt()).
                 venue(venue).
+                category(requestDto.getCategory() == null || requestDto.getCategory().isBlank()
+                        ? "other" : requestDto.getCategory()).
                 admissionMode(requestDto.getAdmissionMode()).build();
 
         Event saved = eventRepository.save(event);
+        catalogProducer.sendUpsert(saved);
         log.info("Created event with id: {}", saved.getId());
         return toResponseDto(saved);
     }
 
     @Cacheable(cacheNames = "eventsById", key = "#id")
     @Transactional
-    public EventResponseDto getById(Integer id) {
+    public EventResponseDto getById(Long id) {
         log.info("Fetching event with id: {}", id);
 
         Event event = eventRepository.findById(id).orElseThrow(() -> new NotFoundException("Event not found"));
@@ -94,6 +99,7 @@ public class EventService {
         Specification<Event> spec = Specification.
                 where(EventSpecification.hasTitle(filter.getTitle())).
                 and(EventSpecification.hasVenueId(filter.getVenueId())).
+                and(EventSpecification.hasCategory(filter.getCategory())).
                 and(EventSpecification.hasAdmissionMode(filter.getAdmissionMode())).
                 and(EventSpecification.startsAfter(filter.getStartsFrom())).
                 and(EventSpecification.startsBefore(filter.getStartsTo()));
@@ -108,7 +114,7 @@ public class EventService {
 
     @Caching(evict = {@CacheEvict(cacheNames = "eventsById", key = "#id"), @CacheEvict(cacheNames = "eventSearch", allEntries = true)})
     @Transactional
-    public void deleteById(Integer id) {
+    public void deleteById(Long id) {
         if (id == null || id < 1) {
             throw new IllegalArgumentException("Event id must be positive");
         }
@@ -119,6 +125,7 @@ public class EventService {
         DeleteEventEvent deleteEventEvent = new DeleteEventEvent(List.of(event.getTitle()), serviceName,
                 ticketRepository.findByEventId(event.getId()).stream().
                 map(Ticket::getUserId).toList());
+        catalogProducer.sendDeleted(event);
         entityManager.clear();
         log.info("Deleting event with id: {}", id);
         eventRepository.deleteById(id);
@@ -146,13 +153,14 @@ public class EventService {
 
         log.info("Delete by filter amount: {}", count);
         List<String> titles = events.stream().map(Event::getTitle).toList();
-        List<Integer> userIds = ticketRepository.findByEventIdIn(events.stream().map(Event::getId).toList())
+        List<Long> userIds = ticketRepository.findByEventIdIn(events.stream().map(Event::getId).toList())
                 .stream()
                 .map(Ticket::getUserId)
                 .filter(Objects::nonNull)
                 .distinct()
                 .toList();
         DeleteEventEvent deleteEventEvent = new DeleteEventEvent(titles, serviceName, userIds);
+        events.forEach(catalogProducer::sendDeleted);
         entityManager.clear();
         eventRepository.deleteAll(events);
         eventRepository.flush();
@@ -206,6 +214,14 @@ public class EventService {
             stringBuilder.append("Venue:").append(event.getVenue().getPlace()).append("\n");
         }
 
+        if (request.getCategory() != null && !request.getCategory().isBlank()) {
+            builder.category(request.getCategory());
+            stringBuilder.append("Category:").append(request.getCategory()).append("\n");
+        } else {
+            builder.category(event.getCategory());
+            stringBuilder.append("Category:").append(event.getCategory()).append("\n");
+        }
+
         if (request.getAdmissionMode() != null) {
             builder.admissionMode(request.getAdmissionMode());
             stringBuilder.append("Admission:").append(request.getAdmissionMode()).append("\n");
@@ -222,6 +238,7 @@ public class EventService {
         toSave = eventRepository.save(toSave);
 
         kafkaUserProducer.sendUpdateEventEvent(updateEventEvent);
+        catalogProducer.sendUpsert(toSave);
 
         return toResponseDto(toSave);
     }
@@ -234,6 +251,7 @@ public class EventService {
                 endsAt(event.getEndsAt()).
                 venueId(event.getVenue().getId()).
                 venuePlace(event.getVenue().getPlace()).
+                category(event.getCategory()).
                 admissionMode(event.getAdmissionMode()).
                 build();
     }

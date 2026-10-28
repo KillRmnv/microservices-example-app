@@ -13,6 +13,21 @@ services:
       timeout: 5s
       retries: 5
 
+  # Creates the compacted catalog topic before producers/consumers start;
+  # otherwise broker auto-creation wins and the topic gets default configs.
+  kafka-init:
+    image: confluentinc/cp-kafka:7.5.0
+    depends_on:
+      kafka:
+        condition: service_healthy
+    command:
+      - bash
+      - -c
+      - >-
+        kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists
+        --topic booking.catalog --partitions 1 --replication-factor 1
+        --config cleanup.policy=compact --config retention.ms=-1
+
   kafka:
     image: confluentinc/cp-kafka:7.5.0
     depends_on:
@@ -88,6 +103,8 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     ports:
       - "${BOOKING_APPLICATION_PORT:-8082}"
 
@@ -138,11 +155,18 @@ services:
     env_file:
       - ./.env
       - ./collector-service/.env
+    environment:
+      COLLECTOR_KAFKA_BOOTSTRAP_SERVERS: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
+      COLLECTOR_BOOKING_CATALOG_ENABLED: "true"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
       postgres:
         condition: service_healthy
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     ports:
       - "${COLLECTOR_PORT:-8085}:8080"
 

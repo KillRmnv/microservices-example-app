@@ -59,7 +59,7 @@ class JwtUtilTest {
         assertThat(claims.getSubject()).isEqualTo("bob");
         assertThat(claims.get("email", String.class)).isEqualTo("bob@test.com");
         assertThat(claims.get("role", String.class)).isEqualTo("ADMIN");
-        assertThat(claims.get("id", Integer.class)).isEqualTo(5);
+        assertThat(claims.get("id", Long.class)).isEqualTo(5);
     }
 
     @Test
@@ -77,7 +77,7 @@ class JwtUtilTest {
         Claims claims = JwtUtil.parsePasswordResetToken(token);
 
         assertThat(claims.getSubject()).isEqualTo("alex@test.com");
-        assertThat(claims.get("id", Integer.class)).isEqualTo(10);
+        assertThat(claims.get("id", Long.class)).isEqualTo(10);
         assertThat(claims.get("purpose", String.class)).isEqualTo("password_reset");
     }
 
@@ -93,7 +93,7 @@ class JwtUtilTest {
     void extractUserIdFromPasswordResetToken_shouldReturnId() {
         String token = JwtUtil.generatePasswordResetToken(42, "test@test.com");
 
-        Integer userId = JwtUtil.extractUserIdFromPasswordResetToken(token);
+        Long userId = JwtUtil.extractUserIdFromPasswordResetToken(token);
 
         assertThat(userId).isEqualTo(42);
     }

@@ -11,9 +11,9 @@ import lombok.Setter;
 @AllArgsConstructor
 @Schema(description = "Request to update an existing seat")
 public class SeatUpdateRequestDto {
-    private Integer id;
+    private Long id;
     private String sector;
     private String row;
     private String number;
-    private Integer venueId;
+    private Long venueId;
 }

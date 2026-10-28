@@ -15,11 +15,11 @@ import lombok.Setter;
 @AllArgsConstructor
 @Schema(description = "Request to update a general-admission ticket")
 public class TicketUpdateRequestDto {
-    private Integer id;
-    private Integer eventId;
+    private Long id;
+    private Long eventId;
     private String eventTitle;
     private Zone zone;
     private BigDecimal price;
     private Boolean active;
-    private Integer userId;
+    private Long userId;
 }

@@ -27,7 +27,7 @@ type ForgetPasswordEvent struct {
 }
 
 type UserUpdatedEvent struct {
-	UserID        int    `json:"userId"`
+	UserID        int64  `json:"userId"`
 	Email         string `json:"email"`
 	Username      string `json:"username"`
 	Role          string `json:"role"`
@@ -35,7 +35,7 @@ type UserUpdatedEvent struct {
 }
 
 type UserDeletedEvent struct {
-	UserID        int    `json:"userId"`
+	UserID        int64  `json:"userId"`
 	Email         string `json:"email"`
 	Username      string `json:"username"`
 	SourceService string `json:"sourceService"`

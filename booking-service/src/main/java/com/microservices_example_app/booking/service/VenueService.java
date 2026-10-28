@@ -8,6 +8,7 @@ import com.microservices_example_app.booking.model.Event;
 import com.microservices_example_app.booking.model.Ticket;
 import com.microservices_example_app.booking.model.Town;
 import com.microservices_example_app.booking.model.Venue;
+import com.microservices_example_app.booking.producers.BookingCatalogProducer;
 import com.microservices_example_app.booking.producers.NotificationKafkaUserProducer;
 import com.microservices_example_app.booking.repository.EventRepository;
 import com.microservices_example_app.booking.repository.TicketRepository;
@@ -42,6 +43,7 @@ public class VenueService {
     private final EventRepository eventRepository;
     private final TicketRepository ticketRepository;
     private final NotificationKafkaUserProducer kafkaUserProducer;
+    private final BookingCatalogProducer catalogProducer;
     @Value("${spring.application.name}")
     private String serviceName;
 
@@ -66,7 +68,7 @@ public class VenueService {
 
     @Cacheable(cacheNames = "venuesById", key = "#id")
     @Transactional
-    public VenueResponseDto getById(Integer id) {
+    public VenueResponseDto getById(Long id) {
         log.info("Fetching venue with id: {}", id);
 
         Venue venue = venueRepository.findById(id)
@@ -91,7 +93,7 @@ public class VenueService {
             @CacheEvict(cacheNames = "eventSearch", allEntries = true)
     })
     @Transactional
-    public void deleteById(Integer id) {
+    public void deleteById(Long id) {
         if (id == null || id < 1) {
             throw new IllegalArgumentException("Venue id must be positive");
         }
@@ -101,9 +103,9 @@ public class VenueService {
 
         List<Event> eventList = eventRepository.findByVenueId(id);
         List<String> eventTitles = eventList.stream().map(Event::getTitle).toList();
-        List<Integer> eventIds = eventList.stream().map(Event::getId).toList();
+        List<Long> eventIds = eventList.stream().map(Event::getId).toList();
 
-        List<Integer> userIds = eventIds.isEmpty() ? List.of() :
+        List<Long> userIds = eventIds.isEmpty() ? List.of() :
                 ticketRepository.findByEventIdIn(eventIds)
                 .stream()
                 .map(Ticket::getUserId)
@@ -111,6 +113,7 @@ public class VenueService {
                 .distinct()
                 .toList();
 
+        eventList.forEach(catalogProducer::sendDeleted);
         entityManager.clear();
 
         log.info("Deleting venue with id: {}", id);
@@ -145,10 +148,10 @@ public class VenueService {
                 requestDto.getMaxCapacity());
 
         List<Venue> venues = venueRepository.findAll(spec);
-        List<Integer> venueIds = venues.stream().map(Venue::getId).toList();
+        List<Long> venueIds = venues.stream().map(Venue::getId).toList();
         Set<Event> eventList = new HashSet<>(eventRepository.findByVenueIdIn(venueIds));
         long count = venues.size();
-        List<Integer> userIds = ticketRepository.findByEventIdIn(
+        List<Long> userIds = ticketRepository.findByEventIdIn(
                         eventList.stream().map(Event::getId).toList()
                 )
                 .stream()
@@ -262,7 +265,7 @@ public class VenueService {
         }
 
         if (capacityReduced) {
-            List<Integer> eventIds = events.stream().map(Event::getId).toList();
+            List<Long> eventIds = events.stream().map(Event::getId).toList();
 
             List<Ticket> soldTickets = ticketRepository
                     .findByEventIdInAndUserIdIsNotNullOrderByIdDesc(eventIds);
@@ -273,7 +276,7 @@ public class VenueService {
             if (excessCount > 0) {
                 List<Ticket> ticketsToRefund = soldTickets.subList(0, excessCount);
 
-                List<Integer> userIds = ticketsToRefund.stream()
+                List<Long> userIds = ticketsToRefund.stream()
                         .map(Ticket::getUserId)
                         .distinct()
                         .toList();

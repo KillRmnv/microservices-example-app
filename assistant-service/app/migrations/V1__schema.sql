@@ -19,7 +19,7 @@ CREATE INDEX idx_dialogue_runs_action ON dialogue_runs (action);
 CREATE TABLE booking_holds (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     session_id TEXT NOT NULL,
-    event_id INT NOT NULL CHECK (event_id > 0),
+    event_id BIGINT NOT NULL CHECK (event_id > 0),
     zone TEXT NOT NULL CHECK (zone IN ('VIP', 'FAN_ZONE', 'BASIC')),
     price NUMERIC(12, 2) NOT NULL CHECK (price >= 0),
     party_size INT NOT NULL DEFAULT 1 CHECK (party_size BETWEEN 1 AND 20),

@@ -10,7 +10,7 @@ import org.springframework.data.jpa.domain.Specification;
 
 public class VenueSpecification {
 
-    public static Specification<Venue> hasTownId(Integer townId) {
+    public static Specification<Venue> hasTownId(Long townId) {
         return new Specification<Venue>() {
             @Override
             public @Nullable Predicate toPredicate(Root<Venue> root, CriteriaQuery<?> query, CriteriaBuilder criteriaBuilder) {

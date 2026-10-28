@@ -1,0 +1,63 @@
+@startuml
+skinparam linetype ortho
+skinparam nodesep 60
+skinparam ranksep 80
+title booking-service — catalog, seats and tickets
+
+entity "events" as events {
+  * id : bigint
+  + title : character varying
+  + starts_at : timestamp without time zone
+  + ends_at : timestamp without time zone
+  + venue_id : bigint
+  + category : character varying
+  + admission_mode : character varying
+}
+
+entity "seatable_tickets" as seatable_tickets {
+  * ticket_id : bigint
+  + seat_id : bigint
+}
+
+entity "seats" as seats {
+  * id : bigint
+  + sector : character varying
+  + row_label : character varying
+  + seat_number : character varying
+  + venue_id : bigint
+}
+
+entity "tickets" as tickets {
+  * id : bigint
+  + event_id : bigint
+  + zone : character varying
+  + price : numeric
+  + active : boolean
+  user_id : bigint
+}
+
+entity "towns" as towns {
+  * id : bigint
+  + name : character varying
+}
+
+entity "venue_fullness" as venue_fullness {
+  * venue_id : bigint
+  fullness : integer
+}
+
+entity "venues" as venues {
+  * id : bigint
+  + town_id : bigint
+  + place : character varying
+  + capacity : integer
+}
+
+events }o--|| venues : "venue_id → id\non delete CASCADE"
+seatable_tickets }o--|| seats : "seat_id → id\non delete CASCADE"
+seatable_tickets }o--|| tickets : "ticket_id → id\non delete CASCADE"
+seats }o--|| venues : "venue_id → id\non delete CASCADE"
+tickets }o--|| events : "event_id → id\non delete CASCADE"
+venue_fullness }o--|| venues : "venue_id → id\non delete CASCADE"
+venues }o--|| towns : "town_id → id\non delete CASCADE"
+@enduml

@@ -44,7 +44,7 @@ public final class JwtUtil {
     }
 
     public static String generateToken(
-            int id,
+            long id,
             String username,
             String email,
             String roleName
@@ -60,7 +60,7 @@ public final class JwtUtil {
                 .compact();
     }
 
-    public static String generatePasswordResetToken(int id, String email) {
+    public static String generatePasswordResetToken(long id, String email) {
         return Jwts.builder()
                 .subject(email)
                 .issuedAt(new Date())
@@ -118,9 +118,9 @@ public final class JwtUtil {
         }
     }
 
-    public static Integer extractUserIdFromPasswordResetToken(String token) {
+    public static Long extractUserIdFromPasswordResetToken(String token) {
         Claims claims = parsePasswordResetToken(token);
-        return claims.get("id", Integer.class);
+        return claims.get("id", Long.class);
     }
 
     public static String extractRoleFromToken(String token) {

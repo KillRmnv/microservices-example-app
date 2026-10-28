@@ -12,6 +12,6 @@ import lombok.Setter;
 @NoArgsConstructor
 @AllArgsConstructor
 public class TownResponseDto {
-    private Integer id;
+    private Long id;
     private String name;
 }

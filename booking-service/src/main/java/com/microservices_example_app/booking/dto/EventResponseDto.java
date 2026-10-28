@@ -17,11 +17,12 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 public class EventResponseDto implements Serializable {
     private static final long serialVersionUID = 1L;
-    private Integer id;
+    private Long id;
     private String title;
     private LocalDateTime startsAt;
     private LocalDateTime endsAt;
-    private Integer venueId;
+    private Long venueId;
     private String venuePlace;
+    private String category;
     private EventAdmissionMode admissionMode;
 }

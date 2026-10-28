@@ -37,7 +37,7 @@ public class TownController {
 
     @Operation(summary = "Get a town by id")
     @GetMapping("/{id}")
-    public TownResponseDto getById(@Parameter(description = "Town id") @PathVariable Integer id) {
+    public TownResponseDto getById(@Parameter(description = "Town id") @PathVariable Long id) {
         log.info("Fetching town with id: {}", id);
         return townService.getById(id);
     }
@@ -51,7 +51,7 @@ public class TownController {
 
     @Operation(summary = "Update a town")
     @PutMapping("/{id}")
-    public TownResponseDto updateById(@Parameter(description = "Town id") @PathVariable Integer id,
+    public TownResponseDto updateById(@Parameter(description = "Town id") @PathVariable Long id,
                                       @Valid @RequestBody TownUpdateRequestDto requestDto) {
         requireAdmin();
         log.info("Updating town with id: {}", id);
@@ -61,7 +61,7 @@ public class TownController {
 
     @Operation(summary = "Delete a town")
     @DeleteMapping("/{id}")
-    public void deleteById(@Parameter(description = "Town id") @PathVariable Integer id) {
+    public void deleteById(@Parameter(description = "Town id") @PathVariable Long id) {
         requireAdmin();
         log.info("Deleting town with id: {}", id);
         townService.delete(id);

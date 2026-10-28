@@ -14,7 +14,7 @@ import lombok.Setter;
 @AllArgsConstructor
 @Schema(description = "Request to create a new venue")
 public class VenueCreateRequestDto {
-    private Integer townId;
+    private Long townId;
     private String place;
     private Integer capacity;
 }

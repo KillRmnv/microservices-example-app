@@ -15,15 +15,15 @@ import java.math.BigDecimal;
 @NoArgsConstructor
 @AllArgsConstructor
 public class SeatableTicketResponseDto {
-    private Integer id;
-    private Integer eventId;
+    private Long id;
+    private Long eventId;
     private String eventTitle;
-    private Integer seatId;
+    private Long seatId;
     private String sector;
     private String row;
     private String number;
     private Zone zone;
     private BigDecimal price;
     private Boolean active;
-    private Integer userId;
+    private Long userId;
 }
