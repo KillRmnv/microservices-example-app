@@ -86,8 +86,16 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
   if (!response.ok) {
     let message = `HTTP ${response.status}`
     const data = await response.json().catch(() => null)
-    if (data && typeof (data as { message?: string }).message === 'string') {
-      message = (data as { message?: string }).message as string
+    if (data && typeof data === 'object') {
+      // RFC 9457 Problem Details first, legacy {message} second.
+      const problem = data as { detail?: unknown; title?: unknown; message?: unknown }
+      if (typeof problem.detail === 'string' && problem.detail) {
+        message = problem.detail
+      } else if (typeof problem.title === 'string' && problem.title) {
+        message = problem.title
+      } else if (typeof problem.message === 'string' && problem.message) {
+        message = problem.message
+      }
     }
     throw new ApiError(message, response.status)
   }

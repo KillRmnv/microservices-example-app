@@ -2,15 +2,17 @@ package main
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"notification-service-go/email"
 	kafkamodule "notification-service-go/kafka"
+	"notification-service-go/logging"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -23,6 +25,7 @@ func envOrDefault(key, def string) string {
 }
 
 func main() {
+	logging.Setup("notification-service-go")
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
@@ -57,17 +60,62 @@ func main() {
 		EmailService: emailSvc,
 	}
 
-	consumerCfg.Start(ctx)
+	go consumerCfg.Start(ctx)
 
-	addr := envOrDefault("NOTIFICATION_ADDRESS", "0.0.0.0") + ":" + envOrDefault("NOTIFICATION_PORT", "8083")
-	http.HandleFunc("/actuator/health", func(w http.ResponseWriter, r *http.Request) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/actuator/health", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.Header().Set("Allow", http.MethodGet)
+			logging.WriteProblem(w, r, http.StatusMethodNotAllowed,
+				"http_405", "Method not allowed")
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"status":"UP"}`))
 	})
-	http.Handle("/metrics", promhttp.Handler())
+	mux.Handle("/metrics", methodOnly(http.MethodGet, promhttp.Handler()))
 
-	log.Printf("Notification service (Go) listening on %s", addr)
-	if err := http.ListenAndServe(addr, nil); err != nil && err != http.ErrServerClosed {
-		log.Fatalf("HTTP server error: %v", err)
+	handler := logging.RequestIDMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/actuator/health", "/metrics":
+			mux.ServeHTTP(w, r)
+		default:
+			logging.WriteProblem(w, r, http.StatusNotFound,
+				"http_404", "Not found")
+		}
+	}))
+
+	addr := envOrDefault("NOTIFICATION_ADDRESS", "0.0.0.0") + ":" + envOrDefault("NOTIFICATION_PORT", "8083")
+	server := &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
 	}
+
+	go func() {
+		slog.Info("notification service listening", "addr", addr)
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			slog.Error("http server error", "err", err)
+			os.Exit(1)
+		}
+	}()
+
+	<-ctx.Done()
+	shutdown, stop := context.WithTimeout(context.Background(), 10*time.Second)
+	defer stop()
+	if err := server.Shutdown(shutdown); err != nil {
+		slog.Error("http shutdown error", "err", err)
+	}
+}
+
+func methodOnly(method string, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != method {
+			w.Header().Set("Allow", method)
+			logging.WriteProblem(w, r, http.StatusMethodNotAllowed,
+				"http_405", "Method not allowed")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }

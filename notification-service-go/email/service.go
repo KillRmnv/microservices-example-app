@@ -2,10 +2,12 @@ package email
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"net/smtp"
 	"strings"
 	"sync"
+
+	"notification-service-go/logging"
 )
 
 type Config struct {
@@ -43,10 +45,10 @@ func (s *Service) send(to, subject, body string) error {
 
 	err := smtp.SendMail(s.addr(), s.auth(), s.cfg.Username, []string{to}, msg)
 	if err != nil {
-		log.Printf("Failed to send email to %s: %v", to, err)
-		return fmt.Errorf("failed to send email to %s: %w", to, err)
+		slog.Warn("send failed", "email", logging.MaskEmail(to), "err", err)
+		return fmt.Errorf("failed to send email to %s: %w", logging.MaskEmail(to), err)
 	}
-	log.Printf("Email sent: type=unknown, recipient=%s", to)
+	slog.Info("email sent", "email", logging.MaskEmail(to))
 	return nil
 }
 
@@ -62,23 +64,23 @@ func (s *Service) sendBatch(to []string, subject, body string) error {
 }
 
 func (s *Service) SendSuccessfulRegistrationEmail(email, username, sourceService string) {
-	log.Printf("Sending successful registration email: email=%s, username=%s, sourceService=%s", email, username, sourceService)
+	slog.Info("sending registration email", "email", logging.MaskEmail(email), "username", username, "source", sourceService)
 	body := fmt.Sprintf("Hello, %s!\n\nYour registration was completed successfully.\n\nBest regards,\nMicroservices Example App\n", username)
 	if err := s.send(email, "Registration successful", body); err != nil {
-		log.Printf("Failed to send successful registration email to %s: %v", email, err)
+		slog.Warn("registration email failed", "email", logging.MaskEmail(email), "err", err)
 	}
 }
 
 func (s *Service) SendBookingSuccessEmail(email, username, event, sourceService string) {
-	log.Printf("Sending booking success email: email=%s, username=%s, sourceService=%s", email, username, sourceService)
+	slog.Info("sending booking email", "email", logging.MaskEmail(email), "username", username, "source", sourceService)
 	body := fmt.Sprintf("Hello, %s!\n\nYour %s booking was completed successfully.\n\nBest regards,\nMicroservices Example App\n", username, event)
 	if err := s.send(email, "Booking confirmed", body); err != nil {
-		log.Printf("Failed to send booking success email to %s: %v", email, err)
+		slog.Warn("booking email failed", "email", logging.MaskEmail(email), "err", err)
 	}
 }
 
 func (s *Service) SendTicketRefundEmail(email, username, eventTitle, sourceService string) {
-	log.Printf("Sending ticket refund email: email=%s, username=%s, eventTitle=%s, sourceService=%s", email, username, eventTitle, sourceService)
+	slog.Info("sending refund email", "email", logging.MaskEmail(email), "username", username, "source", sourceService)
 	body := fmt.Sprintf(`Hello, %s!
 
 		Your ticket refund for the event "%s" was completed successfully.
@@ -89,12 +91,12 @@ func (s *Service) SendTicketRefundEmail(email, username, eventTitle, sourceServi
 		Microservices Example App
 		`, username, eventTitle)
 	if err := s.send(email, "Ticket refund confirmed", body); err != nil {
-		log.Printf("Failed to send ticket refund email to %s: %v", email, err)
+		slog.Warn("refund email failed", "email", logging.MaskEmail(email), "err", err)
 	}
 }
 
 func (s *Service) SendForgetPasswordEmail(email, resetURL, sourceService string) {
-	log.Printf("Sending forgot password email: email=%s, sourceService=%s", email, sourceService)
+	slog.Info("sending reset email", "email", logging.MaskEmail(email), "source", sourceService)
 	body := fmt.Sprintf(`Hello!
 
 		We received a request to reset your password.
@@ -107,12 +109,12 @@ func (s *Service) SendForgetPasswordEmail(email, resetURL, sourceService string)
 		Microservices Example App
 		`, resetURL)
 	if err := s.send(email, "Password reset request", body); err != nil {
-		log.Printf("Failed to send forgot password email to %s: %v", email, err)
+		slog.Warn("reset email failed", "email", logging.MaskEmail(email), "err", err)
 	}
 }
 
 func (s *Service) SendUserDeletedEmail(email, username, sourceService string) {
-	log.Printf("Sending user deleted email: email=%s, username=%s, sourceService=%s", email, username, sourceService)
+	slog.Info("sending deleted email", "email", logging.MaskEmail(email), "username", username, "source", sourceService)
 	body := fmt.Sprintf(`Hello, %s!
 
 		Your account has been deleted successfully.
@@ -121,12 +123,12 @@ func (s *Service) SendUserDeletedEmail(email, username, sourceService string) {
 		Microservices Example App
 		`, username)
 	if err := s.send(email, "Account deleted", body); err != nil {
-		log.Printf("Failed to send user deleted email to %s: %v", email, err)
+		slog.Warn("deleted email failed", "email", logging.MaskEmail(email), "err", err)
 	}
 }
 
 func (s *Service) SendUserUpdatedEmail(email, username, role, sourceService string) {
-	log.Printf("Sending user updated email: email=%s, username=%s, role=%s, sourceService=%s", email, username, role, sourceService)
+	slog.Info("sending updated email", "email", logging.MaskEmail(email), "username", username, "role", role, "source", sourceService)
 	body := fmt.Sprintf(`Hello, %s!
 
 	Your account information has been updated.
@@ -136,7 +138,7 @@ func (s *Service) SendUserUpdatedEmail(email, username, role, sourceService stri
 	Microservices Example App
 	`, username, role)
 	if err := s.send(email, "Account updated", body); err != nil {
-		log.Printf("Failed to send user updated email to %s: %v", email, err)
+		slog.Warn("updated email failed", "email", logging.MaskEmail(email), "err", err)
 	}
 }
 
@@ -144,7 +146,7 @@ func (s *Service) SendMassDeleteEventMailing(users []struct {
 	Email    string
 	Username string
 }, events []string, sourceService string) {
-	log.Printf("Sending mass delete event emails: %d users, %d events, sourceService=%s", len(users), len(events), sourceService)
+	slog.Info("sending mass delete emails", "users", len(users), "events", len(events), "source", sourceService)
 	eventsText := strings.Join(events, "\n- ")
 
 	var wg sync.WaitGroup
@@ -168,7 +170,7 @@ func (s *Service) SendMassDeleteEventMailing(users []struct {
 			Microservices Example App
 			`, u.Username, eventsText)
 			if err := s.send(u.Email, "Event cancellation notice", body); err != nil {
-				log.Printf("Failed to send mass delete email to %s: %v", u.Email, err)
+				slog.Warn("mass delete email failed", "email", logging.MaskEmail(u.Email), "err", err)
 			}
 		}(user)
 	}
@@ -179,7 +181,7 @@ func (s *Service) SendMassUpdateEventMailing(users []struct {
 	Email    string
 	Username string
 }, events []string, changesDescription, sourceService string) {
-	log.Printf("Sending mass update event emails: %d users, %d events, sourceService=%s", len(users), len(events), sourceService)
+	slog.Info("sending mass update emails", "users", len(users), "events", len(events), "source", sourceService)
 	eventsText := strings.Join(events, "\n- ")
 
 	var wg sync.WaitGroup
@@ -204,7 +206,7 @@ func (s *Service) SendMassUpdateEventMailing(users []struct {
 			Microservices Example App
 			`, u.Username, eventsText, changesDescription)
 			if err := s.send(u.Email, "Event update notice", body); err != nil {
-				log.Printf("Failed to send mass update email to %s: %v", u.Email, err)
+				slog.Warn("mass update email failed", "email", logging.MaskEmail(u.Email), "err", err)
 			}
 		}(user)
 	}
