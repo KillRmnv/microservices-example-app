@@ -23,11 +23,11 @@ def test_normalize_point_range_guard():
     assert normalize_point({"lat": "nan", "lon": 1}) == (None, None)
 
 
-def test_fix_minsk_coords_recovers_swapped():
-    from app.sources.twogis_places import fix_minsk_coords
-    assert fix_minsk_coords(53.9, 27.5) == (53.9, 27.5)
-    assert fix_minsk_coords(27.5, 53.9) == (53.9, 27.5)  # swapped docs example
-    assert fix_minsk_coords(None, 27.5) == (None, 27.5)
+def test_fix_coords_recovers_swapped():
+    from app.sources.twogis_places import fix_coords
+    assert fix_coords(53.9, 27.5) == (53.9, 27.5)
+    assert fix_coords(27.5, 53.9) == (53.9, 27.5)  # swapped docs example
+    assert fix_coords(None, 27.5) == (None, 27.5)
 
 
 def test_parse_item_from_documented_shape():
@@ -154,3 +154,44 @@ def test_twogis_collect_stops_on_quota(conn):
          config_module.settings.twogis_monthly_cap,
          config_module.settings.twogis_reserve) = saved
     assert calls == []  # quota refused before any HTTP request
+
+
+def test_twogis_items_request_has_no_locale_by_default(conn):
+    """Regression: locale=ru_RU made 2GIS return an empty items list."""
+    from app.http import PoliteClient
+    from app.sources.base import CollectContext
+    import app.config as config_module
+    import json as jsonlib
+
+    items = jsonlib.loads((FIXTURES / "twogis_items.json").read_text())["result"]["items"]
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(dict(request.url.params))
+        if "/2.0/region/search" in str(request.url):
+            return httpx.Response(200, json={"meta": {"code": 200},
+                                             "result": {"items": [{"id": "32"}]}})
+        if "/2.0/catalog/rubric/search" in str(request.url):
+            return httpx.Response(200, json={"meta": {"code": 200},
+                                             "result": {"items": [{"id": "161"}]}})
+        return httpx.Response(200, json={"meta": {"code": 200},
+                                         "result": {"items": items, "total": 1}})
+
+    saved = (config_module.settings.twogis_api_key,
+             config_module.settings.twogis_monthly_cap,
+             config_module.settings.twogis_reserve)
+    config_module.settings.twogis_api_key = "demo"
+    config_module.settings.twogis_monthly_cap = 10000
+    config_module.settings.twogis_reserve = 0
+    try:
+        http = PoliteClient(user_agent="test/0.1", default_min_interval_s=0,
+                            transport=httpx.MockTransport(handler))
+        ctx = CollectContext(http=http, db_url=pg_url(), max_urls=1)
+        asyncio.run(TwogisPlacesAdapter(rubrics=["кафе"]).collect(ctx))
+    finally:
+        (config_module.settings.twogis_api_key,
+         config_module.settings.twogis_monthly_cap,
+         config_module.settings.twogis_reserve) = saved
+    items_params = seen[-1]
+    assert "locale" not in items_params
+    assert items_params["page_size"] == "10"

@@ -1,13 +1,14 @@
 """Polite HTTP client: per-source rate limiting, retries with backoff.
 
-Rules (see SCRAPPING.md §6): obey Crawl-delay style intervals, never hammer
-a source, honour Retry-After, identify with a contact User-Agent.
+Never hammer a source: obey Crawl-delay style intervals, honour
+Retry-After and identify with a contact User-Agent.
 """
 from __future__ import annotations
 
 import asyncio
 import logging
 import time
+from collections.abc import Callable
 from urllib.parse import urlparse
 
 import httpx
@@ -27,12 +28,14 @@ class PoliteClient:
         timeout_s: float = 20.0,
         intervals: dict[str, float] | None = None,
         transport: httpx.BaseTransport | None = None,
+        verify: bool = True,
     ) -> None:
         self._client = httpx.AsyncClient(
             headers={"User-Agent": user_agent},
             timeout=timeout_s,
             follow_redirects=True,
             transport=transport,
+            verify=verify,
         )
         self._default_interval = default_min_interval_s
         self._max_attempts = max_attempts
@@ -54,13 +57,21 @@ class PoliteClient:
                 await asyncio.sleep(wait)
             self._last_at[key] = time.monotonic()
 
-    async def get(self, source: str, url: str, **kwargs) -> httpx.Response:
-        """GET with pacing + retry. Raises the last error after max_attempts."""
+    async def get(self, source: str, url: str, *,
+                  before_attempt: Callable[[], None] | None = None,
+                  **kwargs) -> httpx.Response:
+        """GET with pacing + retry. Raises the last error after max_attempts.
+
+        `before_attempt` runs before every HTTP attempt (billable APIs use it
+        to consume one quota unit per attempt, retries included).
+        """
         key = self._key(source, url)
         interval = self._interval(source)
         last_exc: Exception | None = None
         for attempt in range(1, self._max_attempts + 1):
             await self._pace(key, interval)
+            if before_attempt is not None:
+                before_attempt()
             try:
                 response = await self._client.get(url, **kwargs)
             except (httpx.ConnectError, httpx.ReadTimeout, httpx.PoolTimeout) as exc:

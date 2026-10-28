@@ -69,3 +69,19 @@ async def test_retry_after_is_honoured():
     assert response.status_code == 200
     assert seen[1] - seen[0] >= 0.9
     await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_before_attempt_runs_per_http_attempt():
+    attempts = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(503, text="busy")
+
+    client = make_client(transport=httpx.MockTransport(handler),
+                         max_attempts=3, backoff_base_s=0.001)
+    with pytest.raises(RuntimeError):
+        await client.get("probe", "https://example.com/",
+                         before_attempt=lambda: attempts.append(1))
+    assert len(attempts) == 3
+    await client.aclose()

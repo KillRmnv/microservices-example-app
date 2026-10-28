@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     app_name: str = "collector-service"
     port: int = 8085
 
-    database_url: str = "postgresql://postgres:1234@localhost:5432/collector_db"
+    database_url: str = ""
 
     user_agent: str = "dosug-collector/0.1"
     default_min_interval_s: float = 1.0
@@ -38,13 +38,21 @@ class Settings(BaseSettings):
     # Ops alerting: POST degraded sources here (ntfy/Slack/healthchecks).
     ops_webhook_url: str = ""
     ops_alert_window: int = 2
+    http_verify: bool = True
 
     # 2GIS Places (demo key: 1000 req/month — quota guard stops at cap-reserve).
     twogis_api_key: str = ""
+    twogis_base_url: str = "https://catalog.api.2gis.com"
     twogis_monthly_cap: int = 1000
     twogis_reserve: int = 100
     twogis_region: str = "Минск"
-    twogis_page_size: int = 50
+    twogis_page_size: int = 10  # 2GIS 3.0/items allows max 10
+    # 2GIS rejects unsupported locales with an empty item list, so keep this
+    # empty to use the API default. Set only when the endpoint supports it.
+    twogis_locale: str = ""
+    # Sanity box for our catalog: south,north,west,east (swapped coords land
+    # far outside it).
+    twogis_bbox: str = "53.5,54.3,27.1,28.1"
     # Test set first; expand after the trial ("кафе,рестораны,бары,кинотеатры,
     # театры,музеи,клубы,выставки,караоке,парки,библиотеки,спортзалы,...").
     twogis_rubrics: str = "кафе,кинотеатры,театры,музеи"
@@ -57,6 +65,12 @@ class Settings(BaseSettings):
             if name and seconds.isdigit():
                 result[name] = int(seconds)
         return result
+
+    def require_database_url(self) -> str:
+        if not self.database_url.strip():
+            raise RuntimeError(
+                "COLLECTOR_DATABASE_URL is not set; refusing to start without a database")
+        return self.database_url
 
     def min_interval_for(self, source: str) -> float:
         for chunk in self.source_intervals.split(","):

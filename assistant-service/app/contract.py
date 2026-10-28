@@ -2,7 +2,7 @@
 
 The server never trusts the contract blindly: unknown fields are dropped,
 enums are validated, numeric slots are clamped, and the turn counter is
-bumped server-side. This is the prompt-injection checkpoint (course.md §8).
+bumped server-side. This is the prompt-injection checkpoint.
 """
 from __future__ import annotations
 

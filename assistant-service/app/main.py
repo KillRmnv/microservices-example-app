@@ -95,7 +95,7 @@ def record_run(contract: StateContract, duration_ms: int) -> None:
 
 
 def apply_stage0_rules(contract: StateContract) -> StateContract:
-    """Deterministic rules that need no LLM (course.md §10-11)."""
+    """Deterministic rules that need no LLM."""
     if contract.dialogue_action == "confirm_booking":
         contract.needs_clarification = True
         contract.clarification_prompt = (

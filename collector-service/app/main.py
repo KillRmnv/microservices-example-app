@@ -31,7 +31,7 @@ log = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    applied = db.run_migrations(settings.database_url)
+    applied = db.run_migrations(settings.require_database_url())
     if applied:
         log.info("applied migrations: %s", applied)
     app.state.http = PoliteClient(
@@ -40,6 +40,7 @@ async def lifespan(app: FastAPI):
         max_attempts=settings.max_attempts,
         backoff_base_s=settings.backoff_base_s,
         timeout_s=settings.timeout_s,
+        verify=settings.http_verify,
     )
     app.state.embedder = LlamaServerEmbedding(settings.llama_embed_url)
     app.state.vector = QdrantStore(settings.qdrant_url, settings.qdrant_collection)
