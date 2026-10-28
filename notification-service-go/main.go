@@ -11,6 +11,8 @@ import (
 
 	"notification-service-go/email"
 	kafkamodule "notification-service-go/kafka"
+
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func envOrDefault(key, def string) string {
@@ -62,6 +64,7 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"status":"UP"}`))
 	})
+	http.Handle("/metrics", promhttp.Handler())
 
 	log.Printf("Notification service (Go) listening on %s", addr)
 	if err := http.ListenAndServe(addr, nil); err != nil && err != http.ErrServerClosed {

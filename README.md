@@ -24,10 +24,10 @@ The system follows a microservice architecture with 4 core services behind an AP
 
 | Service | Port | Description | Technology Stack |
 |---------|------|-------------|------------------|
-| **Gateway** | 8080 | Single entry point for all client requests, request routing, JWT validation, static frontend serving | Spring Cloud Gateway, WebFlux, Spring Security, Resilience4j |
+| **Gateway** | 8080 | Single entry point for all client requests, request routing, JWT validation | Spring Cloud Gateway, WebFlux, Spring Security, Resilience4j |
 | **User Service** | 8081 | User management, authentication, authorization, role management | Spring Boot, Spring Security, JWT (JJWT), PostgreSQL, Redis, Kafka |
 | **Booking Service** | 8082 | Event, ticket, venue, and town management; ticket booking operations | Spring Boot, Spring Data JPA, PostgreSQL, Redis (Redisson), Kafka |
-| **Notification Service** | 8083 | Asynchronous email notifications for authentication and booking events | Spring Boot, Spring Mail, Kafka Consumer |
+| **Notification Service** | 8083 | Asynchronous email notifications for authentication and booking events | Go, Kafka consumer, SMTP |
 
 ### Infrastructure Components
 - **PostgreSQL 16**: Two separate databases (`user_service`, `booking_service`) with Flyway migrations (see `user-service/src/main/resources/db/migration/` and `booking-service/src/main/resources/db/migration/`)
@@ -67,7 +67,6 @@ The system follows a microservice architecture with 4 core services behind an AP
 microservices-example-app/
 ├── gateway/                          # API Gateway service
 │   ├── src/main/java/.../gateway/   # Java source code
-│   ├── src/main/resources/static/    # Frontend assets (JS, CSS, HTML)
 │   ├── Dockerfile                    # Multi-stage build
 │   └── build.gradle                  # Dependencies
 ├── user-service/                     # User management service

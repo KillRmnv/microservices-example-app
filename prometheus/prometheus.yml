@@ -28,12 +28,12 @@ scrape_configs:
         labels:
           service: "booking-service"
 
-  - job_name: "notification-service"
-    metrics_path: "/actuator/prometheus"
+  - job_name: "notification-service-go"
+    metrics_path: "/metrics"
     static_configs:
-      - targets: ["notification-service:8083"]
+      - targets: ["notification-service-go:8083"]
         labels:
-          service: "notification-service"
+          service: "notification-service-go"
 
   - job_name: "collector-service"
     metrics_path: "/metrics"

@@ -46,12 +46,7 @@ refactor. Each item explains why it is deferred and what "done" looks like.
 
 ## Operations / cleanup
 
-- [ ] **Prometheus target mismatch.** `prometheus.yml` scrapes
-      `notification-service:8083`, while the Compose service is
-      `notification-service-go` and exposes no `/actuator/prometheus`.
-      Either rename the target and add a metrics endpoint, or drop the job.
-- [ ] **Legacy Java notification service.** `notification-service/` is not in
-      Compose but CI still builds it. Delete it once the Go service has owned
-      the topics for a full release.
-- [ ] **Legacy static UI.** `gateway/src/main/resources/static/` is dead (no
-      Compose service serves it, no test reads it); remove it.
+- [ ] **Notification service observability.** The Go service exposes
+      `/metrics`, but its handlers currently report only standard Go/process
+      metrics. Add Kafka-consumed and email-sent counters if per-event
+      visibility is needed.
