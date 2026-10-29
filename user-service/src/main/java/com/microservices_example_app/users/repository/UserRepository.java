@@ -16,6 +16,8 @@ public interface UserRepository extends JpaRepository<User, Long>, JpaSpecificat
     @Override
     Optional<User> findById(Long id);
 
+    Optional<User> findByUsername(String username);
+
     Page<User> findAll(Pageable pageable);
 
     boolean existsByEmail(String email);

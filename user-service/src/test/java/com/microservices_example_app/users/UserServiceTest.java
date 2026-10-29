@@ -6,6 +6,7 @@ import com.microservices_example_app.users.event.SuccessfulRegistrationEmailEven
 import com.microservices_example_app.users.event.UserDeletedEvent;
 import com.microservices_example_app.users.event.UserUpdatedEvent;
 import com.microservices_example_app.users.exceptions.EmailForwardingException;
+import com.microservices_example_app.users.exceptions.UserAlreadyExistsException;
 import com.microservices_example_app.users.exceptions.UserNotFoundException;
 import com.microservices_example_app.users.model.Role;
 import com.microservices_example_app.users.model.User;
@@ -1100,5 +1101,32 @@ class UserServiceTest {
         List<UserResponseDto> result = userService.getUsersByPage(999, 10);
 
         assertThat(result).isEmpty();
+    }
+
+    @Test
+    void register_shouldRejectDuplicateEmail() {
+        when(userDao.findByEmail("dupe@test.com"))
+                .thenReturn(java.util.Optional.of(User.builder()
+                        .username("someone").email("dupe@test.com").build()));
+
+        assertThatThrownBy(() -> userService.register(
+                "dupe@test.com", "password", "CUSTOMER", "newbie", false))
+                .isInstanceOf(UserAlreadyExistsException.class)
+                .hasMessageContaining("email");
+        verify(userDao, never()).save(any());
+    }
+
+    @Test
+    void register_shouldRejectDuplicateUsername() {
+        when(userDao.findByEmail("fresh@test.com")).thenReturn(java.util.Optional.empty());
+        when(userDao.findByUsername("taken"))
+                .thenReturn(java.util.Optional.of(User.builder()
+                        .username("taken").email("other@test.com").build()));
+
+        assertThatThrownBy(() -> userService.register(
+                "fresh@test.com", "password", "CUSTOMER", "taken", false))
+                .isInstanceOf(UserAlreadyExistsException.class)
+                .hasMessageContaining("именем");
+        verify(userDao, never()).save(any());
     }
 }

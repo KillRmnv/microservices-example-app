@@ -6,6 +6,7 @@ import com.microservices_example_app.users.event.SuccessfulRegistrationEmailEven
 import com.microservices_example_app.users.event.UserDeletedEvent;
 import com.microservices_example_app.users.event.UserUpdatedEvent;
 import com.microservices_example_app.users.exceptions.EmailForwardingException;
+import com.microservices_example_app.users.exceptions.UserAlreadyExistsException;
 import com.microservices_example_app.users.exceptions.UserNotFoundException;
 import com.microservices_example_app.users.model.Role;
 import com.microservices_example_app.users.model.User;
@@ -42,6 +43,13 @@ public  class UserService {
     @Transactional
     public UserRegistrationDto register(String email, String password, String role, String username, Boolean isSystem) {
         log.info("Registering new user: email={}, username={}, role={}", SensitiveMask.maskEmail(email), username, role);
+
+        if (userDao.findByEmail(email).isPresent()) {
+            throw new UserAlreadyExistsException("Пользователь с таким email уже существует");
+        }
+        if (userDao.findByUsername(username).isPresent()) {
+            throw new UserAlreadyExistsException("Пользователь с таким именем уже существует");
+        }
 
         Role customerRole = roleRepository.findByName(role)
                 .orElseThrow(() -> {

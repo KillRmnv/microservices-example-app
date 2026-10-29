@@ -2,6 +2,7 @@ package com.microservices_example_app.users.controller;
 
 import com.microservices_example_app.users.dto.*;
 import com.microservices_example_app.users.service.UserService;
+import com.microservices_example_app.users.utils.JwtUtil;
 import com.microservices_example_app.users.util.SensitiveMask;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -34,6 +35,18 @@ public class UserController {
         List<UserResponseDto> users = userService.getAll();
         log.info("Successfully returned {} users", users.size());
         return ResponseEntity.ok(users);
+    }
+
+    @Operation(summary = "Get the authenticated user's own profile")
+    @GetMapping("/me")
+    public ResponseEntity<UserResponseDto> me(
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        if (authorization == null || !authorization.startsWith("Bearer ")) {
+            throw new IllegalArgumentException("Missing bearer token");
+        }
+        Long id = JwtUtil.extractUserId(authorization.substring(7));
+        log.info("Request received: get current user id={}", id);
+        return ResponseEntity.ok(userService.getById(id));
     }
 
     @Operation(summary = "Get a user by id")

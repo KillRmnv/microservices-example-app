@@ -125,7 +125,7 @@ export const api = {
 
   // --- users ---
   getUserById: (id: number) => api.get<User>(`/users/${id}`),
-  getCurrentUser: (email: string) => api.get<User>(`/users/by-email?email=${encodeURIComponent(email)}`),
+  getCurrentUser: () => api.get<User>('/users/me'),
   getAllUsers: () => api.get<User[]>('/users'),
   searchUsers: (filter: { email?: string; username?: string; role?: string }) => {
     const params = new URLSearchParams()

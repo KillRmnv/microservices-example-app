@@ -118,6 +118,10 @@ public final class JwtUtil {
         }
     }
 
+    public static Long extractUserId(String token) {
+        return parseToken(token).get("id", Long.class);
+    }
+
     public static Long extractUserIdFromPasswordResetToken(String token) {
         Claims claims = parsePasswordResetToken(token);
         return claims.get("id", Long.class);

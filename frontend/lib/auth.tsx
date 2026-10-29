@@ -28,7 +28,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return
     }
     try {
-      const found = await api.getCurrentUser(tokenStore.email)
+      const found = await api.getCurrentUser()
       setUser(found)
     } catch {
       tokenStore.clear()
@@ -45,7 +45,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async (email: string, password: string) => {
       const response = await api.login(email, password)
       tokenStore.setSession(response, email)
-      const found = await api.getCurrentUser(email)
+      const found = await api.getCurrentUser()
       setUser(found)
     },
     [],

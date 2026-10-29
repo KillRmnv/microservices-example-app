@@ -8,7 +8,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authorization.AuthorizationDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -68,6 +71,42 @@ public class GlobalExceptionHandling {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(problem(HttpStatus.BAD_REQUEST, "illegal_argument",
                         HttpStatus.BAD_REQUEST.getReasonPhrase(), ex.getMessage(), request, null));
+    }
+
+    @ExceptionHandler(UserAlreadyExistsException.class)
+    public ResponseEntity<ProblemDetail> userAlreadyExistsException(UserAlreadyExistsException ex,
+                                                                   HttpServletRequest request) {
+        log.warn("UserAlreadyExistsException:{}", SensitiveMask.maskEmailsInText(ex.getMessage()));
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(problem(HttpStatus.CONFLICT, "user_already_exists",
+                        HttpStatus.CONFLICT.getReasonPhrase(), ex.getMessage(), request, null));
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ProblemDetail> dataIntegrityViolationException(DataIntegrityViolationException ex,
+                                                                        HttpServletRequest request) {
+        log.warn("DataIntegrityViolationException:{}", SensitiveMask.maskEmailsInText(ex.getMessage()));
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(problem(HttpStatus.CONFLICT, "conflict",
+                        HttpStatus.CONFLICT.getReasonPhrase(),
+                        "Пользователь с таким email или именем уже существует",
+                        request, null));
+    }
+
+    @ExceptionHandler(AuthorizationDeniedException.class)
+    public ResponseEntity<ProblemDetail> authorizationDeniedException(AuthorizationDeniedException ex,
+                                                                     HttpServletRequest request) {
+        return accessDeniedException(ex, request);
+    }
+
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ProblemDetail> accessDeniedException(AccessDeniedException ex,
+                                                              HttpServletRequest request) {
+        log.warn("AccessDeniedException:{}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(problem(HttpStatus.FORBIDDEN, "forbidden",
+                        HttpStatus.FORBIDDEN.getReasonPhrase(),
+                        "Insufficient permissions", request, null));
     }
 
     @ExceptionHandler(EmailForwardingException.class)
