@@ -14,6 +14,38 @@ class CatalogViewTest extends SeleniumTestBase {
     }
 
     @Test
+    void shouldToggleThemeOnEventsPage() {
+        navigateTo("/events");
+        clickByTestId("theme-toggle");
+        assertThat(find("html").getAttribute("class")).contains("dark-mode");
+    }
+
+    @Test
+    void shouldKeepThemeAcrossNavigation() {
+        navigateTo("/events");
+        clickByTestId("theme-toggle");
+        navigateTo("/");
+        assertThat(find("html").getAttribute("class")).contains("dark-mode");
+    }
+
+    @Test
+    void shouldOpenCityMenuOnMobile() {
+        driver.manage().window().setSize(new org.openqa.selenium.Dimension(390, 844));
+        navigateTo("/events");
+        clickByTestId("city-picker");
+        org.openqa.selenium.WebElement menu = findByTestId("nav-city-options");
+        assertThat(menu.isDisplayed()).isTrue();
+        driver.manage().window().setSize(new org.openqa.selenium.Dimension(1400, 1000));
+    }
+
+    @Test
+    void shouldShowAssistantAndFooterOnEventsPage() {
+        navigateTo("/events");
+        assertThat(findByTestId("assistant-fab")).isNotNull();
+        assertThat(findByTestId("site-footer")).isNotNull();
+    }
+
+    @Test
     void shouldShowErrorStateOnEventsPageWithoutBackend() {
         navigateTo("/events");
         assertThat(findByTestId("page-error").getText()).contains("Выпуск не поступил");

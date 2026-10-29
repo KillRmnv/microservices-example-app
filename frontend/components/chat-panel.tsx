@@ -12,9 +12,10 @@ import {
   loadContract,
   saveContract,
   sendDialogue,
+  structureQuery,
   type DialogMessage,
 } from '@/lib/assistant'
-import { contractFromParsed, parseQuery } from '@/lib/dialogue'
+import { contractFromParsed, mergeContracts, parseQuery } from '@/lib/dialogue'
 
 interface ChatMessage {
   id: number
@@ -156,8 +157,17 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
   const sendLive = async (text: string) => {
     setBusy(true)
     try {
+      const stored = loadContract() ?? undefined
       const parsed = parseQuery(text)
-      const contract = contractFromParsed(parsed, loadContract() ?? undefined)
+      let contract = contractFromParsed(parsed, stored)
+      try {
+        // Model fills semantic slots; deterministic parser keeps RU dates.
+        const remote = await structureQuery(text, contract.semantic_payload.language || 'ru',
+          stored?.context_state.session_id)
+        contract = mergeContracts(remote, contract)
+      } catch {
+        /* model backend down: keep the local contract */
+      }
       const response = await sendDialogue(contract)
       saveContract(response.contract)
       setMessages((prev) => [

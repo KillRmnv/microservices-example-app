@@ -184,3 +184,44 @@ export function contractFromParsed(parsed: ParsedQuery, previous?: StateContract
   }
   return contract
 }
+
+
+/** Prefer the model's semantic fields, keep deterministic local date parsing. */
+export function mergeContracts(remote: StateContract, local: StateContract): StateContract {
+  const remoteDate = remote.hard_filters.datetime
+  return {
+    ...local,
+    dialogue_action: remote.dialogue_action,
+    hard_filters: {
+      ...local.hard_filters,
+      datetime: remoteDate?.start
+        ? {
+            start: remoteDate.start,
+            end: remoteDate.end,
+            raw_expression: remoteDate.raw_expression,
+          }
+        : local.hard_filters.datetime,
+      location: {
+        ...(local.hard_filters.location ?? {}),
+        city: remote.hard_filters.location?.city || local.hard_filters.location?.city,
+      },
+      category: remote.hard_filters.category?.length
+        ? remote.hard_filters.category
+        : local.hard_filters.category,
+      party_size: remote.hard_filters.party_size || local.hard_filters.party_size,
+      budget: remote.hard_filters.budget ?? local.hard_filters.budget,
+      amenities_required: remote.hard_filters.amenities_required?.length
+        ? remote.hard_filters.amenities_required
+        : local.hard_filters.amenities_required,
+    },
+    negative_filters: {
+      ...local.negative_filters,
+      ...remote.negative_filters,
+    },
+    semantic_payload: {
+      ...local.semantic_payload,
+      vector_query: remote.semantic_payload.vector_query || local.semantic_payload.vector_query,
+      language: remote.semantic_payload.language || local.semantic_payload.language,
+    },
+  }
+}

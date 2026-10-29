@@ -27,12 +27,14 @@ class ChatCompletionsProvider(LLMProvider):
 
     def __init__(self, base_url: str, model: str, timeout_s: float,
                  api_key: str = "",
-                 transport: httpx.BaseTransport | None = None) -> None:
+                 transport: httpx.BaseTransport | None = None,
+                 extra_body: dict | None = None) -> None:
         self._base = base_url.rstrip("/")
         self._model = model
         self._timeout = timeout_s
         self._api_key = api_key
         self._transport = transport
+        self._extra_body = extra_body or {}
 
     def payload(self, *, system: str, user: str,
                 json_mode: bool, max_tokens: int) -> dict:
@@ -44,6 +46,7 @@ class ChatCompletionsProvider(LLMProvider):
             ],
             "max_tokens": max_tokens,
             "stream": False,
+            **self._extra_body,
         }
         if json_mode:
             body["response_format"] = {"type": "json_object"}

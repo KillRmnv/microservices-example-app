@@ -13,6 +13,16 @@ spring:
             - DedupeResponseHeader=Access-Control-Allow-Credentials Access-Control-Allow-Origin
 
           routes:
+            - id: collector-catalog
+              uri: http://collector-service:8080
+              predicates:
+                - Path=/catalog/**
+              filters:
+                - StripPrefix=1
+              metadata:
+                connect-timeout: 3000
+                response-timeout: 15s
+
             - id: users-service
               uri: http://user-service:8081
               predicates:

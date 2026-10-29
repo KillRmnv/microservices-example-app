@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="700" viewBox="0 0 1200 700">
+  <rect width="1200" height="700" fill="#f4efe4"/>
+  <rect x="26" y="26" width="1148" height="648" fill="none" stroke="#1a1a1a" stroke-width="3"/>
+  <rect x="38" y="38" width="1124" height="624" fill="none" stroke="#c41e2f" stroke-width="1"/>
+  <text x="600" y="250" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="38" letter-spacing="8" fill="#6f6b64">ГОРОДСКАЯ ГАЗЕТА О ДОСУГЕ</text>
+  <text x="600" y="420" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="150" letter-spacing="14" fill="#1a1a1a">ДОСУГ</text>
+  <line x1="330" y1="470" x2="870" y2="470" stroke="#1a1a1a" stroke-width="2"/>
+  <text x="600" y="530" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="30" letter-spacing="6" fill="#c41e2f">СОБЫТИЯ · МЕСТА · ВПЕЧАТЛЕНИЯ</text>
+  <text x="600" y="600" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="24" fill="#6f6b64">ФОТО ПОЯВИТСЯ В СЛЕДУЮЩЕМ ВЫПУСКЕ</text>
+</svg>

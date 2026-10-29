@@ -35,14 +35,23 @@ class BookingClient:
             return None
 
     async def check_availability(self, event_id: int) -> Availability:
-        """Active tickets for the event -> availability status + zone prices."""
-        try:
-            tickets = (await self._get(
-                "/booking/tickets/search",
-                {"eventId": event_id, "active": True,
-                 "page": 1, "size": TICKET_PAGE_SIZE})).json()
-        except Exception as exc:  # noqa: BLE001
-            log.warning("availability %s failed: %s", event_id, exc)
+        """Active tickets for the event -> availability status + zone prices.
+
+        General-admission and seatable tickets live in two endpoints; both
+        count towards availability, otherwise seatable events look sold out.
+        """
+        params = {"eventId": event_id, "active": True,
+                  "page": 1, "size": TICKET_PAGE_SIZE}
+        tickets: list[dict] = []
+        failed = 0
+        for path in ("/booking/tickets/search",
+                     "/booking/seatable-tickets/search"):
+            try:
+                tickets.extend((await self._get(path, params)).json())
+            except Exception as exc:  # noqa: BLE001 — one index may be empty
+                failed += 1
+                log.warning("availability %s (%s) failed: %s", event_id, path, exc)
+        if failed == 2:
             return Availability(event_id=event_id, status=UNKNOWN)
         active = [ticket for ticket in tickets if ticket.get("active")]
         if not active:

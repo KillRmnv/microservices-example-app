@@ -86,6 +86,8 @@ async def test_booking_availability_statuses():
         path = str(request.url)
         if path.endswith("/booking/events/3"):
             return httpx.Response(200, json={"id": 3, "title": "Пустой зал"})
+        if "/booking/seatable-tickets/" in path:
+            return httpx.Response(200, json=[])
         if "eventId=1" in path:
             tickets = [{"id": i, "active": True, "zone": "BASIC", "price": 50.0}
                        for i in range(12)]
@@ -119,3 +121,19 @@ async def test_booking_unknown_event_is_not_sold_out():
     client = BookingClient("http://booking:8082",
                            transport=httpx.MockTransport(handler))
     assert (await client.check_availability(42)).status == "unknown"
+
+
+@pytest.mark.asyncio
+async def test_booking_availability_includes_seatable_tickets():
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "/booking/seatable-tickets/" in str(request.url):
+            return httpx.Response(200, json=[
+                {"id": i, "eventId": 5, "active": True, "zone": "BASIC",
+                 "price": 40.0} for i in range(3)])
+        return httpx.Response(200, json=[])
+
+    client = BookingClient("http://booking:8082",
+                           transport=httpx.MockTransport(handler))
+    availability = await client.check_availability(5)
+    assert availability.status == "few_left"
+    assert availability.min_price == 40.0

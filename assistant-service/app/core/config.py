@@ -58,6 +58,9 @@ class Settings(BaseSettings):
     llm_stages: str = "structure:mock,plan:mock,telegram:mock"
     llm_default_backend: str = "local"
     llm_fallback_enabled: bool = False
+    # LFM/Qwen reasoning templates emit reasoning_content instead of the
+    # answer unless thinking is disabled (json contracts need the answer).
+    llm_disable_thinking: bool = True
     llm_timeout_s: float = 60.0
 
     scheduler_enabled: bool = True

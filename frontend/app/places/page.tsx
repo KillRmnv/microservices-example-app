@@ -1,82 +1,99 @@
 'use client'
 
-import Link from 'next/link'
-import { useEffect, useMemo, useState } from 'react'
-import { ArrowRight, MapPin } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
 import { ErrorView, ListPageHeader, LoadingView, PageHeader } from '@/components/secondary-page'
+import { CatalogPlaceCard } from '@/components/catalog-card'
 import { api } from '@/lib/api'
-import type { Town, Venue } from '@/lib/types'
+import type { CatalogVenue } from '@/lib/types'
+
+const PAGE_SIZE = 30
+const CITIES = ['Минск', 'Гродно', 'Брест']
+const RUBRICS = ['кафе', 'рестораны', 'бары', 'кинотеатры', 'театры', 'музеи', 'клубы', 'выставки', 'караоке', 'парки', 'библиотеки', 'спортзалы']
 
 export default function Page() {
-  const [venues, setVenues] = useState<Venue[]>()
-  const [towns, setTowns] = useState<Town[]>([])
+  const [venues, setVenues] = useState<CatalogVenue[]>([])
+  const [total, setTotal] = useState(0)
+  const [city, setCity] = useState('Минск')
+  const [rubric, setRubric] = useState('')
   const [search, setSearch] = useState('')
-  const [townFilter, setTownFilter] = useState<number | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState<unknown>()
 
-  const load = () => {
+  const load = useCallback(async (offset = 0, append = false) => {
     setError(undefined)
-    ;(async () => {
-      try {
-        const [venueList, townList] = await Promise.all([api.getVenues(), api.getTowns()])
-        setVenues(venueList)
-        setTowns(townList)
-      } catch (e) {
-        setError(e)
-      }
-    })()
-  }
+    if (offset === 0) setLoading(true)
+    else setLoadingMore(true)
+    try {
+      const page = await api.catalogVenues({
+        city: city || undefined,
+        rubric: rubric || undefined,
+        q: search.trim() || undefined,
+        limit: PAGE_SIZE,
+        offset,
+      })
+      setVenues((current) => (append ? [...current, ...page.items] : page.items))
+      setTotal(page.total)
+    } catch (e) {
+      setError(e)
+    } finally {
+      setLoading(false)
+      setLoadingMore(false)
+    }
+  }, [city, rubric, search])
 
-  useEffect(load, [])
+  useEffect(() => {
+    void load(0, false)
+  }, [load])
 
-  const filtered = useMemo(
-    () =>
-      (venues ?? [])
-        .filter((venue) => (townFilter === null ? true : venue.townId === townFilter))
-        .filter((venue) => venue.place.toLowerCase().includes(search.toLowerCase().trim())),
-    [venues, search, townFilter],
-  )
-
-  if (error) return <ErrorView error={error} onRetry={load} />
-  if (!venues) return <LoadingView />
+  if (error) return <ErrorView error={error} onRetry={() => load(0, false)} />
+  if (loading) return <LoadingView />
 
   return (
-    <div className="list-page" data-testid="places-page">
-      <ListPageHeader
-        kicker="СПРАВОЧНИК ГОРОДА"
-        title="Места"
-        subline="Площадки, где сейчас сверстывается афиша"
-        searchValue={search}
-        searchPlaceholder="Найти место по названию…"
-        onSearchChange={setSearch}
-        searchTestId="place-search-name"
-        append={
-          <select className={townFilter === null ? '' : 'venue-active'} value={townFilter ?? ''} onChange={(e) => setTownFilter(e.target.value ? Number(e.target.value) : null)} data-testid="town-filter">
-            <option value="">Все города</option>
-            {towns.map((town) => (
-              <option key={town.id} value={town.id}>{town.name}</option>
-            ))}
-          </select>
-        }
-      />
-      {filtered.length === 0 ? (
-        <div className="empty-state" data-testid="places-empty"><h3>Справочник пуст</h3><p>Площадки появятся, когда менеджеры их добавят.</p></div>
-      ) : (
-        <div className="list-cards" data-testid="venues-grid">
-          {filtered.map((venue) => (
-            <Link href={`/places/detail?id=${venue.id}`} key={venue.id} className="list-card venue-card" data-testid="venue-card">
-              <div className="list-card-head">
-                <div>
-                  <div className="kicker">{venues.find((v) => v.townId === venue.townId)?.townName ?? 'В ГОРОДЕ'}</div>
-                  <h3>{venue.place}</h3>
-                  <p className="meta-line venue"><MapPin size={13} /> Вместимость: {venue.capacity}</p>
-                </div>
-                <ArrowRight size={18} className="list-arrow" />
-              </div>
-            </Link>
-          ))}
-        </div>
-      )}
-    </div>
+    <main className="detail-page-wrap" data-testid="places-page-wrap">
+      <PageHeader returnHref="/" />
+      <div className="list-page" data-testid="places-page">
+        <ListPageHeader
+          kicker="СПРАВОЧНИК ГОРОДА · 2ГИС"
+          title="Места"
+          subline={`${total} площадок, где можно провести вечер`}
+          searchValue={search}
+          searchPlaceholder="Найти место: «кофейня», «филармония»…"
+          onSearchChange={setSearch}
+          onSearchSubmit={() => load(0, false)}
+          searchTestId="place-search-name"
+          append={
+            <div className="catalog-filters">
+              <select value={city} onChange={(e) => setCity(e.target.value)} data-testid="place-city-filter">
+                {CITIES.map((name) => <option key={name} value={name}>{name}</option>)}
+              </select>
+              <select value={rubric} onChange={(e) => setRubric(e.target.value)} data-testid="place-rubric-filter">
+                <option value="">Все рубрики</option>
+                {RUBRICS.map((name) => <option key={name} value={name}>{name}</option>)}
+              </select>
+            </div>
+          }
+        />
+
+        {venues.length === 0 ? (
+          <div className="empty-state" data-testid="places-empty">
+            <h3>Справочник пуст</h3>
+            <p>Попробуйте другую рубрику или город.</p>
+          </div>
+        ) : (
+          <div className="places-grid" data-testid="venues-grid">
+            {venues.map((venue) => <CatalogPlaceCard venue={venue} key={venue.id} />)}
+          </div>
+        )}
+
+        {venues.length > 0 && venues.length < total && (
+          <div className="load-more-row">
+            <button className="apply-button" disabled={loadingMore} onClick={() => load(venues.length, true)} data-testid="places-load-more">
+              {loadingMore ? 'Загружаем…' : `Показать ещё (${total - venues.length})`}
+            </button>
+          </div>
+        )}
+      </div>
+    </main>
   )
 }

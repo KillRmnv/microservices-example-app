@@ -42,6 +42,16 @@ export function formatTimeRange(startIso: string, endIso: string | undefined): s
   return `${human} · до ${time(end)}`
 }
 
+export function formatEventDuration(startIso: string | undefined, endIso: string | undefined): string {
+  if (!startIso || !endIso) return '—'
+  const start = new Date(startIso).getTime()
+  const end = new Date(endIso).getTime()
+  if (Number.isNaN(start) || Number.isNaN(end) || end <= start) return '—'
+  // Scraped cards often carry a date-only end; anything over half a day is noise.
+  if (end - start > 12 * 60 * 60 * 1000) return '—'
+  return formatTimeRange(startIso, endIso)
+}
+
 export function mastheadDate(): string {
   const date = new Date()
   return `${WEEKDAYS_FULL[date.getDay()].toUpperCase()}, ${date.getDate()} ${MONTHS_NOMINATIVE[date.getMonth()]} ${date.getFullYear()}`
@@ -96,21 +106,10 @@ export function minActivePrice(tickets: Ticket[]): number | undefined {
   return prices.length ? Math.min(...prices) : undefined
 }
 
-const EDITORIAL_PHOTOS = [
-  'photo-1470229722913-7c0e2dbbafd0',
-  'photo-1503095406548-810b24a20123',
-  'photo-1554907984-15263bfd63bd',
-  'photo-1414235077428-338989a2e8c0',
-  'photo-1519501025264-65ba15a82390',
-  'photo-1489599849927-2b91ca8354bb',
-  'photo-1477414348463-c0eb7f1359b6',
-  'photo-1501281668745-f7f57925c3b4',
-]
+export const fallbackPhotoUrl = '/event-placeholder.svg'
 
-export const fallbackPhotoUrl = `https://images.unsplash.com/${EDITORIAL_PHOTOS[0]}?auto=format&fit=crop&w=900&q=80`
-
-export const eventPhotoUrl = (seed: number, width = 700): string =>
-  `https://images.unsplash.com/${EDITORIAL_PHOTOS[seed % EDITORIAL_PHOTOS.length]}?auto=format&fit=crop&w=${width}&q=80`
+export const eventPhotoUrl = (_seed: number, _width = 700): string =>
+  '/event-placeholder.svg'
 
 export function eventImageSeed(event: Event): string {
   return eventPhotoUrl(event.id)

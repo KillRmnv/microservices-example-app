@@ -1,34 +1,43 @@
-# Local embedding server (llama.cpp, bge-m3). Opt-in via compose profile `llm`:
-#   docker compose --profile llm up -d llama-embed
-# Needs the model file on the host, e.g. ~/models/bge-m3-q8_0.gguf
-# (set LLAMA_MODEL_FILE). Without the profile, point LLAMA_EMBED_URL
-# at a host-side `llama server --embedding` instead.
+# Local llama.cpp servers (bge-m3 embeddings + chat models) via the `llm`
+# compose profile. Models are mounted read-only from the host:
+#   docker compose --profile llm up -d llama-embed llama-chat
 #
-# No prebuilt wheel for this image -> compile once (cached layer).
-FROM python:3.12-slim AS builder
+# Built from llama.cpp master: PyPI llama-cpp-python still bundles an older
+# runtime without `lfm3` support, and we need it for LFM3-1.7B.
+FROM debian:bookworm-slim AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        build-essential cmake \
+        git cmake build-essential ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /wheel
-RUN pip wheel --no-cache-dir --wheel-dir=/wheel "llama-cpp-python[server]==0.3.36"
+WORKDIR /src
+RUN git clone --depth 1 https://github.com/ggml-org/llama.cpp.git
+RUN cmake -S llama.cpp -B llama.cpp/build \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DGGML_NATIVE=OFF \
+        -DLLAMA_CURL=OFF \
+        -DLLAMA_BUILD_TESTS=OFF \
+        -DLLAMA_BUILD_EXAMPLES=OFF \
+    && cmake --build llama.cpp/build --target llama-server -j"$(nproc)"
 
-FROM python:3.12-slim
+FROM debian:bookworm-slim
 
-RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libgomp1 ca-certificates libstdc++6 \
     && rm -rf /var/lib/apt/lists/* \
     && addgroup --system appgroup && adduser --system --ingroup appgroup appuser
 
-COPY --from=builder /wheel /wheel
-RUN pip install --no-cache-dir /wheel/llama_cpp_python-*.whl /wheel/*.whl && rm -rf /wheel
+COPY --from=builder /src/llama.cpp/build/bin/ /opt/llama/
+ENV LD_LIBRARY_PATH=/opt/llama
+ENV PATH=/opt/llama:$PATH
 
 ENV LLAMA_MODEL_FILE=/models/bge-m3-q8_0.gguf
-ENV LLAMA_EMBED_CTX=512
-ENV LLAMA_EMBED_THREADS=6
-ENV LLAMA_EMBED_PORT=8088
+ENV LLAMA_CTX=512
+ENV LLAMA_THREADS=6
+ENV LLAMA_PORT=8088
+ENV LLAMA_EXTRA_ARGS="--embedding"
 
-EXPOSE 8088
+EXPOSE 8088 8089
 USER appuser
 
-ENTRYPOINT ["sh", "-c", "python -m llama_cpp.server --model \"$LLAMA_MODEL_FILE\" --embedding True --n_ctx \"$LLAMA_EMBED_CTX\" --n_threads \"$LLAMA_EMBED_THREADS\" --host 0.0.0.0 --port \"$LLAMA_EMBED_PORT\""]
+ENTRYPOINT ["sh", "-c", "llama-server --model \"$LLAMA_MODEL_FILE\" --ctx-size \"$LLAMA_CTX\" --threads \"$LLAMA_THREADS\" --host 0.0.0.0 --port \"$LLAMA_PORT\" $LLAMA_EXTRA_ARGS"]

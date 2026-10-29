@@ -1,5 +1,8 @@
 import type { Metadata, Viewport } from 'next'
 import { AuthProvider } from '@/lib/auth'
+import { SiteChrome } from '@/components/site-chrome'
+import { ThemeProvider } from '@/lib/theme'
+import { CityProvider } from '@/lib/city'
 import './globals.css'
 import './secondary-pages.css'
 
@@ -30,8 +33,15 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="ru">
+    <html lang="ru" suppressHydrationWarning>
       <head>
+        <script
+          // Apply the saved theme before paint to avoid a light-theme flash.
+          dangerouslySetInnerHTML={{
+            __html:
+              "try{var t=localStorage.getItem('dosugTheme');if(t==='dark'||(!t&&window.matchMedia('(prefers-color-scheme: dark)').matches)){document.documentElement.classList.add('dark-mode')}}catch(e){}",
+          }}
+        />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link
@@ -40,7 +50,13 @@ export default function RootLayout({
         />
       </head>
       <body className="antialiased">
-        <AuthProvider>{children}</AuthProvider>
+        <ThemeProvider>
+          <CityProvider>
+            <AuthProvider>
+              <SiteChrome>{children}</SiteChrome>
+            </AuthProvider>
+          </CityProvider>
+        </ThemeProvider>
       </body>
     </html>
   )

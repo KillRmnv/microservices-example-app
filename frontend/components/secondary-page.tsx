@@ -23,11 +23,9 @@ export function PageHeader({
   title?: string
   lead?: string
 }) {
-  const [dark, setDark] = useState(false)
-  useEffect(() => { if (light) setDark(false) }, [light])
   return (
     <>
-      <NewspaperHeader dark={dark} onThemeToggle={() => setDark(!dark)} returnLink={returnHref ? { href: returnHref, label: 'Назад' } : undefined} />
+      <NewspaperHeader returnLink={returnHref ? { href: returnHref, label: 'Назад' } : undefined} />
       {(section || title || lead) && (
         <div className="article-intro">
           {section && <div className="kicker">{section}</div>}
@@ -146,6 +144,7 @@ export function ListPageHeader({
   searchValue,
   searchPlaceholder,
   onSearchChange,
+  onSearchSubmit,
   searchTestId,
   append,
 }: {
@@ -155,6 +154,7 @@ export function ListPageHeader({
   searchValue?: string
   searchPlaceholder: string
   onSearchChange: (value: string) => void
+  onSearchSubmit?: () => void
   searchTestId: string
   append?: ReactNode
 }) {
@@ -166,7 +166,13 @@ export function ListPageHeader({
       <div className="list-attach">
         {append}
         <div className="list-search">
-          <input placeholder={searchPlaceholder} value={searchValue ?? ''} onChange={(e) => onSearchChange(e.target.value)} data-testid={searchTestId} />
+          <input
+            placeholder={searchPlaceholder}
+            value={searchValue ?? ''}
+            onChange={(e) => onSearchChange(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && onSearchSubmit) onSearchSubmit() }}
+            data-testid={searchTestId}
+          />
         </div>
       </div>
     </div>

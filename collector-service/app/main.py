@@ -14,6 +14,7 @@ from .core.logging import RequestIdMiddleware, setup_logging
 from .embeddings import LlamaServerEmbedding
 from .errors.handlers import register_exception_handlers
 from .http import PoliteClient
+from .repositories import queries
 from .scheduler import start_scheduler, stop_scheduler
 from .services.collect_service import CollectService
 from .services.embed_service import EmbedService
@@ -29,6 +30,10 @@ async def lifespan(app: FastAPI):
     applied = db.run_migrations(db_url)
     if applied:
         log.info("applied migrations: %s", applied)
+    with db.get_conn(db_url) as conn:
+        linked = queries.link_event_venues(conn)
+        if linked:
+            log.info("linked %d events to 2GIS venues", linked)
     http = PoliteClient(
         user_agent=settings.user_agent,
         default_min_interval_s=settings.default_min_interval_s,

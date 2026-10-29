@@ -40,9 +40,29 @@ refactor. Each item explains why it is deferred and what "done" looks like.
 
 ## Local LLM / embeddings
 
+- [ ] **LFM3 reasoning mode.** `llama-chat` currently runs LFM3 with
+      `ASSISTANT_LLM_DISABLE_THINKING=true`
+      (`chat_template_kwargs.enable_thinking=false`). With thinking enabled the
+      model spends the whole token budget in `reasoning_content` and returns an
+      empty `content`, so the structure stage falls back to the deterministic
+      parser. Figure out whether this is:
+      - how the llama.cpp build handles LFM3 `reasoning_content` / template
+        kwargs (`--reasoning-format`, `--no-reasoning-preserve`, `--jinja`);
+      - the GGUF chat template metadata itself (check what the model expects for
+        enabling/disabling thinking);
+      - or just `max_tokens`/`temperature` in
+        `assistant-service/app/clients/llm/llama_cpp.py`.
+      "Done" means either reasoning works end-to-end (reasoning can be kept or
+      discarded explicitly, while the final JSON answer lands in `content`) with
+      a test for the structure stage, or a short written decision why thinking
+      stays disabled for this model. Do not silently rely on the flag: the
+      runtime is built from llama.cpp master, and PyPI `llama-cpp-python` still
+      lacks `lfm3`, so a version/template regression is plausible.
 - [ ] **Model bootstrap.** `llama.cpp` servers are opt-in Compose profiles and
-      expect model files under `${MODEL_DIR}`. Add a documented download/verify
-      step so a fresh clone can run `structure:local` without manual work.
+      expect model files under `${MODEL_DIR}` (bge-m3 for embeddings, LFM3 for
+      chat). Add a documented download/verify step so a fresh clone can run
+      `structure:local` without manual work, and note that the image is built
+      from llama.cpp master (not the PyPI wheel) because of `lfm3` support.
 
 ## Operations / cleanup
 

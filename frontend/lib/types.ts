@@ -115,3 +115,51 @@ export interface StateContract {
     session_id: string
   }
 }
+
+// --- public catalog (collector_db, mirrored from scrapers + booking) ---
+
+export interface CatalogEvent {
+  id: string
+  source: string
+  source_url: string
+  booking_event_id: number | null
+  title: string
+  description?: string | null
+  category: string
+  start_at: string | null
+  end_at: string | null
+  venue_name?: string | null
+  address?: string | null
+  city: string
+  price_min?: number | null
+  price_max?: number | null
+  currency?: string | null
+  image_url?: string | null
+  venue_id?: string | null
+  latitude?: number | null
+  longitude?: number | null
+  venue_ref?: string | null
+}
+
+export interface CatalogVenue {
+  id: string
+  source: string
+  source_url?: string | null
+  name: string
+  rubric?: string | null
+  address?: string | null
+  city: string
+  latitude?: number | null
+  longitude?: number | null
+  rating?: number | null
+  review_count?: number | null
+  schedule?: Record<string, unknown> | null
+  events?: CatalogEvent[]
+}
+
+export interface CatalogPage<T> {
+  total: number
+  limit: number
+  offset: number
+  items: T[]
+}

@@ -5,7 +5,6 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   ArrowRight,
   CalendarDays,
-  ChevronDown,
   ChevronRight,
   Clock3,
   Coffee,
@@ -22,22 +21,25 @@ import {
   Utensils,
 } from 'lucide-react'
 import { NewspaperHeader, RuleTitle } from '@/components/newspaper-header'
-import { AssistantFab, ChatPanel } from '@/components/chat-panel'
+import { MapView } from '@/components/map-view'
 import { api } from '@/lib/api'
-import { admissionLabel, formatDateTime } from '@/lib/format'
-import type { Event, SeatableTicket, Ticket, Town, Venue } from '@/lib/types'
+import { useCity } from '@/lib/city'
+import { CATEGORY_LABELS, FALLBACK_EVENT_IMAGE, eventImage, eventPlace, eventPrice, isBookable, todayIso } from '@/lib/catalog'
+import { formatDateTime } from '@/lib/format'
+import type { CatalogEvent, CatalogVenue } from '@/lib/types'
 
 interface EventCard {
-  id: number
+  id: string
   title: string
   date: string
   place: string
   price?: string
   tag: string
   scarce: boolean
+  image: string
+  bookable: boolean
+  startsAt: string
 }
-
-const CITIES = ['МИНСК', 'БРЕСТ', 'ГРОДНО']
 
 function dayStart(offset: number): number {
   const d = new Date()
@@ -46,8 +48,6 @@ function dayStart(offset: number): number {
 }
 
 export default function Page() {
-  const [dark, setDark] = useState(false)
-  const [chatOpen, setChatOpen] = useState(false)
   const [activeDay, setActiveDay] = useState('Все даты')
   const [customDate, setCustomDate] = useState('')
   const [activeCategory, setActiveCategory] = useState('Все')
@@ -55,42 +55,26 @@ export default function Page() {
   const [maxBudget, setMaxBudget] = useState(100)
   const [atmosphere, setAtmosphere] = useState('')
   const [view, setView] = useState<'grid' | 'map'>('grid')
-  const [liked, setLiked] = useState<number[]>([])
-  const [cityOpen, setCityOpen] = useState(false)
-  const [city, setCity] = useState('МИНСК')
+  const [liked, setLiked] = useState<string[]>([])
+  const { city } = useCity()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [events, setEvents] = useState<Event[]>([])
-  const [venues, setVenues] = useState<Venue[]>([])
-  const [towns, setTowns] = useState<Town[]>([])
-  const [minPrices, setMinPrices] = useState<Map<number, number>>(new Map())
+  const [events, setEvents] = useState<CatalogEvent[]>([])
+  const [venues, setVenues] = useState<CatalogVenue[]>([])
+
+  const catalogCity = city
 
   useEffect(() => {
     let cancelled = false
     ;(async () => {
       try {
-        const [eventsList, venuesList, townsList, tickets, seatable] = await Promise.all([
-          api.searchEvents({}, 1, 30),
-          api.getVenues(),
-          api.getTowns(),
-          api.searchTickets({ active: true }, 1, 500),
-          api.searchSeatableTickets({ active: true }, 1, 500),
+        const [eventsPage, venuesPage] = await Promise.all([
+          api.catalogEvents({ city: catalogCity, dateFrom: todayIso(), limit: 60 }),
+          api.catalogVenues({ city: catalogCity, limit: 8 }),
         ])
         if (cancelled) return
-        setEvents(eventsList)
-        setVenues(venuesList)
-        setTowns(townsList)
-        const mins = new Map<number, number>()
-        tickets.forEach((t) => {
-          if (t.eventId == null) return
-          const cur = mins.get(t.eventId)
-          if (cur === undefined || t.price < cur) mins.set(t.eventId, t.price)
-        })
-        seatable.forEach((t) => {
-          const cur = mins.get(t.eventId) ?? Number.POSITIVE_INFINITY
-          if (t.price < cur) mins.set(t.eventId, t.price)
-        })
-        setMinPrices(mins)
+        setEvents(eventsPage.items)
+        setVenues(venuesPage.items)
         setLoading(false)
       } catch (e) {
         if (!cancelled) {
@@ -102,7 +86,7 @@ export default function Page() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [catalogCity])
 
   const matchesDay = (startsAt: string) => {
     const ts = new Date(startsAt).getTime()
@@ -123,37 +107,39 @@ export default function Page() {
   const cards: EventCard[] = useMemo(
     () =>
       events
-        .filter((event) => matchesDay(event.startsAt))
+        .filter((event) => event.start_at && matchesDay(event.start_at))
         .filter((event) => {
+          const category = (CATEGORY_LABELS[event.category] ?? '').toLowerCase()
+          if (activeCategory !== 'Все' && category !== activeCategory.toLowerCase()) return false
           if (maxBudget < 100) {
-            const price = minPrices.get(event.id)
-            if (price === undefined || price > maxBudget) return false
+            const price = event.price_min
+            if (price == null || price > maxBudget) return false
           }
           return true
         })
-        .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime())
+        .sort((a, b) => new Date(a.start_at ?? 0).getTime() - new Date(b.start_at ?? 0).getTime())
         .slice(0, 12)
-        .map((event) => {
-          const price = minPrices.get(event.id)
-          return {
-            id: event.id,
-            title: event.title,
-            date: formatDateTime(event.startsAt),
-            place: event.venuePlace,
-            price: price !== undefined ? `от ${price} руб.` : undefined,
-            tag: price === undefined ? admissionLabel(event.admissionMode).toUpperCase() : 'МЕСТА ЕСТЬ',
-            scarce: price === undefined,
-          }
-        }),
+        .map((event) => ({
+          id: event.id,
+          title: event.title,
+          date: formatDateTime(event.start_at ?? undefined),
+          place: eventPlace(event),
+          price: eventPrice(event),
+          tag: isBookable(event) ? 'МЕСТА ЕСТЬ' : 'ВНЕШНЯЯ АФИША',
+          scarce: !isBookable(event),
+          image: eventImage(event),
+          bookable: isBookable(event),
+          startsAt: event.start_at ?? '',
+        })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [events, minPrices, activeDay, customDate, maxBudget],
+    [events, activeDay, customDate, maxBudget, activeCategory],
   )
 
   const lead = cards[0]
   const rest = cards.slice(1)
   const sidebarVenues = useMemo(() => venues.slice(0, 6), [venues])
   const districts = ['Центральный', 'Советский', 'Фрунзенский', 'Октябрьский']
-  const categories = ['Все', 'Концерты', 'Театр', 'Кино', 'Выставки', 'Рестораны']
+  const categories = ['Все', 'Концерты', 'Театр', 'Кино', 'Выставки', 'Спорт', 'Детям']
   const activeFilterCount = useMemo(() => {
     let count = 0
     if (activeDay !== 'Все даты' || customDate) count += 1
@@ -174,8 +160,8 @@ export default function Page() {
   }
 
   return (
-    <main className={dark ? 'newspaper dark-mode' : 'newspaper'} data-testid="home-page">
-      <NewspaperHeader dark={dark} onThemeToggle={() => setDark(!dark)} />
+    <main className="newspaper" data-testid="home-page">
+      <NewspaperHeader />
 
       <div className="page-grid">
         <section className="content">
@@ -207,10 +193,19 @@ export default function Page() {
           {error ? (
             <div className="empty-state" data-testid="home-error"><h3>Не удалось связаться с редакцией</h3><p>{error}</p></div>
           ) : view === 'map' ? (
-            <div className="map-placeholder" role="status" data-testid="map-placeholder">
-              <MapPin size={28} />
-              <h3>Карта событий</h3>
-              <p>Здесь появится карта мест Минска: события, venues и подсказки ассистента.</p>
+            <div data-testid="home-map">
+              <MapView
+                label={`События · ${catalogCity}`}
+                markers={events
+                  .filter((event) => event.latitude != null && event.longitude != null)
+                  .slice(0, 40)
+                  .map((event) => ({
+                    latitude: Number(event.latitude),
+                    longitude: Number(event.longitude),
+                    label: event.title,
+                  }))}
+              />
+              <p className="side-hint">На карте — площадки ближайших событий. Нажмите «Места», чтобы посмотреть весь справочник 2ГИС.</p>
               <Link href="/places" className="read-more">Смотреть места <ArrowRight size={15} /></Link>
             </div>
           ) : (
@@ -218,16 +213,16 @@ export default function Page() {
               {!loading && lead && (
                 <div className="lead-story" data-testid="lead-story">
                   <div className="lead-image">
-                    <img src={`https://images.unsplash.com/photo-1501386761578-eac5c94b800a?auto=format&fit=crop&w=1000&q=85&seed=${lead.id}`} alt={lead.title} />
-                    <span className="image-caption">ФОТО: АРХИВ РЕДАКЦИИ</span>
+                    <img src={lead.image} alt={lead.title} onError={(e) => { e.currentTarget.src = FALLBACK_EVENT_IMAGE }} />
+                    <span className="image-caption">{lead.bookable ? 'БИЛЕТЫ В КАССЕ' : 'ИСТОЧНИК: ВНЕШНЯЯ АФИША'}</span>
                   </div>
                   <div className="lead-copy">
                     <div className="kicker">ВЫБОР РЕДАКЦИИ</div>
                     <h3>{lead.title}</h3>
                     <p className="meta-line"><CalendarDays size={14} /> {lead.date}</p>
                     <p className="meta-line"><MapPin size={14} /> {lead.place}</p>
-                    <p>{lead.price ? `${lead.tag} · ${lead.price}` : lead.tag}</p>
-                    <Link href={`/events/detail?id=${lead.id}`} className="read-more" data-testid="lead-story-link">Читать далее <ArrowRight size={15} /></Link>
+                    <p>{lead.tag} · {lead.price}</p>
+                    <Link href={`/events/detail?id=${encodeURIComponent(lead.id)}`} className="read-more" data-testid="lead-story-link">Читать далее <ArrowRight size={15} /></Link>
                   </div>
                 </div>
               )}
@@ -235,7 +230,7 @@ export default function Page() {
                 {!loading && rest.map((event, index) => (
                   <article className="story-card" key={event.id} data-testid="event-card">
                     <div className="card-image">
-                      <img src={`https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&w=700&q=75&seed=${event.id}`} alt={event.title} />
+                      <img src={event.image} alt={event.title} loading="lazy" onError={(e) => { e.currentTarget.src = FALLBACK_EVENT_IMAGE }} />
                       <button
                         className={liked.includes(event.id) ? 'fav-heart liked' : 'fav-heart'}
                         aria-label="Добавить в избранное"
@@ -245,13 +240,13 @@ export default function Page() {
                         <Heart size={16} fill={liked.includes(event.id) ? 'currentColor' : 'none'} />
                       </button>
                     </div>
-                    <div className="kicker">{index % 2 === 0 ? 'СОБЫТИЕ' : 'АФИША'}</div>
-                    <h3><Link href={`/events/detail?id=${event.id}`}>{event.title}</Link></h3>
+                    <div className="kicker">{(index % 2 === 0 ? 'СОБЫТИЕ' : 'АФИША') + (event.bookable ? ' · БИЛЕТЫ' : '')}</div>
+                    <h3><Link href={`/events/detail?id=${encodeURIComponent(event.id)}`}>{event.title}</Link></h3>
                     <p className="meta-line"><Clock3 size={13} /> {event.date}</p>
                     <p className="meta-line venue"><MapPin size={13} /> {event.place}</p>
                     <div className="card-footer">
                       <span className={event.scarce ? 'scarce' : ''}>{event.tag}</span>
-                      <strong>{event.price ?? '—'}</strong>
+                      <strong>{event.price}</strong>
                     </div>
                   </article>
                 ))}
@@ -274,18 +269,17 @@ export default function Page() {
             <Link href="/places" className="all-link" data-testid="all-places-link">Все места <ArrowRight size={15} /></Link>
           </div>
           <div className="places-grid" data-testid="places-grid">
-            {sidebarVenues.map((venue) => {
-              const town = towns.find((t) => t.id === venue.townId)
-              const Icon = [Coffee, Sparkles, Utensils, Film, Music, PartyPopper][venue.id % 6]
+            {sidebarVenues.slice(0, 6).map((venue, index) => {
+              const Icon = [Coffee, Sparkles, Utensils, Film, Music, PartyPopper][index % 6]
               return (
                 <article className="place-card" key={venue.id} data-testid="place-card">
                   <div className="place-icon"><Icon size={21} /></div>
                   <div>
-                    <div className="kicker">МЕСТО{town ? ` · ${town.name.toUpperCase()}` : ''}</div>
-                    <h3><Link href={`/places/detail?id=${venue.id}`}>{venue.place}</Link></h3>
-                    <p>Вместимость: {venue.capacity}</p>
+                    <div className="kicker">{(venue.rubric || 'МЕСТО').toUpperCase()}{venue.city ? ` · ${venue.city.toUpperCase()}` : ''}</div>
+                    <h3><Link href={`/places/detail?id=${encodeURIComponent(venue.id)}`}>{venue.name}</Link></h3>
+                    <p>{venue.address || venue.city}</p>
                   </div>
-                  <Star size={17} className="place-star" />
+                  {venue.rating != null ? <span className="place-rating"><Star size={15} /> {Number(venue.rating).toFixed(1)}</span> : <Star size={17} className="place-star" />}
                 </article>
               )
             })}
@@ -357,23 +351,6 @@ export default function Page() {
         </aside>
       </div>
 
-      <AssistantFab onOpen={() => setChatOpen(true)} />
-      <ChatPanel open={chatOpen} onClose={() => setChatOpen(false)} />
-
-      <div className="city-picker-placeholder">
-        <button className="city-btn" onClick={() => setCityOpen(!cityOpen)} data-testid="city-fab">
-          <MapPin size={15} /> {city} <ChevronDown size={13} />
-        </button>
-        {cityOpen && (
-          <div className="city-menu-fab" data-testid="city-options">
-            {CITIES.map((c) => (
-              <button key={c} onClick={() => { setCity(c); setCityOpen(false) }}>{c}</button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <footer><div className="footer-line"><span>© 2026 «Досуг» · городская газета о досуге</span><span className="footer-links"><Link href="/about">О проекте</Link></span></div></footer>
     </main>
   )
 }

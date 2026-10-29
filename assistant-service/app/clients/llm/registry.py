@@ -28,7 +28,8 @@ def build_provider(backend: str, settings: Settings,
     if backend == "local":
         return LlamaCppProvider(settings.llm_local_base_url,
                                 settings.llm_local_model,
-                                settings.llm_timeout_s, transport=transport)
+                                settings.llm_timeout_s, transport=transport,
+                                disable_thinking=settings.llm_disable_thinking)
     if backend == "external":
         return OpenAICompatProvider(settings.llm_external_base_url,
                                     settings.llm_external_model,

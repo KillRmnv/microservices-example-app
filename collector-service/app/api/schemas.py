@@ -39,8 +39,20 @@ class EventsResponse(BaseModel):
     events: list[dict]
 
 
+class EventListResponse(EventsResponse):
+    total: int
+    limit: int
+    offset: int
+
+
 class VenuesResponse(BaseModel):
     venues: list[dict]
+
+
+class VenueListResponse(VenuesResponse):
+    total: int
+    limit: int
+    offset: int
 
 
 class AlertResponse(BaseModel):

@@ -1,4 +1,7 @@
 import type {
+  CatalogEvent,
+  CatalogPage,
+  CatalogVenue,
   Event,
   LoginResponse,
   Role,
@@ -137,6 +140,65 @@ export const api = {
   updateUser: (data: { id: number; username: string; email: string; role: string; password?: string; isSystem?: boolean }) =>
     api.put<User>('/users', data),
   deleteUser: (id: number) => api.del<void>('/users', { id }),
+
+  // --- public catalog (collector) ---
+  catalogEvents: async (params: {
+    city?: string
+    category?: string
+    source?: string
+    dateFrom?: string
+    dateTo?: string
+    q?: string
+    ids?: string[]
+    limit?: number
+    offset?: number
+  } = {}): Promise<CatalogPage<CatalogEvent>> => {
+    const query = new URLSearchParams()
+    if (params.city) query.append('city', params.city)
+    if (params.category) query.append('category', params.category)
+    if (params.source) query.append('source', params.source)
+    if (params.dateFrom) query.append('date_from', params.dateFrom)
+    if (params.dateTo) query.append('date_to', params.dateTo)
+    if (params.q) query.append('q', params.q)
+    if (params.ids?.length) query.append('ids', params.ids.join(','))
+    query.append('limit', String(params.limit ?? 40))
+    query.append('offset', String(params.offset ?? 0))
+    const body = await api.get<{ events: CatalogEvent[]; total: number; limit: number; offset: number }>(
+      `/catalog/events?${query.toString()}`,
+    )
+    return { items: body.events, total: body.total, limit: body.limit, offset: body.offset }
+  },
+  catalogEvent: (id: string) => api.get<CatalogEvent>(`/catalog/events/${encodeURIComponent(id)}`),
+  catalogSearchEvents: async (q: string, opts: { city?: string; category?: string; limit?: number } = {}) => {
+    const query = new URLSearchParams({ q, limit: String(opts.limit ?? 24) })
+    if (opts.city) query.append('city', opts.city)
+    if (opts.category) query.append('category', opts.category)
+    const body = await api.get<{ events: CatalogEvent[] }>(`/catalog/events/search?${query.toString()}`)
+    return body.events
+  },
+  catalogVenues: async (params: { city?: string; rubric?: string; q?: string; limit?: number; offset?: number } = {}): Promise<CatalogPage<CatalogVenue>> => {
+    const query = new URLSearchParams()
+    if (params.city) query.append('city', params.city)
+    if (params.rubric) query.append('rubric', params.rubric)
+    if (params.q) query.append('q', params.q)
+    query.append('limit', String(params.limit ?? 60))
+    query.append('offset', String(params.offset ?? 0))
+    const body = await api.get<{ venues: CatalogVenue[]; total: number; limit: number; offset: number }>(
+      `/catalog/venues?${query.toString()}`,
+    )
+    return { items: body.venues, total: body.total, limit: body.limit, offset: body.offset }
+  },
+  catalogVenue: (id: string) => api.get<CatalogVenue>(`/catalog/venues/${encodeURIComponent(id)}`),
+  hybridSearchEvents: async (q: string, opts: { city?: string; category?: string; limit?: number } = {}) => {
+    // Assistant fuses dense+sparse; ids are then resolved through the catalog.
+    const hits = await api.post<{ event_id: string; title: string }[]>('/assistant/search', {
+      vector_query: q,
+      city: opts.city,
+      category: opts.category,
+      limit: opts.limit ?? 24,
+    })
+    return hits.map((hit) => hit.event_id)
+  },
 
   // --- events ---
   getEvents: () => api.get<Event[]>('/booking/events'),

@@ -142,6 +142,8 @@ services:
     build:
       context: .
       dockerfile: ./frontend/Dockerfile
+      args:
+        NEXT_PUBLIC_2GIS_MAP_KEY: ${NEXT_PUBLIC_2GIS_MAP_KEY:-}
     depends_on:
       gateway:
         condition: service_started
@@ -177,6 +179,12 @@ services:
     env_file:
       - ./.env
       - ./assistant-service/.env
+    environment:
+      ASSISTANT_LLM_LOCAL_BASE_URL: http://llama-chat:8089/v1
+      ASSISTANT_LLM_LOCAL_MODEL: lfm3-1.7b
+      ASSISTANT_LLM_STAGES: ${ASSISTANT_LLM_STAGES:-structure:local}
+      ASSISTANT_LLM_DISABLE_THINKING: "true"
+
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -208,8 +216,28 @@ services:
       - ${MODEL_DIR:-~/models}:/models:ro
     environment:
       LLAMA_MODEL_FILE: /models/${EMBED_MODEL_FILE:-bge-m3-q8_0.gguf}
+      LLAMA_CTX: 512
+      LLAMA_PORT: 8088
+      LLAMA_EXTRA_ARGS: "--embedding"
     ports:
       - "${LLAMA_EMBED_PORT:-8088}:8088"
+
+  # Chat/completions server for the assistant LLM stages (LFM3 is small enough
+  # to run next to bge-m3). Same image, chat mode.
+  llama-chat:
+    profiles: ["llm"]
+    build:
+      context: .
+      dockerfile: ./llama-embed/Dockerfile
+    volumes:
+      - ${MODEL_DIR:-~/models}:/models:ro
+    environment:
+      LLAMA_MODEL_FILE: /models/${CHAT_MODEL_FILE:-LFM3-1.7B-Q8.gguf}
+      LLAMA_CTX: ${LLAMA_CHAT_CTX:-8192}
+      LLAMA_PORT: 8089
+      LLAMA_EXTRA_ARGS: "--alias lfm3-1.7b"
+    ports:
+      - "${LLAMA_CHAT_PORT:-8089}:8089"
 
   prometheus:
     image: prom/prometheus:latest

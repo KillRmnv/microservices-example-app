@@ -13,11 +13,13 @@ from ..clients.cache import WeatherCache, build_weather_cache
 from ..clients.collector import CollectorClient
 from ..clients.embeddings import LlamaServerEmbedding
 from ..clients.vector import QdrantStore
+from ..clients.llm.registry import provider_for
 from ..clients.weather import OpenMeteoClient
 from ..core.config import Settings, settings
 from ..services.dialogue_service import DialogueService
 from ..services.hold_service import HoldService
 from ..services.metrics_service import MetricsService
+from ..services.query_structure import QueryStructureService
 from ..services.search_service import SearchService
 from ..services.weather_service import WeatherService
 
@@ -27,6 +29,7 @@ class Components:
     dialogue: DialogueService
     search_events: SearchService
     search_venues: SearchService
+    structure: QueryStructureService
     holds: HoldService
     metrics: MetricsService
     cache: WeatherCache
@@ -69,6 +72,8 @@ def build_components(config: Settings | None = None) -> Components:
                                  settings=config),
         search_events=search_events,
         search_venues=_search_service(config, venues=True),
+        structure=QueryStructureService(
+            provider_for("structure", config), config),
         holds=HoldService(config.database_url, booking),
         metrics=MetricsService(config.database_url),
         cache=cache,

@@ -101,6 +101,6 @@ class HomeViewTest extends SeleniumTestBase {
     void shouldToggleTheme() {
         navigateTo("/");
         findByTestId("theme-toggle").click();
-        assertThat(find("main.newspaper").getAttribute("class")).contains("dark-mode");
+        assertThat(find("html").getAttribute("class")).contains("dark-mode");
     }
 }

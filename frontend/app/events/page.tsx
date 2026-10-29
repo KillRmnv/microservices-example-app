@@ -3,112 +3,167 @@
 import Link from 'next/link'
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { ArrowRight, Clock3, MapPin, Search } from 'lucide-react'
-import { ErrorView, ListPageHeader, LoadingView, PageHeader, SimpleDialog } from '@/components/secondary-page'
+import { ArrowRight, CalendarDays, MapPin } from 'lucide-react'
+import { ErrorView, ListPageHeader, LoadingView, PageHeader } from '@/components/secondary-page'
+import { CatalogEventCard } from '@/components/catalog-card'
 import { api } from '@/lib/api'
+import { CATEGORY_OPTIONS, categoryLabel, eventImage, eventPlace, eventPrice, isBookable, todayIso } from '@/lib/catalog'
 import { formatDateTime } from '@/lib/format'
-import type { Event, Venue } from '@/lib/types'
+import type { CatalogEvent } from '@/lib/types'
+
+const PAGE_SIZE = 24
+const CITIES = ['Минск', 'Гродно', 'Брест']
 
 function EventsList() {
   const params = useSearchParams()
-  const [events, setEvents] = useState<Event[]>()
-
   const [search, setSearch] = useState('')
+  const [city, setCity] = useState('Минск')
+  const [category, setCategory] = useState('')
+  const [date, setDate] = useState('')
+  const [events, setEvents] = useState<CatalogEvent[]>([])
+  const [total, setTotal] = useState(0)
+  const [offset, setOffset] = useState(0)
+  const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState<unknown>()
-  const [venueFilter, setVenueFilter] = useState<number | null>(null)
-  const [venues, setVenues] = useState<Venue[]>([])
-  const [dialogOpen, setDialogOpen] = useState<Event | null>(null)
+  const [searching, setSearching] = useState(false)
+
+  const load = useCallback(async (nextOffset = 0, append = false) => {
+    setError(undefined)
+    if (nextOffset === 0) setLoading(true)
+    else setLoadingMore(true)
+    try {
+      const page = await api.catalogEvents({
+        city: city || undefined,
+        category: category || undefined,
+        dateFrom: date || todayIso(),
+        dateTo: date || undefined,
+        limit: PAGE_SIZE,
+        offset: nextOffset,
+      })
+      setEvents((current) => (append ? [...current, ...page.items] : page.items))
+      setTotal(page.total)
+      setOffset(nextOffset)
+    } catch (e) {
+      setError(e)
+    } finally {
+      setLoading(false)
+      setLoadingMore(false)
+    }
+  }, [city, category, date])
 
   useEffect(() => {
-    ;(async () => {
-      try {
-        const [venueList] = await Promise.all([api.getVenues()])
-        setVenues(venueList)
-      } catch (e) {
-        setError(e)
-      }
-    })()
-  }, [])
-
-  useEffect(() => {
-    ;(async () => {
-      const venueId = params.get('venueId')
-      if (venueId) setVenueFilter(Number(venueId))
-      try {
-        const found = await api.searchEvents(venueId ? { venueId } : {}, 1, 40)
-        setEvents(found)
-      } catch (e) {
-        setError(e)
-      }
-    })()
+    const fromUrl = params.get('category')
+    if (fromUrl) setCategory(fromUrl)
   }, [params])
 
-  const filtered = useMemo(() => {
-    if (!events) return []
-    const query = search.toLowerCase().trim()
-    return events.filter((event) => {
-      if (query && !event.title.toLowerCase().includes(query)) return false
-      return true
-    })
-  }, [events, search])
+  useEffect(() => {
+    void load(0, false)
+  }, [load])
 
-  const reload = useCallback(() => {
+  const searchNow = async () => {
+    const query = search.trim()
+    if (!query) {
+      await load(0, false)
+      return
+    }
+    setSearching(true)
     setError(undefined)
-    api
-      .searchEvents(venueFilter ? { venueId: venueFilter } : {}, 1, 40)
-      .then(setEvents)
-      .catch(setError)
-  }, [venueFilter])
+    try {
+      let found: CatalogEvent[] = []
+      try {
+        const ids = await api.hybridSearchEvents(query, { city: city || undefined, category: category || undefined, limit: PAGE_SIZE })
+        if (ids.length) {
+          const page = await api.catalogEvents({ ids, limit: ids.length })
+          const byId = new Map(page.items.map((item) => [item.id, item]))
+          found = ids.map((id) => byId.get(id)).filter((item): item is CatalogEvent => Boolean(item))
+        }
+      } catch {
+        found = []
+      }
+      if (!found.length) {
+        found = await api.catalogSearchEvents(query, { city: city || undefined, category: category || undefined, limit: PAGE_SIZE })
+      }
+      setEvents(found)
+      setTotal(found.length)
+    } catch (e) {
+      setError(e)
+    } finally {
+      setSearching(false)
+    }
+  }
 
-  if (error) return <ErrorView error={error} onRetry={reload} />
-  if (!events) return <LoadingView />
+  const lead = useMemo(() => events[0], [events])
+  const rest = useMemo(() => events.slice(1), [events])
+
+  if (error) return <ErrorView error={error} onRetry={() => load(0, false)} />
+  if (loading) return <LoadingView />
 
   return (
     <div className="list-page" data-testid="events-page">
       <ListPageHeader
         kicker="АФИША ГОРОДА"
         title="События"
-        subline={`В выпуске ${filtered.length}${filtered.length === 1 ? '' : ''} событий`}
+        subline={`В выпуске ${total} ${total === 1 ? 'событие' : 'событий'}`}
         searchValue={search}
-        searchPlaceholder="Найти событие по названию…"
+        searchPlaceholder="Найти событие: «джаз», «балет», «UFC»…"
         onSearchChange={setSearch}
+        onSearchSubmit={searchNow}
         searchTestId="event-search-name"
         append={
-          <label className="list-select" data-testid="event-venue-filter-wrap">
-            <select className={venueFilter === null ? '' : 'venue-active'} value={venueFilter ?? ''} onChange={(e) => setVenueFilter(e.target.value ? Number(e.target.value) : null)} style={{ width: '100%' }} data-testid="event-venue-filter">
-              <option value="">Все площадки</option>
-              {venues.map((venue) => (
-                <option key={venue.id} value={venue.id} disabled={false}>
-                  {venue.place}
-                </option>
-              ))}
+          <div className="catalog-filters">
+            <select value={city} onChange={(e) => setCity(e.target.value)} data-testid="event-city-filter">
+              {CITIES.map((name) => <option key={name} value={name}>{name}</option>)}
             </select>
-          </label>
+            <select value={category} onChange={(e) => setCategory(e.target.value)} data-testid="event-category-filter">
+              <option value="">Все категории</option>
+              {CATEGORY_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} data-testid="event-date-filter" aria-label="Дата события" />
+          </div>
         }
       />
-      {filtered.length === 0 ? (
-        <div className="empty-state"><h3>Пока пусто</h3><p>Афиша появится, когда менеджеры добавят события.</p></div>
-      ) : (
-        <div className="list-cards" data-testid="events-grid">
-          {filtered.map((event) => (
-            <Link href={`/events/detail?id=${event.id}`} key={event.id} className="list-card event-card" data-testid="event-card">
-              <div className="list-card-head">
-                <div>
-                  <div className="kicker">{event.admissionMode === 'SEATABLE' ? 'МЕСТА ПО СЕКТОРАМ' : 'БЕЗ РАССАДКИ'}</div>
-                  <h3>{event.title}</h3>
-                  <p className="meta-line"><Clock3 size={13} /> {formatDateTime(event.startsAt)}</p>
-                  <p className="meta-line venue"><MapPin size={13} /> {event.venuePlace}</p>
-                </div>
-                <ArrowRight size={18} className="list-arrow" />
-              </div>
-            </Link>
-          ))}
+
+      {searching && <LoadingView light />}
+
+      {!searching && events.length === 0 && (
+        <div className="empty-state" data-testid="events-empty">
+          <h3>Пока пусто</h3>
+          <p>Смягчите фильтры или загляните позже — афиша обновляется каждый день.</p>
         </div>
       )}
-      {dialogOpen && (
-        <SimpleDialog title={dialogOpen.title} subtitle={`${formatDateTime(dialogOpen.startsAt)} · ${dialogOpen.venuePlace}`} onClose={() => setDialogOpen(null)}>
-          <p>Здесь будет подробная афиша события.</p>
-        </SimpleDialog>
+
+      {!searching && lead && (
+        <div className="lead-story" data-testid="lead-story">
+          <div className="lead-image">
+            <img src={eventImage(lead)} alt={lead.title} />
+            <span className="image-caption">{isBookable(lead) ? 'БИЛЕТЫ В КАССЕ' : 'ИСТОЧНИК: ВНЕШНЯЯ АФИША'}</span>
+          </div>
+          <div className="lead-copy">
+            <div className="kicker">ВЫБОР РЕДАКЦИИ · {categoryLabel(lead.category).toUpperCase()}</div>
+            <h3>{lead.title}</h3>
+            <p className="meta-line"><CalendarDays size={14} /> {formatDateTime(lead.start_at ?? undefined)}</p>
+            <p className="meta-line"><MapPin size={14} /> {eventPlace(lead)}</p>
+            <p>{eventPrice(lead)}</p>
+            <Link href={`/events/detail?id=${encodeURIComponent(lead.id)}`} className="read-more" data-testid="lead-story-link">
+              Читать далее <ArrowRight size={15} />
+            </Link>
+          </div>
+        </div>
+      )}
+
+      {!searching && rest.length > 0 && (
+        <div className="story-grid" data-testid="events-grid">
+          {rest.map((event) => <CatalogEventCard event={event} key={event.id} />)}
+        </div>
+      )}
+
+      {!searching && events.length > 0 && events.length < total && (
+        <div className="load-more-row">
+          <button className="apply-button" disabled={loadingMore} onClick={() => load(offset + PAGE_SIZE, true)} data-testid="events-load-more">
+            {loadingMore ? 'Загружаем…' : `Показать ещё (${total - events.length})`}
+          </button>
+        </div>
       )}
     </div>
   )

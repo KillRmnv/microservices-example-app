@@ -3,6 +3,10 @@ FROM node:22-alpine AS builder
 
 WORKDIR /app
 
+# 2GIS MapGL key is baked into the static export (client-side by design).
+ARG NEXT_PUBLIC_2GIS_MAP_KEY=""
+ENV NEXT_PUBLIC_2GIS_MAP_KEY=$NEXT_PUBLIC_2GIS_MAP_KEY
+
 COPY ./frontend/package.json ./frontend/pnpm-lock.yaml ./frontend/pnpm-workspace.yaml ./
 RUN npm install -g pnpm@10 \
     && pnpm install --frozen-lockfile

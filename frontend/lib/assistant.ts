@@ -63,6 +63,11 @@ export function sendDialogue(contract: StateContract): Promise<DialogResponse> {
   return postJson<DialogResponse>('/assistant/dialogue/v2', contract)
 }
 
+/** LLM structure stage; throws when the model backend is unavailable. */
+export function structureQuery(query: string, language = 'ru', sessionId?: string): Promise<StateContract> {
+  return postJson<StateContract>('/assistant/query', { query, language, session_id: sessionId })
+}
+
 export function createHold(input: {
   session_id: string
   event_id: number

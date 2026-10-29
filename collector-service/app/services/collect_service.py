@@ -7,7 +7,7 @@ import time
 from ..core import db
 from ..errors import UnknownSource, UpstreamError
 from ..http import PoliteClient
-from ..repositories import runs
+from ..repositories import queries, runs
 from ..sources.afisha_me import AfishaMeAdapter
 from ..sources.base import CollectContext, RunStats, SourceAdapter
 from ..sources.relax import RelaxAdapter
@@ -70,6 +70,11 @@ class CollectService:
             raise UpstreamError(f"collect failed: {exc}") from exc
         status = self.run_status(stats)
         self.record_run(source, status, stats, None, time.monotonic() - started)
+        try:
+            with db.get_conn(self._db_url) as conn:
+                queries.link_event_venues(conn)
+        except Exception as exc:  # noqa: BLE001 — linking is best-effort
+            log.warning("venue linking failed: %s", exc)
         return stats
 
     async def probe(self, source: str, url: str) -> dict:

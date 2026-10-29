@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from .api import deps
-from .api.routers import dialogue, holds, ops, search
+from .api.routers import dialogue, holds, ops, query, search
 from .core import db
 from .core.config import settings
 from .core.logging import RequestIdMiddleware, setup_logging
@@ -44,6 +44,7 @@ def create_app() -> FastAPI:
     register_exception_handlers(application)
     application.include_router(dialogue.router)
     application.include_router(search.router)
+    application.include_router(query.router)
     application.include_router(holds.router)
     # Ops endpoints stay out of the public schema.
     application.include_router(ops.router, include_in_schema=False)

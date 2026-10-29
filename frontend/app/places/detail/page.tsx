@@ -1,31 +1,29 @@
 'use client'
 
 import Link from 'next/link'
-import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import { Suspense, useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { MapPin } from 'lucide-react'
 import { DetailPageHeader, ErrorView, FieldRow, LoadingView, PageHeader, RuleTitle, SectionView } from '@/components/secondary-page'
+import { CatalogEventCard } from '@/components/catalog-card'
+import { MapView } from '@/components/map-view'
 import { api } from '@/lib/api'
-import type { Event } from '@/lib/types'
+import { venueCoords } from '@/lib/catalog'
+import type { CatalogVenue } from '@/lib/types'
 
 function VenueDetails() {
   const params = useSearchParams()
-  const id = Number(params.get('id'))
+  const id = params.get('id') ?? ''
 
-  const [venue, setVenue] = useState<Awaited<ReturnType<typeof api.getVenue>>>()
-  const [events, setEvents] = useState<Event[]>([])
+  const [venue, setVenue] = useState<CatalogVenue>()
   const [error, setError] = useState<unknown>()
 
   const load = useCallback(() => {
     setError(undefined)
     ;(async () => {
       try {
-        if (!Number.isFinite(id) || id <= 0) {
-          setError(new Error('Место не найдено'))
-          return
-        }
-        const found = await api.getVenue(id)
-        setVenue(found)
+        if (!id) throw new Error('Место не найдено')
+        setVenue(await api.catalogVenue(id))
       } catch (e) {
         setError(e)
       }
@@ -36,57 +34,57 @@ function VenueDetails() {
     load()
   }, [load])
 
-  useEffect(() => {
-    if (!venue) return
-    api.searchEvents({ venueId: venue.id }, 1, 50).then(setEvents).catch((e) => console.warn(e))
-  }, [venue?.id])
-
-  const upcoming = useMemo(
-    () => [...events].sort((a, b) => a.startsAt.localeCompare(b.startsAt)).slice(0, 4),
-    [events],
-  )
-
   if (error) return <ErrorView error={error} onRetry={load} />
   if (!venue) return <LoadingView light />
+
+  const coords = venueCoords(venue)
+  const events = venue.events ?? []
 
   return (
     <div className="detail-page" data-testid="venue-detail-page">
       <div className="detail-page-header">
-        <DetailPageHeader kicker={`СПРАВОЧНИК · ${venue.place.toUpperCase()}`} title={venue.townName} subline="Площадка и расписание" testid="venue-title" />
+        <DetailPageHeader
+          kicker={`СПРАВОЧНИК · ${(venue.rubric || 'место').toUpperCase()}`}
+          title={venue.name}
+          subline={venue.address || venue.city}
+          testid="venue-title"
+        />
       </div>
       <div className="detail-body">
         <div>
           <div className="detail-section">
             <RuleTitle>О месте</RuleTitle>
             <div className="detail-rows">
-              <FieldRow label="Площадка" value={venue.place} />
-              <FieldRow label="Город" value={venue.townName} />
-              <FieldRow label="Вместимость" value={venue.capacity} />
+              <FieldRow label="Площадка" value={venue.name} />
+              <FieldRow label="Город" value={venue.city} />
+              <FieldRow label="Рубрика" value={venue.rubric || '—'} />
+              <FieldRow label="Адрес" value={venue.address || '—'} />
+              {venue.rating != null && <FieldRow label="Рейтинг 2ГИС" value={`${Number(venue.rating).toFixed(1)} (${venue.review_count ?? 0} отзывов)`} />}
             </div>
           </div>
 
           <div className="detail-section">
             <RuleTitle>Как добраться</RuleTitle>
-            <div className="map-skeleton" data-testid="venue-map-placeholder">
-              <MapPin size={26} />
-              <strong>{venue.place}</strong>
-              <p>Карта города {venue.townName} появится здесь после подключения 2ГИС.</p>
-            </div>
+            {coords ? (
+              <MapView latitude={coords[0]} longitude={coords[1]} label={venue.name} address={venue.address} />
+            ) : (
+              <div className="map-skeleton" data-testid="venue-map-placeholder">
+                <MapPin size={26} />
+                <strong>{venue.name}</strong>
+                <p>{venue.address || 'Адрес уточняется'}</p>
+              </div>
+            )}
           </div>
 
           <SectionView title="Афиша на площадке">
-            {upcoming.length === 0 ? (
-              <div className="empty-state compact" data-testid="venue-events-empty"><h3>Событий пока нет</h3><p>Когда менеджеры добавят афишу этого места, она появится здесь.</p></div>
+            {events.length === 0 ? (
+              <div className="empty-state compact" data-testid="venue-events-empty">
+                <h3>Событий пока нет</h3>
+                <p>Когда на этой площадке появится афиша, она будет здесь.</p>
+              </div>
             ) : (
-              <div className="detail-story-card-grid">
-                {upcoming.map((event) => (
-                  <Link href={`/events/detail?id=${event.id}`} className="detail-story-card" key={event.id} data-testid="venue-event-card">
-                    <div className="kicker">{venue.townName.toUpperCase()}</div>
-                    <h3>{event.title}</h3>
-                    <p>{event.venuePlace}</p>
-                    <span>Открыть событие</span>
-                  </Link>
-                ))}
+              <div className="story-grid">
+                {events.slice(0, 6).map((event) => <CatalogEventCard event={event} key={event.id} />)}
               </div>
             )}
           </SectionView>
@@ -96,15 +94,15 @@ function VenueDetails() {
             <div className="venue-location">
               <div className="venue-location-head"><MapPin size={15} /><span>КРАТКАЯ СПРАВКА</span></div>
               <div className="detail-rows stacked">
-                <FieldRow label="Место" value={venue.place} />
-                <FieldRow label="Город" value={venue.townName} />
+                <FieldRow label="Место" value={venue.name} />
+                <FieldRow label="Город" value={venue.city} />
                 <FieldRow label="Событий в афише" value={events.length} />
               </div>
             </div>
           </div>
           <div className="detail-note">
-            <span>МЕСТО В ВЫПУСКЕ</span>
-            <p>Редакция добавляет фото и описания площадок в следующих выпусках.</p>
+            <span>ДАННЫЕ 2ГИС</span>
+            <p>Адрес, рубрика и рейтинг подтянуты из справочника 2ГИС.</p>
           </div>
           <Link href="/places" className="read-more">Все места города</Link>
         </aside>
