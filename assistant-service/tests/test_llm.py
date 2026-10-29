@@ -44,6 +44,19 @@ def test_provider_for_selects_backend():
     assert isinstance(provider_for("telegram", settings), MockProvider)
 
 
+def test_thinking_override_switches_no_think_mode():
+    settings = make_settings()
+    fast = provider_for("structure", settings, thinking=False)
+    assert isinstance(fast, LlamaCppProvider)
+    payload = fast.payload(system="s", user="u", json_mode=True, max_tokens=64)
+    assert payload["chat_template_kwargs"] == {"enable_thinking": False}
+    reasoning = provider_for("plan", settings, thinking=True)
+    assert isinstance(reasoning, OpenAICompatProvider)
+    local_reasoning = provider_for("structure", make_settings(), thinking=True)
+    assert "chat_template_kwargs" not in local_reasoning.payload(
+        system="s", user="u", json_mode=True, max_tokens=64)
+
+
 def test_llama_payload_shape():
     provider = LlamaCppProvider("http://llama:8080/v1", "qwen3:8b", 5.0)
     payload = provider.payload(system="sys", user="hi", json_mode=False,

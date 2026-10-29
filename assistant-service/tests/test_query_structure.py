@@ -20,6 +20,17 @@ class FakeProvider:
         return self.payload
 
 
+def make_service(payload: str, reasoning_payload: str | None = None,
+                 **overrides) -> tuple[QueryStructureService, FakeProvider,
+                                       FakeProvider | None]:
+    fast = FakeProvider(payload)
+    reasoning = FakeProvider(reasoning_payload if reasoning_payload is not None
+                             else payload) if reasoning_payload is not None else None
+    service = QueryStructureService(fast, Settings(**overrides),
+                                    reasoning_provider=reasoning)
+    return service, fast, reasoning
+
+
 def contract_json(**overrides) -> str:
     data = {
         "dialogue_action": "search",
@@ -54,6 +65,7 @@ async def test_structure_stage_parses_json_and_sanitises():
     assert contract.context_state.turn_count == 2  # sanitize advances the turn
     assert contract.hard_filters.location.city == "Минск"
     assert provider.calls[0]["json_mode"] is True
+    assert provider.calls[0]["max_tokens"] == 512  # fast lane budget
 
 
 @pytest.mark.asyncio
@@ -71,3 +83,64 @@ async def test_structure_stage_rejects_empty_or_non_json():
         await QueryStructureService(FakeProvider(""), Settings()).parse("x")
     with pytest.raises(UpstreamError):
         await QueryStructureService(FakeProvider("не json"), Settings()).parse("x")
+
+
+@pytest.mark.asyncio
+async def test_structure_stage_repairs_null_location_and_string_category():
+    payload = json.dumps({
+        "dialogue_action": "search",
+        "hard_filters": {"location": None, "category": "concert",
+                         "party_size": None, "budget": None,
+                         "datetime": None},
+        "semantic_payload": {"vector_query": "джаз"},
+    }, ensure_ascii=False)
+    contract = await QueryStructureService(FakeProvider(payload), Settings()).parse("джаз")
+    assert contract.hard_filters.location.city == "Минск"
+    assert contract.hard_filters.category == ["concert"]
+    assert contract.hard_filters.party_size == 2
+
+
+@pytest.mark.asyncio
+async def test_simple_request_uses_fast_provider():
+    service, fast, reasoning = make_service(contract_json(), contract_json())
+    contract, reasoning_used, complex = await service.parse_meta("джаз завтра")
+    assert contract.semantic_payload.vector_query == "тихий джаз"
+    assert reasoning_used is False
+    assert complex is False
+    assert len(fast.calls) == 1
+    assert len(reasoning.calls) == 0
+
+
+@pytest.mark.asyncio
+async def test_complex_request_uses_reasoning_provider():
+    service, fast, reasoning = make_service(contract_json(), contract_json())
+    _, reasoning_used, complex = await service.parse_meta(
+        "тихий джаз в субботу до 50 рублей на двоих без фастфуда")
+    assert complex is True
+    assert reasoning_used is True
+    assert len(fast.calls) == 0
+    assert len(reasoning.calls) == 1
+    assert reasoning.calls[0]["max_tokens"] == 2048  # full reasoning budget
+
+
+@pytest.mark.asyncio
+async def test_force_reasoning_overrides_heuristic():
+    service, fast, reasoning = make_service(contract_json(), contract_json())
+    _, reasoning_used, _ = await service.parse_meta(
+        "джаз", force_reasoning=True)
+    assert reasoning_used is True
+    assert len(reasoning.calls) == 1
+    _, reasoning_used, _ = await service.parse_meta(
+        "тихий джаз в субботу до 50 рублей на двоих", force_reasoning=False)
+    assert reasoning_used is False
+    assert len(fast.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_reasoning_falls_back_to_fast_without_reasoning_provider():
+    service = QueryStructureService(FakeProvider(contract_json()), Settings())
+    contract, reasoning_used, complex = await service.parse_meta(
+        "тихий джаз в субботу до 50 рублей на двоих без фастфуда")
+    assert complex is True
+    assert reasoning_used is False
+    assert contract.semantic_payload.vector_query == "тихий джаз"

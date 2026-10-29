@@ -60,8 +60,20 @@ class Settings(BaseSettings):
     llm_fallback_enabled: bool = False
     # LFM/Qwen reasoning templates emit reasoning_content instead of the
     # answer unless thinking is disabled (json contracts need the answer).
-    llm_disable_thinking: bool = True
-    llm_timeout_s: float = 60.0
+    # Thinking defaults to ON (reasoning stages); the fast structure lane
+    # forces it OFF explicitly.
+    llm_disable_thinking: bool = False
+    llm_max_tokens: int = 2048
+    # Fast structure lane: no-think extraction, small budget, seconds.
+    llm_structure_max_tokens: int = 512
+    # Complexity heuristic: reasoning kicks in on long/multi-constraint
+    # requests only.
+    llm_complex_min_chars: int = 140
+    llm_complex_min_signals: int = 2
+    llm_temperature: float = 1.0
+    llm_top_p: float = 0.95
+    llm_top_k: int = 20
+    llm_timeout_s: float = 300.0
 
     scheduler_enabled: bool = True
     sweep_interval_s: int = 300

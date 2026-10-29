@@ -40,27 +40,24 @@ refactor. Each item explains why it is deferred and what "done" looks like.
 
 ## Local LLM / embeddings
 
-- [ ] **LFM3 reasoning mode.** `llama-chat` currently runs LFM3 with
-      `ASSISTANT_LLM_DISABLE_THINKING=true`
-      (`chat_template_kwargs.enable_thinking=false`). With thinking enabled the
-      model spends the whole token budget in `reasoning_content` and returns an
-      empty `content`, so the structure stage falls back to the deterministic
-      parser. Figure out whether this is:
-      - how the llama.cpp build handles LFM3 `reasoning_content` / template
-        kwargs (`--reasoning-format`, `--no-reasoning-preserve`, `--jinja`);
-      - the GGUF chat template metadata itself (check what the model expects for
-        enabling/disabling thinking);
-      - or just `max_tokens`/`temperature` in
-        `assistant-service/app/clients/llm/llama_cpp.py`.
-      "Done" means either reasoning works end-to-end (reasoning can be kept or
-      discarded explicitly, while the final JSON answer lands in `content`) with
-      a test for the structure stage, or a short written decision why thinking
-      stays disabled for this model. Do not silently rely on the flag: the
-      runtime is built from llama.cpp master, and PyPI `llama-cpp-python` still
-      lacks `lfm3`, so a version/template regression is plausible.
+- [ ] **LFM3 reasoning is too verbose for the structure stage.** With thinking
+      enabled, LFM3-1.7B spends the whole budget in `reasoning_content`
+      (1024/2048 tokens, `finish_reason=length`) and returns an empty `content`;
+      only very short prompts close around ~1550 tokens (~2.5 min on CPU at
+      ~11 t/s). llama.cpp master supports `lfm3`, so this is model behaviour,
+      not a missing architecture. The assistant therefore runs
+      **Ling-3.0-tiny-Q4_K_M** for the reasoning-enabled `structure` stage
+      (`--jinja`, temp 1.0, top-p 0.95, top-k 20). Revisit LFM3 with a newer
+      chat template/runtime, a larger budget (4k+), or a reasoning budget knob;
+      "done" means a valid JSON contract within a usable token/time budget while
+      thinking stays on, covered by a structure-stage test. Update: `structure`
+      is now split — the fast no-think lane is the default and reasoning runs
+      only for complex requests (`services/query_complexity.py`) or
+      `force_reasoning=true`; the dedicated reasoning consumer is the new
+      `POST /assistant/plan` stage (`services/plan_service.py`).
 - [ ] **Model bootstrap.** `llama.cpp` servers are opt-in Compose profiles and
-      expect model files under `${MODEL_DIR}` (bge-m3 for embeddings, LFM3 for
-      chat). Add a documented download/verify step so a fresh clone can run
+      expect model files under `${MODEL_DIR}` (bge-m3 for embeddings,
+      Ling-3.0-tiny-Q4_K_M for chat; LFM3 remains an optional experiment). Add a documented download/verify step so a fresh clone can run
       `structure:local` without manual work, and note that the image is built
       from llama.cpp master (not the PyPI wheel) because of `lfm3` support.
 

@@ -24,6 +24,7 @@ class RouteValidatorTest {
         assertThat(isSecure(HttpMethod.POST, "/assistant/search")).isFalse();
         assertThat(isSecure(HttpMethod.POST, "/assistant/dialogue/v2")).isFalse();
         assertThat(isSecure(HttpMethod.POST, "/assistant/query")).isFalse();
+        assertThat(isSecure(HttpMethod.POST, "/assistant/plan")).isFalse();
         assertThat(isSecure(HttpMethod.POST, "/assistant/holds")).isTrue();
     }
 

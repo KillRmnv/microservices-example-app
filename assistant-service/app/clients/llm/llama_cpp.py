@@ -16,8 +16,12 @@ class LlamaCppProvider(ChatCompletionsProvider):
 
     def __init__(self, base_url: str, model: str, timeout_s: float,
                  transport: httpx.BaseTransport | None = None,
-                 disable_thinking: bool = True) -> None:
-        extra: dict = {"temperature": 0}
+                 disable_thinking: bool = False,
+                 temperature: float = 1.0,
+                 top_p: float = 0.95,
+                 top_k: int = 20) -> None:
+        extra: dict = {"temperature": temperature, "top_p": top_p,
+                       "top_k": top_k}
         if disable_thinking:
             extra["chat_template_kwargs"] = {"enable_thinking": False}
         super().__init__(base_url, model, timeout_s, transport=transport,

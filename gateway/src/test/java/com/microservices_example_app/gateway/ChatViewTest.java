@@ -50,4 +50,10 @@ class ChatViewTest extends SeleniumTestBase {
         // No backend behind the static export: the panel must say so.
         assertThat(findByTestId("chat-error").getText()).contains("ассистент");
     }
+
+    @Test
+    void shouldShowPlanRequestButton() {
+        openChat();
+        assertThat(findByTestId("chat-plan-request")).isNotNull();
+    }
 }

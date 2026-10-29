@@ -64,8 +64,19 @@ export function sendDialogue(contract: StateContract): Promise<DialogResponse> {
 }
 
 /** LLM structure stage; throws when the model backend is unavailable. */
-export function structureQuery(query: string, language = 'ru', sessionId?: string): Promise<StateContract> {
-  return postJson<StateContract>('/assistant/query', { query, language, session_id: sessionId })
+export function structureQuery(query: string, language = 'ru', sessionId?: string, forceReasoning?: boolean): Promise<QueryResponse> {
+  return postJson<QueryResponse>('/assistant/query', { query, language, session_id: sessionId, force_reasoning: forceReasoning })
+}
+
+export interface QueryResponse {
+  contract: StateContract
+  reasoning_used: boolean
+  complex: boolean
+}
+
+/** Reasoning plan stage: explicit evening itinerary, may take minutes. */
+export function requestPlan(contract: StateContract): Promise<DialogResponse> {
+  return postJson<DialogResponse>('/assistant/plan', { contract })
 }
 
 export function createHold(input: {

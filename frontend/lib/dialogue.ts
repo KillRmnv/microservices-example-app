@@ -194,13 +194,16 @@ export function mergeContracts(remote: StateContract, local: StateContract): Sta
     dialogue_action: remote.dialogue_action,
     hard_filters: {
       ...local.hard_filters,
-      datetime: remoteDate?.start
-        ? {
-            start: remoteDate.start,
-            end: remoteDate.end,
-            raw_expression: remoteDate.raw_expression,
-          }
-        : local.hard_filters.datetime,
+      // Local parser owns RU date arithmetic; models often get weekdays wrong.
+      datetime: local.hard_filters.datetime?.start
+        ? local.hard_filters.datetime
+        : remoteDate?.start
+          ? {
+              start: remoteDate.start,
+              end: remoteDate.end,
+              raw_expression: remoteDate.raw_expression,
+            }
+          : local.hard_filters.datetime,
       location: {
         ...(local.hard_filters.location ?? {}),
         city: remote.hard_filters.location?.city || local.hard_filters.location?.city,

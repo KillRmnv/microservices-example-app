@@ -78,7 +78,8 @@ spring:
                       maxBackoff: 1s
               metadata:
                 connect-timeout: 3000
-                response-timeout: 60s
+                # Local LLM reasoning can take 2-3 minutes on CPU.
+                response-timeout: 600s
           globalcors:
             add-to-simple-url-handler-mapping: true
             cors-configurations:
@@ -161,7 +162,8 @@ resilience4j:
       bookingServiceCircuitBreaker:
         timeout-duration: 5s
       assistantServiceCircuitBreaker:
-        timeout-duration: 60s
+        # Reasoning stages can take 2-3 minutes on CPU.
+        timeout-duration: 600s
 logging:
   level:
     org.springframework.cloud.gateway: INFO

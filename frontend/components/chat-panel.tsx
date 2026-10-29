@@ -10,6 +10,7 @@ import {
   createHold,
   isMockMode,
   loadContract,
+  requestPlan,
   saveContract,
   sendDialogue,
   structureQuery,
@@ -146,6 +147,7 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
   ])
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
+  const [thinking, setThinking] = useState<number | null>(null)
   const mock = isMockMode()
 
   const nextId = () => Date.now() + Math.floor(Math.random() * 1000)
@@ -156,6 +158,13 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
 
   const sendLive = async (text: string) => {
     setBusy(true)
+    // "Thinking" indicator appears only on slow turns (reasoning lane);
+    // fast turns resolve before the first tick.
+    const startedAt = Date.now()
+    const timer = window.setInterval(() => {
+      const elapsed = Math.floor((Date.now() - startedAt) / 1000)
+      if (elapsed >= 4) setThinking(elapsed)
+    }, 1000)
     try {
       const stored = loadContract() ?? undefined
       const parsed = parseQuery(text)
@@ -164,7 +173,7 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
         // Model fills semantic slots; deterministic parser keeps RU dates.
         const remote = await structureQuery(text, contract.semantic_payload.language || 'ru',
           stored?.context_state.session_id)
-        contract = mergeContracts(remote, contract)
+        contract = mergeContracts(remote.contract, contract)
       } catch {
         /* model backend down: keep the local contract */
       }
@@ -184,6 +193,36 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
       ])
     } catch (e) {
       pushError(e instanceof Error ? `Не получилось связаться с ассистентом: ${e.message}` : 'Не получилось связаться с ассистентом.')
+    } finally {
+      window.clearInterval(timer)
+      setThinking(null)
+      setBusy(false)
+    }
+  }
+
+  const buildPlan = async () => {
+    const contract = loadContract()
+    if (!contract) {
+      pushError('Сначала опишите, что ищете, — тогда соберу план вечера.')
+      return
+    }
+    setBusy(true)
+    try {
+      const response = await requestPlan(contract)
+      saveContract(response.contract)
+      setMessages((prev) => [
+        ...prev,
+        ...response.messages.map((message: DialogMessage, index: number) => ({
+          id: nextId() + index,
+          kind: message.kind,
+          text: message.text,
+          results: message.results,
+          weather: message.weather,
+          plan: message.plan,
+        })),
+      ])
+    } catch (e) {
+      pushError(e instanceof Error ? `Не получилось собрать план: ${e.message}` : 'Не получилось собрать план.')
     } finally {
       setBusy(false)
     }
@@ -423,6 +462,24 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
               </div>
             )
           })}
+          {thinking !== null && (
+            <div className="assistant-message" data-testid="chat-thinking">
+              <span className="message-number">АССИСТЕНТ ДУМАЕТ</span>
+              <p>Размышляю над запросом… {thinking} с</p>
+            </div>
+          )}
+        </div>
+        <div className="chat-plan-row">
+          <button
+            type="button"
+            className="reset-button"
+            disabled={busy || mock}
+            onClick={() => void buildPlan()}
+            data-testid="chat-plan-request"
+            title={mock ? 'План доступен в онлайн-режиме' : 'Собрать план вечера (может занять пару минут)'}
+          >
+            Собрать план вечера
+          </button>
         </div>
         <form
           className="chat-form"

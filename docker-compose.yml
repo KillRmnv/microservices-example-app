@@ -181,9 +181,11 @@ services:
       - ./assistant-service/.env
     environment:
       ASSISTANT_LLM_LOCAL_BASE_URL: http://llama-chat:8089/v1
-      ASSISTANT_LLM_LOCAL_MODEL: lfm3-1.7b
-      ASSISTANT_LLM_STAGES: ${ASSISTANT_LLM_STAGES:-structure:local}
-      ASSISTANT_LLM_DISABLE_THINKING: "true"
+      ASSISTANT_LLM_LOCAL_MODEL: ling-3.0-tiny
+      ASSISTANT_LLM_STAGES: ${ASSISTANT_LLM_STAGES:-structure:local,plan:local}
+      ASSISTANT_LLM_DISABLE_THINKING: "false"
+      ASSISTANT_LLM_MAX_TOKENS: 2048
+      ASSISTANT_LLM_TIMEOUT_S: 300
 
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -232,10 +234,11 @@ services:
     volumes:
       - ${MODEL_DIR:-~/models}:/models:ro
     environment:
-      LLAMA_MODEL_FILE: /models/${CHAT_MODEL_FILE:-LFM3-1.7B-Q8.gguf}
+      LLAMA_MODEL_FILE: /models/${CHAT_MODEL_FILE:-Ling3.0.gguf}
       LLAMA_CTX: ${LLAMA_CHAT_CTX:-8192}
+      LLAMA_THREADS: ${LLAMA_CHAT_THREADS:-6}
       LLAMA_PORT: 8089
-      LLAMA_EXTRA_ARGS: "--alias lfm3-1.7b"
+      LLAMA_EXTRA_ARGS: "--jinja --n-predict 2048 --batch-size 512 --alias ling-3.0-tiny"
     ports:
       - "${LLAMA_CHAT_PORT:-8089}:8089"
 

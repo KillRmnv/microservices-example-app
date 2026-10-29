@@ -24,12 +24,24 @@ class UnknownBackend(ValueError):
 
 
 def build_provider(backend: str, settings: Settings,
-                   transport: httpx.BaseTransport | None = None) -> LLMProvider:
+                   transport: httpx.BaseTransport | None = None,
+                   thinking: bool | None = None) -> LLMProvider:
+    """Build a provider, optionally forcing thinking on/off.
+
+    ``thinking=None`` keeps the global ``llm_disable_thinking`` flag;
+    ``thinking=False`` forces no-think mode (fast structure lane),
+    ``thinking=True`` forces reasoning mode (plan stage).
+    """
     if backend == "local":
+        disable = (settings.llm_disable_thinking if thinking is None
+                   else not thinking)
         return LlamaCppProvider(settings.llm_local_base_url,
                                 settings.llm_local_model,
                                 settings.llm_timeout_s, transport=transport,
-                                disable_thinking=settings.llm_disable_thinking)
+                                disable_thinking=disable,
+                                temperature=settings.llm_temperature,
+                                top_p=settings.llm_top_p,
+                                top_k=settings.llm_top_k)
     if backend == "external":
         return OpenAICompatProvider(settings.llm_external_base_url,
                                     settings.llm_external_model,
@@ -75,9 +87,11 @@ def _fallback_backend(primary: str, settings: Settings) -> str | None:
 
 
 def provider_for(stage: str, settings: Settings,
-                 transport: httpx.BaseTransport | None = None) -> LLMProvider:
+                 transport: httpx.BaseTransport | None = None,
+                 thinking: bool | None = None) -> LLMProvider:
     backend = settings.backend_for(stage)
-    provider = build_provider(backend, settings, transport=transport)
+    provider = build_provider(backend, settings, transport=transport,
+                              thinking=thinking)
     secondary = _fallback_backend(backend, settings)
     if secondary is None:
         return provider

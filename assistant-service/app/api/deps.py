@@ -19,6 +19,7 @@ from ..core.config import Settings, settings
 from ..services.dialogue_service import DialogueService
 from ..services.hold_service import HoldService
 from ..services.metrics_service import MetricsService
+from ..services.plan_service import PlanService
 from ..services.query_structure import QueryStructureService
 from ..services.search_service import SearchService
 from ..services.weather_service import WeatherService
@@ -30,6 +31,7 @@ class Components:
     search_events: SearchService
     search_venues: SearchService
     structure: QueryStructureService
+    plan: PlanService
     holds: HoldService
     metrics: MetricsService
     cache: WeatherCache
@@ -66,14 +68,19 @@ def build_components(config: Settings | None = None) -> Components:
         timezone=config.default_timezone,
     )
     search_events = _search_service(config, venues=False)
+    dialogue = DialogueService(search=search_events, weather=weather,
+                               booking=booking, db_url=config.database_url,
+                               settings=config)
     return Components(
-        dialogue=DialogueService(search=search_events, weather=weather,
-                                 booking=booking, db_url=config.database_url,
-                                 settings=config),
+        dialogue=dialogue,
         search_events=search_events,
         search_venues=_search_service(config, venues=True),
         structure=QueryStructureService(
-            provider_for("structure", config), config),
+            provider_for("structure", config, thinking=False), config,
+            max_tokens=config.llm_structure_max_tokens,
+            reasoning_provider=provider_for("structure", config,
+                                            thinking=True)),
+        plan=PlanService(provider_for("plan", config), dialogue, config),
         holds=HoldService(config.database_url, booking),
         metrics=MetricsService(config.database_url),
         cache=cache,

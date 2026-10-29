@@ -39,13 +39,16 @@ public class RouteValidator {
     /**
      * Read-only POSTs: hybrid search and dialogue turns are stateless and
      * must work for anonymous visitors. Holds/mutations stay secured.
+     * /assistant/plan is explicit and reasoning-backed (may take minutes),
+     * but equally stateless.
      */
     private static final List<String> PUBLIC_POST_PATHS = List.of(
             "/assistant/search",
             "/assistant/search_venues",
             "/assistant/dialogue",
             "/assistant/dialogue/v2",
-            "/assistant/query"
+            "/assistant/query",
+            "/assistant/plan"
     );
 
     private static final List<String> PUBLIC_GET_PREFIXES = List.of(

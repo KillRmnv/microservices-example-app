@@ -18,11 +18,19 @@ class ResultCard(BaseModel):
     source: str = ""
 
 
+class PlanStep(BaseModel):
+    time: str = "—"
+    title: str = ""
+    detail: str = ""
+    source: str = "assistant"
+
+
 class ChatMessage(BaseModel):
     kind: MessageKind
     text: str
     results: list[ResultCard] | None = None
     weather: str | None = None
+    plan: list[PlanStep] | None = None
 
 
 class DialogResponse(BaseModel):
