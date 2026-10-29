@@ -48,10 +48,57 @@ def _extract_json(raw: str) -> dict:
 
 class PlanService:
     def __init__(self, provider: LLMProvider, dialogue: DialogueService,
-                 settings: Settings) -> None:
+                 settings: Settings, *,
+                 fallback_provider: LLMProvider | None = None) -> None:
         self._provider = provider
+        self._fallback = fallback_provider
         self._dialogue = dialogue
         self._settings = settings
+
+    async def _model_plan(self, system: str, user: str) -> tuple[list[dict], str]:
+        """Ask the reasoning model, then retry without thinking, then give up.
+
+        Ling can burn the whole budget on reasoning and return empty content;
+        a no-think retry is cheap and usually yields the JSON.
+        """
+        providers = [self._provider]
+        if self._fallback is not None and self._fallback is not self._provider:
+            providers.append(self._fallback)
+        last_error: Exception | None = None
+        for provider in providers:
+            try:
+                raw = await provider.complete(
+                    system=system, user=user, json_mode=True,
+                    max_tokens=self._settings.llm_plan_max_tokens)
+                data = _extract_json(raw)
+                steps = data.get("steps")
+                if not isinstance(steps, list) or not steps:
+                    raise UpstreamError("LLM вернула план без шагов")
+                plan = [{"time": str(step.get("time", "—")),
+                         "title": str(step.get("title", "")),
+                         "detail": str(step.get("detail", "")),
+                         "source": str(step.get("source", "assistant"))}
+                        for step in steps if isinstance(step, dict)]
+                plan = [step for step in plan if step["title"]]
+                if not plan:
+                    raise UpstreamError("LLM вернула план без шагов")
+                summary = str(data.get("summary")
+                              or "Готовый план вечера — проверьте шаги и подтвердите.")
+                return plan, summary
+            except Exception as exc:  # noqa: BLE001 — retry/fallback by design
+                last_error = exc
+                log.warning("plan provider %s failed: %s", provider.name, exc)
+        assert last_error is not None
+        raise last_error
+
+    @staticmethod
+    def _fallback_steps(cards: list) -> list[dict]:
+        """Deterministic itinerary from the best cards (no invented places)."""
+        return [{"time": "—", "title": card.title,
+                 "detail": " · ".join(part for part in (card.meta, card.price)
+                                      if part),
+                 "source": card.source or "assistant"}
+                for card in cards[:3]]
 
     async def build_plan(self, contract: StateContract) -> DialogResponse:
         clean = sanitize(contract)
@@ -81,24 +128,17 @@ class PlanService:
             budget=(f"до {budget}" if budget else "без ограничений"),
             city=ruled.hard_filters.location.city or self._settings.default_city,
             weather=weather)
-        raw = await self._provider.complete(
-            system=system, user=candidates, json_mode=True,
-            max_tokens=self._settings.llm_max_tokens)
-        data = _extract_json(raw)
-        steps = data.get("steps")
-        if not isinstance(steps, list) or not steps:
-            raise UpstreamError("LLM вернула план без шагов")
-        plan = [{"time": str(step.get("time", "—")),
-                 "title": str(step.get("title", "")),
-                 "detail": str(step.get("detail", "")),
-                 "source": str(step.get("source", "assistant"))}
-                for step in steps if isinstance(step, dict)]
-        plan = [step for step in plan if step["title"]]
+        summary = "Готовый план вечера — проверьте шаги и подтвердите."
+        try:
+            plan, summary = await self._model_plan(system, candidates)
+        except Exception as exc:  # noqa: BLE001 — deterministic fallback
+            log.warning("plan stage fell back to cards: %s", exc)
+            plan = self._fallback_steps(cards)
+            summary = ("Модель не ответила — вот лучшие варианты из поиска. "
+                       "Время и наличие уточните на странице события.")
         if not plan:
             raise UpstreamError("LLM вернула план без шагов")
-        summary = (data.get("summary")
-                   or "Готовый план вечера — проверьте шаги и подтвердите.")
         log.info("plan stage: %d candidates -> %d steps", len(cards), len(plan))
-        message = ChatMessage(kind="plan", text=str(summary), plan=plan)
+        message = ChatMessage(kind="plan", text=summary, plan=plan)
         return DialogResponse(contract=response.contract,
                               messages=[*response.messages, message])

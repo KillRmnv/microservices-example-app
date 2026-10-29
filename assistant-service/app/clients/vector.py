@@ -11,6 +11,7 @@ import math
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 
+from ..models.search import PayloadDateRange
 from ..sparse import SPARSE_VECTOR_NAME, SparseVector, sparse_dot
 
 log = logging.getLogger(__name__)
@@ -47,10 +48,16 @@ class QdrantStore(VectorStore):
         models = self._models
         query_filter = None
         if must:
-            query_filter = models.Filter(must=[
-                models.FieldCondition(key=key, match=models.MatchValue(value=value))
-                for key, value in must.items()
-            ])
+            conditions = []
+            for key, value in must.items():
+                if isinstance(value, PayloadDateRange):
+                    conditions.append(models.FieldCondition(
+                        key=key,
+                        range=models.DatetimeRange(gte=value.gte, lt=value.lt)))
+                else:
+                    conditions.append(models.FieldCondition(
+                        key=key, match=models.MatchValue(value=value)))
+            query_filter = models.Filter(must=conditions)
         if dense is not None and sparse is not None:
             hits = await self._client.query_points(
                 self._collection,
@@ -93,7 +100,7 @@ class InMemoryStore(VectorStore):
                             sparse: SparseVector | None, limit: int,
                             must: dict | None = None) -> list[ScoredHit]:
         filtered = [(pid, vec, payload) for pid, vec, payload in self._points
-                    if not must or all(payload.get(k) == v for k, v in must.items())]
+                    if not must or _matches_must(payload, must)]
         rankings: list[list[str]] = []
         if dense is not None:
             scored = sorted(filtered,
@@ -115,6 +122,30 @@ class InMemoryStore(VectorStore):
         fused = _rrf(rankings)
         return [ScoredHit(id=pid, score=score, payload=dict(payloads.get(pid, {})))
                 for pid, score in fused[:limit]]
+
+
+def _matches_must(payload: dict, must: dict) -> bool:
+    for key, expected in must.items():
+        value = payload.get(key)
+        if isinstance(expected, PayloadDateRange):
+            if not _in_range(value, expected):
+                return False
+        elif value != expected:
+            return False
+    return True
+
+
+def _in_range(value, window: PayloadDateRange) -> bool:
+    from datetime import datetime
+    if not value:
+        return False
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        start = datetime.fromisoformat(window.gte)
+        end = datetime.fromisoformat(window.lt)
+    except ValueError:
+        return False
+    return parsed.tzinfo is not None and start <= parsed < end
 
 
 def _rrf(rankings: list[list[str]], k: int = 60) -> list[tuple[str, float]]:

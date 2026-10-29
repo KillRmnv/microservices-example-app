@@ -5,7 +5,6 @@ import pytest
 from app.api.schemas.contract import StateContract
 from app.api.schemas.dialogue import ChatMessage, DialogResponse, ResultCard
 from app.core.config import Settings
-from app.errors import UpstreamError
 from app.services.plan_service import PlanService
 
 
@@ -77,23 +76,41 @@ async def test_plan_stage_returns_itinerary():
     assert plan.text == "Вечер джаза и выставки."
     assert [step.time for step in plan.plan] == ["19:00", "21:00"]
     assert provider.calls[0]["json_mode"] is True
-    assert provider.calls[0]["max_tokens"] == 2048  # full reasoning budget
+    assert provider.calls[0]["max_tokens"] == 3072  # plan budget
 
 
 @pytest.mark.asyncio
-async def test_plan_stage_rejects_empty_steps():
+async def test_plan_stage_retries_without_thinking():
+    primary = FakeProvider("")  # reasoning exhausted the budget
+    fallback = FakeProvider(plan_json())
+    service = PlanService(primary, StubDialogue(search_response()), Settings(),
+                          fallback_provider=fallback)
+    response = await service.build_plan(search_response().contract)
+
+    assert [message.kind for message in response.messages][-1] == "plan"
+    assert response.messages[-1].text == "Вечер джаза и выставки."
+    assert len(fallback.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_plan_stage_falls_back_to_cards():
     provider = FakeProvider(json.dumps({"summary": "x", "steps": []}))
     service = PlanService(provider, StubDialogue(search_response()), Settings())
-    with pytest.raises(UpstreamError):
-        await service.build_plan(search_response().contract)
+    response = await service.build_plan(search_response().contract)
+
+    plan = response.messages[-1]
+    assert plan.kind == "plan"
+    assert [step.title for step in plan.plan] == ["Джаз вечером", "Выставка"]
+    assert "Модель не ответила" in plan.text
 
 
 @pytest.mark.asyncio
-async def test_plan_stage_rejects_non_json():
+async def test_plan_stage_non_json_falls_back_to_cards():
     provider = FakeProvider("не json")
     service = PlanService(provider, StubDialogue(search_response()), Settings())
-    with pytest.raises(UpstreamError):
-        await service.build_plan(search_response().contract)
+    response = await service.build_plan(search_response().contract)
+    assert response.messages[-1].kind == "plan"
+    assert len(response.messages[-1].plan) == 2
 
 
 @pytest.mark.asyncio

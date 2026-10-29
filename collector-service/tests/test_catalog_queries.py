@@ -58,6 +58,21 @@ def test_list_events_filters_pages_and_counts(conn):
     assert rows[0]["category"] == "theatre"
 
 
+def test_search_events_respects_date_window(conn):
+    inside = datetime(2026, 10, 31, 18, tzinfo=timezone.utc)
+    outside = datetime(2027, 1, 24, 18, tzinfo=timezone.utc)
+    _insert_event(conn, slug="inside", title="Концерт сегодня", start=inside)
+    _insert_event(conn, slug="outside", title="Концерт в январе", start=outside)
+    _insert_event(conn, slug="undated", title="Концерт без даты", start=None)
+
+    rows = queries.search_events(
+        conn, "концерт", "Минск", None, 10,
+        date_from="2026-10-31T00:00:00+00:00",
+        date_to="2026-11-01T00:00:00+00:00")
+
+    assert [row["title"] for row in rows] == ["Концерт сегодня"]
+
+
 def test_get_event_links_venue_by_normalised_name(conn):
     venue_id = _insert_venue(conn, name="Драматический театр Белорусской Армии")
     event_id = _insert_event(

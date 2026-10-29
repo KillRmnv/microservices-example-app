@@ -2,9 +2,20 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from datetime import datetime
 
-from ..models.search import FusedHit
+from ..models.search import FusedHit, PayloadDateRange
 from .base import Filter
+
+
+def _parse_datetime(value) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else None
 
 
 class CityFilter(Filter):
@@ -35,6 +46,30 @@ class CategoryFilter(Filter):
     def matches(self, hit: FusedHit) -> bool:
         value = hit.payload.get("category")
         return value is None or value == self._category
+
+
+class DateRangeFilter(Filter):
+    """Only events inside [from, to) — requested dates must be respected.
+
+    Events without `start_at` are dropped when the user named a date: a
+    scraped post without a date cannot be promised for that evening.
+    """
+
+    def __init__(self, start: datetime, end: datetime) -> None:
+        self._start = start
+        self._end = end
+
+    def qdrant_must(self) -> dict[str, PayloadDateRange]:
+        return {"start_at": PayloadDateRange(
+            gte=self._start.isoformat(), lt=self._end.isoformat())}
+
+    def lexical_params(self) -> dict[str, str]:
+        return {"date_from": self._start.isoformat(),
+                "date_to": self._end.isoformat()}
+
+    def matches(self, hit: FusedHit) -> bool:
+        value = _parse_datetime(hit.payload.get("start_at"))
+        return value is not None and self._start <= value < self._end
 
 
 class RubricFilter(Filter):

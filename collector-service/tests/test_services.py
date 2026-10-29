@@ -106,6 +106,7 @@ def test_embed_events_stores_sparse_and_price_payload(database_url, conn):
     assert points[0].sparse  # sparse indexed alongside dense
     assert points[0].payload["price_min"] == 25.0
     assert points[0].payload["price_max"] == 60.0
+    assert points[0].payload["source"] == "ticketpro"
 
 
 def test_reindex_hybrid_patches_legacy_points(database_url, conn):
@@ -136,6 +137,7 @@ def test_reindex_hybrid_patches_legacy_points(database_url, conn):
     assert point.vector == [1.0, 0.0, 0.0]  # dense preserved
     assert point.sparse  # sparse merged from Postgres text
     assert point.payload["price_min"] == 40.0
+    assert point.payload["source"] == "relax"
 
 
 def test_ops_service_health_and_metrics(database_url, conn):

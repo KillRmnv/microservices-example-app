@@ -8,7 +8,7 @@ import { DetailPageHeader, ErrorView, LoadingView, PageHeader, RuleTitle, VenueL
 import { MapView } from '@/components/map-view'
 import { useAuth } from '@/lib/auth'
 import { api } from '@/lib/api'
-import { FALLBACK_EVENT_IMAGE, categoryLabel, eventImage, eventPlace, eventPrice, isBookable } from '@/lib/catalog'
+import { FALLBACK_EVENT_IMAGE, categoryLabel, eventImage, eventPlace, eventPrice, isBookable, sourceLabel } from '@/lib/catalog'
 import { admissionLabel, formatDateTime, formatEventDuration, formatMoney, summarizeZones } from '@/lib/format'
 import type { CatalogEvent, Event, Seat, Ticket, ZonedPrice } from '@/lib/types'
 
@@ -113,7 +113,7 @@ function EventDetails() {
               <div>
                 <strong>{eventPlace(catalog)}</strong>
                 <span>
-                  {bookable ? admissionLabel(event?.admissionMode) : 'Внешняя афиша'} · {formatDateTime(startsAt)}
+                  {bookable ? admissionLabel(event?.admissionMode) : sourceLabel(catalog.source)} · {formatDateTime(startsAt)}
                 </span>
               </div>
             </div>
@@ -124,7 +124,7 @@ function EventDetails() {
             <div className="detail-rows">
               <div className="detail-row"><span>Начало</span><strong>{formatDateTime(startsAt)}</strong></div>
               <div className="detail-row"><span>Продолжительность</span><strong>{formatEventDuration(startsAt, endsAt)}</strong></div>
-              <div className="detail-row"><span>Формат</span><strong>{bookable ? admissionLabel(event?.admissionMode) : 'Внешняя афиша'}</strong></div>
+              <div className="detail-row"><span>Формат</span><strong>{bookable ? admissionLabel(event?.admissionMode) : sourceLabel(catalog.source)}</strong></div>
               <div className="detail-row"><span>Категория</span><strong>{categoryLabel(catalog.category)}</strong></div>
               {venueCapacity > 0 && <div className="detail-row"><span>Вместимость площадки</span><strong>{venueCapacity}</strong></div>}
               <div className="detail-row">
@@ -164,7 +164,7 @@ function EventDetails() {
               <div className="venue-location">
                 <div className="venue-location-head"><MapPin size={15} /><span>ИСТОЧНИК</span></div>
                 <div className="detail-rows stacked">
-                  <div className="detail-row"><span>Афиша</span><strong>{catalog.source}</strong></div>
+                  <div className="detail-row"><span>Афиша</span><strong>{sourceLabel(catalog.source)}</strong></div>
                   {catalog.address && <div className="detail-row"><span>Адрес</span><strong>{catalog.address}</strong></div>}
                 </div>
               </div>
@@ -202,7 +202,7 @@ function EventDetails() {
           ) : (
             <div className="price-list">
               <RuleTitle>Билеты</RuleTitle>
-              <p className="side-hint">Это событие собрано из внешней афиши. Наличие и цену уточняйте у источника.</p>
+              <p className="side-hint">Это событие собрано из открытой афиши. Наличие и цену уточняйте у источника.</p>
               {catalog.source_url && (
                 <a className="apply-button" href={catalog.source_url} target="_blank" rel="noreferrer" data-testid="event-source-link">
                   Открыть на источнике <ExternalLink size={14} />

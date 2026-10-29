@@ -66,6 +66,8 @@ class Settings(BaseSettings):
     llm_max_tokens: int = 2048
     # Fast structure lane: no-think extraction, small budget, seconds.
     llm_structure_max_tokens: int = 512
+    # Plan stage: reasoning can eat the whole budget before the JSON answer.
+    llm_plan_max_tokens: int = 3072
     # Complexity heuristic: reasoning kicks in on long/multi-constraint
     # requests only.
     llm_complex_min_chars: int = 140

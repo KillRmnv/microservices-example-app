@@ -12,6 +12,26 @@ export const CATEGORY_LABELS: Record<string, string> = {
 
 export const CATEGORY_OPTIONS = Object.entries(CATEGORY_LABELS)
 
+// Feed codes -> the name a reader recognises. Unknown codes are shown as-is
+// (a concrete source beats a vague "external listing" label).
+export const SOURCE_LABELS: Record<string, string> = {
+  ticketpro: 'Ticketpro',
+  telegram: 'Telegram',
+  afisha_me: 'Afisha.me',
+  relax: 'Afisha.relax.by',
+  bycard: 'ByCard',
+  '24afisha': '24afisha',
+  twogis_places: '2ГИС',
+  booking: 'Досуг',
+  assistant: 'Ассистент',
+}
+
+export function sourceLabel(source: string | null | undefined): string {
+  const raw = (source ?? '').trim()
+  if (!raw) return 'Источник'
+  return SOURCE_LABELS[raw.toLowerCase()] ?? raw
+}
+
 export function categoryLabel(category: string | null | undefined): string {
   if (!category) return 'Событие'
   return CATEGORY_LABELS[category] ?? category

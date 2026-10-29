@@ -1,9 +1,11 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
+import Link from 'next/link'
 import { ArrowRight, CheckCircle2, CloudRain, MessageCircle, RefreshCcw, Sun, X } from 'lucide-react'
 import type { StateContract } from '@/lib/types'
 import { api } from '@/lib/api'
+import { sourceLabel } from '@/lib/catalog'
 import {
   clearContract,
   confirmHold,
@@ -23,7 +25,7 @@ interface ChatMessage {
   kind: 'user' | 'assistant' | 'filters' | 'results' | 'plan' | 'weather'
   text: string
   filters?: StateContract
-  results?: { title: string; meta: string; price: string; event_id?: string }[]
+  results?: { title: string; meta: string; price: string; event_id?: string; detail_id?: string; source?: string }[]
   plan?: { time: string; title: string; detail: string; source: string }[]
   holdId?: string
   error?: boolean
@@ -31,6 +33,11 @@ interface ChatMessage {
 
 function isBookable(eventId: string | undefined): eventId is string {
   return !!eventId && /^\d+$/.test(eventId)
+}
+
+/** Catalog detail pages are keyed by the Qdrant UUID, not by numeric booking ids. */
+function isDetailId(value: string | undefined): value is string {
+  return !!value && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
 }
 
 const CITIES = 'Минск'
@@ -173,7 +180,7 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
         // Model fills semantic slots; deterministic parser keeps RU dates.
         const remote = await structureQuery(text, contract.semantic_payload.language || 'ru',
           stored?.context_state.session_id)
-        contract = mergeContracts(remote.contract, contract)
+        contract = mergeContracts(remote.contract, contract, parsed)
       } catch {
         /* model backend down: keep the local contract */
       }
@@ -294,14 +301,6 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
     setMessages((prev) => prev.filter((item) => item.id !== messageId))
   }
 
-  useEffect(() => {
-    if (open) {
-      setMessages([
-        { id: 1, kind: 'assistant', text: 'Добрый вечер. Что ищем сегодня — событие, место или готовый план прогулки?' },
-      ])
-    }
-  }, [open])
-
   if (!open) return null
 
   const pushScenario = (label: string) => {
@@ -390,23 +389,43 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
                   <span className="message-number">РЕЗУЛЬТАТЫ</span>
                   <p>{message.text}</p>
                   <div className="result-cards">
-                    {message.results.map((result) => (
-                      <article className="result-card" key={`${result.title}-${result.event_id ?? ''}`} data-testid="chat-result-card">
-                        <h3>{result.title}</h3>
-                        <p>{result.meta}</p>
-                        <strong>{result.price}</strong>
-                        {isBookable(result.event_id) && (
-                          <button
-                            className="apply-button"
-                            disabled={busy}
-                            onClick={() => void selectResult(result)}
-                            data-testid="chat-result-select"
-                          >
-                            Выбрать
-                          </button>
-                        )}
-                      </article>
-                    ))}
+                    {message.results.map((result) => {
+                      const card = (
+                        <>
+                          <h3>{result.title}</h3>
+                          <p>{result.meta}</p>
+                          <strong>{result.price}</strong>
+                          {result.source && (
+                            <span className="result-source">Источник: {sourceLabel(result.source)}</span>
+                          )}
+                        </>
+                      )
+                      return (
+                        <article className="result-card" key={`${result.title}-${result.event_id ?? ''}`} data-testid="chat-result-card">
+                          {isDetailId(result.detail_id) ? (
+                            <Link
+                              href={`/events/detail?id=${encodeURIComponent(result.detail_id)}`}
+                              className="result-card-link"
+                              data-testid="chat-result-link"
+                            >
+                              {card}
+                            </Link>
+                          ) : (
+                            <div className="result-card-link">{card}</div>
+                          )}
+                          {isBookable(result.event_id) && (
+                            <button
+                              className="apply-button"
+                              disabled={busy}
+                              onClick={() => void selectResult(result)}
+                              data-testid="chat-result-select"
+                            >
+                              Выбрать
+                            </button>
+                          )}
+                        </article>
+                      )
+                    })}
                   </div>
                 </div>
               )
@@ -423,7 +442,7 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
                         <div>
                           <h3>{step.title}</h3>
                           <p>{step.detail}</p>
-                          <span>Источник: {step.source}</span>
+                          <span>Источник: {sourceLabel(step.source)}</span>
                         </div>
                       </li>
                     ))}

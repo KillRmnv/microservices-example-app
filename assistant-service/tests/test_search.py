@@ -49,7 +49,8 @@ class FakeCollector(CollectorClient):
     def __init__(self, rows):
         self._rows = rows
 
-    async def search_lexical(self, query, city, category, limit):
+    async def search_lexical(self, query, city, category, limit,
+                             *, date_from=None, date_to=None):
         return self._rows[:limit]
 
     async def search_venues_lexical(self, query, city, rubric, limit):
@@ -62,7 +63,8 @@ class ExplodingCollector(FakeCollector):
     def __init__(self):
         super().__init__([])
 
-    async def search_lexical(self, query, city, category, limit):
+    async def search_lexical(self, query, city, category, limit,
+                             *, date_from=None, date_to=None):
         raise AssertionError("collector must not be called on hybrid hit")
 
     async def search_venues_lexical(self, query, city, rubric, limit):
@@ -183,15 +185,41 @@ async def test_city_filter_pushed_to_qdrant():
 
 
 @pytest.mark.asyncio
+async def test_date_filter_drops_other_days_and_undated_events():
+    from datetime import datetime, timezone
+
+    store = hybrid_store(
+        ("today", [1.0, 0.0, 0.0],
+         {"title": "Сегодня", "start_at": "2026-10-31T18:00:00+00:00"},
+         "сегодня концерт"),
+        ("january", [1.0, 0.0, 0.0],
+         {"title": "Январь", "start_at": "2027-01-24T18:00:00+00:00"},
+         "январь концерт"),
+        ("undated", [1.0, 0.0, 0.0], {"title": "Без даты"},
+         "без даты концерт"),
+    )
+    hits = await service(store, ExplodingCollector()).events(SearchPlan(
+        vector_query="концерт", limit=5,
+        date_from=datetime(2026, 10, 31, tzinfo=timezone.utc),
+        date_to=datetime(2026, 11, 1, tzinfo=timezone.utc)))
+    assert [hit.id for hit in hits] == ["today"]
+
+
+@pytest.mark.asyncio
 async def test_collector_client_uses_mock_transport():
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/events/search"
         assert request.url.params["q"] == "джаз"
+        assert request.url.params["date_from"] == "2026-10-31T00:00:00+03:00"
+        assert request.url.params["date_to"] == "2026-11-01T00:00:00+03:00"
         return httpx.Response(200, json={"events": [{"id": "e1", "title": "Джаз"}]})
 
     client = CollectorClient("http://collector:8080",
                              transport=httpx.MockTransport(handler))
-    rows = await client.search_lexical("джаз", None, None, 5)
+    rows = await client.search_lexical(
+        "джаз", None, None, 5,
+        date_from="2026-10-31T00:00:00+03:00",
+        date_to="2026-11-01T00:00:00+03:00")
     assert rows == [{"id": "e1", "title": "Джаз"}]
 
 

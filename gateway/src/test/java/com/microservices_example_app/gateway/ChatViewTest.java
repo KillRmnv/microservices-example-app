@@ -43,6 +43,26 @@ class ChatViewTest extends SeleniumTestBase {
     }
 
     @Test
+    void shouldKeepDialogueWhenPanelIsReopened() {
+        openChat();
+        typeByTestId("chat-input", "Что-нибудь на выходные");
+        clickByTestId("chat-send");
+        assertThat(findByTestId("chat-user-message").getText())
+                .isEqualTo("Что-нибудь на выходные");
+
+        clickByTestId("chat-close");
+        new org.openqa.selenium.support.ui.WebDriverWait(driver, java.time.Duration.ofSeconds(10))
+                .until(d -> d.findElements(org.openqa.selenium.By.cssSelector("[data-testid='chat-panel']")).isEmpty());
+        clickByTestId("assistant-fab");
+
+        new org.openqa.selenium.support.ui.WebDriverWait(driver, java.time.Duration.ofSeconds(10))
+                .until(d -> !d.findElement(org.openqa.selenium.By.cssSelector(
+                        "[data-testid='chat-user-message']")).getText().isEmpty());
+        assertThat(findByTestId("chat-user-message").getText())
+                .isEqualTo("Что-нибудь на выходные");
+    }
+
+    @Test
     void shouldShowErrorWithoutBackend() {
         openChat();
         typeByTestId("chat-input", "Тихий джаз в субботу");

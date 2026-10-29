@@ -99,7 +99,8 @@ def get_event(conn, event_id: str) -> dict | None:
 
 
 def search_events(conn, q: str, city: str | None, category: str | None,
-                  limit: int) -> list[dict]:
+                  limit: int, date_from: str | None = None,
+                  date_to: str | None = None) -> list[dict]:
     """Lexical half of hybrid search: tsvector rank + filters."""
     rows = conn.execute(
         f"""SELECT {CARD_COLUMNS},
@@ -110,8 +111,11 @@ def search_events(conn, q: str, city: str | None, category: str | None,
             WHERE e.search_vector @@ plainto_tsquery('russian', %s)
             AND (%s::TEXT IS NULL OR e.city = %s)
             AND (%s::TEXT IS NULL OR e.category = %s)
+            AND (%s::TIMESTAMPTZ IS NULL OR e.start_at >= %s::TIMESTAMPTZ)
+            AND (%s::TIMESTAMPTZ IS NULL OR e.start_at < %s::TIMESTAMPTZ)
             ORDER BY rank DESC LIMIT %s""",
-        (q, q, city, city, category, category, limit)).fetchall()
+        (q, q, city, city, category, category,
+         date_from, date_from, date_to, date_to, limit)).fetchall()
     return [dict(row) for row in rows]
 
 
@@ -173,7 +177,7 @@ def search_venues(conn, q: str, city: str | None, rubric: str | None,
 
 def unembedded_events(conn, source: str, limit: int | None) -> list:
     params: list = []
-    query = ("SELECT id, booking_event_id, title, venue_name, description,"
+    query = ("SELECT id, source, booking_event_id, title, venue_name, description,"
              " city, category, price_min, price_max, start_at"
              " FROM collected_events WHERE embedded_at IS NULL")
     if source != "all":
@@ -213,8 +217,8 @@ def mark_venues_embedded(conn, ids: list) -> None:
 def all_events_for_reindex(conn) -> list:
     """Every event row with the fields needed for hybrid reindex."""
     return conn.execute(
-        "SELECT id, booking_event_id, title, venue_name, description, city,"
-        " category, price_min, price_max, start_at FROM collected_events"
+        "SELECT id, source, booking_event_id, title, venue_name, description,"
+        " city, category, price_min, price_max, start_at FROM collected_events"
         " ORDER BY fetched_at").fetchall()
 
 

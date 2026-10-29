@@ -11,6 +11,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from datetime import datetime, time as dt_time, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from ..api.schemas.contract import StateContract
 from ..api.schemas.dialogue import ChatMessage, DialogResponse, ResultCard
@@ -112,6 +114,7 @@ class DialogueService:
         hard = contract.hard_filters
         budget = hard.budget
         vector_query = contract.semantic_payload.vector_query.strip()
+        date_from, date_to = self._date_window(hard)
         return SearchPlan(
             vector_query=vector_query or self._fallback_query(hard),
             limit=self._settings.max_results,
@@ -120,7 +123,29 @@ class DialogueService:
             max_price_per_person=(
                 budget.max_price_per_person if budget else None),
             exclude_categories=list(contract.negative_filters.exclude_categories),
+            date_from=date_from,
+            date_to=date_to,
         )
+
+    def _date_window(self, hard) -> tuple[datetime | None, datetime | None]:
+        """Whole days from the contract date; a named date must filter search."""
+        date_filter = hard.datetime
+        if date_filter is None:
+            return None, None
+        start_day = parse_iso_date(date_filter.start)
+        if start_day is None:
+            return None, None
+        end_day = parse_iso_date(date_filter.end) or start_day
+        if end_day < start_day:
+            end_day = start_day
+        tz_name = date_filter.timezone or self._settings.default_timezone
+        try:
+            tz = ZoneInfo(tz_name)
+        except Exception:  # noqa: BLE001 — bad client timezone
+            tz = timezone.utc
+        start = datetime.combine(start_day, dt_time.min, tzinfo=tz)
+        end = datetime.combine(end_day + timedelta(days=1), dt_time.min, tzinfo=tz)
+        return start, end
 
     @staticmethod
     def _fallback_query(hard) -> str:
@@ -158,19 +183,24 @@ class DialogueService:
                  language: str) -> ResultCard:
         title = hit.payload.get("title") or i18n.t("card_untitled", language)
         booking_id = self._booking_event_id(hit)
+        source = str(hit.payload.get("source") or "")
         if availability is None:
             return ResultCard(
                 event_id=str(booking_id) if booking_id is not None else hit.id,
+                detail_id=hit.id,
                 title=title,
                 meta=i18n.t("card_scraped", language),
                 price=i18n.format_price(None, None,
                                         self._settings.default_currency, language),
+                source=source,
             )
         status = STATUS_KEYS.get(availability.status, availability.status)
         return ResultCard(
             event_id=str(booking_id) if booking_id is not None else hit.id,
+            detail_id=hit.id,
             title=title,
             meta=i18n.t(status, language),
             price=i18n.format_price(availability.min_price, None,
                                     self._settings.default_currency, language),
+            source=source,
         )

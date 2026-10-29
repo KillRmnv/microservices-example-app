@@ -21,8 +21,10 @@ class FakeEmbedder:
 
 def collector_rows():
     return [
-        {"id": "aaa", "title": "Джазовый вечер", "price_min": 25.0},
-        {"id": "7", "title": "Концерт в филармонии", "price_min": 120.0},
+        {"id": "aaa", "title": "Джазовый вечер", "price_min": 25.0,
+         "start_at": "2026-10-24T19:00:00+00:00"},
+        {"id": "7", "title": "Концерт в филармонии", "price_min": 120.0,
+         "start_at": "2026-10-24T19:00:00+00:00"},
     ]
 
 
@@ -30,7 +32,8 @@ class FakeCollector(CollectorClient):
     def __init__(self, rows):
         self._rows = rows
 
-    async def search_lexical(self, query, city, category, limit):
+    async def search_lexical(self, query, city, category, limit,
+                             *, date_from=None, date_to=None):
         return self._rows[:limit]
 
 
@@ -88,10 +91,12 @@ def two_event_store() -> InMemoryStore:
     return InMemoryStore(
         [
             ("aaa", [1.0, 0.0, 0.0],
-             {"title": "Джазовый вечер", "city": "Минск", "price_min": 25.0}),
+             {"title": "Джазовый вечер", "city": "Минск", "price_min": 25.0,
+              "source": "ticketpro", "start_at": "2026-10-24T19:00:00+00:00"}),
             ("7", [0.9, 0.1, 0.0],
              {"title": "Концерт в филармонии", "city": "Минск",
-              "price_min": 120.0}),
+              "price_min": 120.0,
+              "start_at": "2026-10-24T19:00:00+00:00"}),
         ],
         {
             "aaa": encode_sparse("Джазовый вечер"),
@@ -109,10 +114,48 @@ async def test_search_turn_returns_messages():
     cards = response.messages[-1].results
     assert {card.event_id for card in cards} == {"aaa", "7"}
     scraped = next(card for card in cards if card.event_id == "aaa")
-    assert "Внешняя афиша" in scraped.meta
+    assert "наличие уточняйте у источника" in scraped.meta
+    assert scraped.detail_id == "aaa"
+    assert scraped.source == "ticketpro"
     booked = next(card for card in cards if card.event_id == "7")
     assert booked.meta == "осталось мало"  # 2 active tickets < 10
     assert booked.price == "от 60 руб."
+
+
+@pytest.mark.asyncio
+async def test_search_turn_keeps_only_requested_day():
+    """A named date must filter hits; a January event is not "завтра"."""
+    store = InMemoryStore(
+        [
+            ("aaa", [1.0, 0.0, 0.0],
+             {"title": "Джазовый вечер", "city": "Минск",
+              "price_min": 25.0,
+              "start_at": "2026-10-24T19:00:00+00:00"}),
+            ("jjj", [1.0, 0.0, 0.0],
+             {"title": "Январский концерт", "city": "Минск",
+              "price_min": 25.0,
+              "start_at": "2027-01-24T19:00:00+00:00"}),
+            ("undated", [1.0, 0.0, 0.0],
+             {"title": "Пост без даты", "city": "Минск",
+              "price_min": 25.0}),
+        ],
+        {doc_id: encode_sparse(title) for doc_id, title in (
+            ("aaa", "Джазовый вечер"), ("jjj", "Январский концерт"),
+            ("undated", "Пост без даты"))},
+    )
+    service = make_service(store, FakeCollector([]))
+    response = await service.search_turn(make_contract())
+    assert {card.event_id for card in response.messages[-1].results} == {"aaa"}
+
+
+@pytest.mark.asyncio
+async def test_search_plan_covers_the_whole_requested_day():
+    service = make_service(two_event_store(), FakeCollector(collector_rows()))
+    plan = service._search_plan(make_contract())
+    assert plan.date_from is not None and plan.date_to is not None
+    # No explicit end: the whole 24 October in the contract timezone.
+    assert plan.date_from.isoformat().startswith("2026-10-24T00:00:00")
+    assert plan.date_to.isoformat().startswith("2026-10-25T00:00:00")
 
 
 @pytest.mark.asyncio
@@ -149,7 +192,8 @@ def catalog_store() -> InMemoryStore:
         [
             ("8f14e45f-ceea-467a-9c5b-3b1c1e0a1a11", [1.0, 0.0, 0.0],
              {"title": "Симфонический вечер", "city": "Минск",
-              "price_min": None, "booking_event_id": 42}),
+              "price_min": None, "booking_event_id": 42,
+              "start_at": "2026-10-24T19:00:00+00:00"}),
         ],
         {"8f14e45f-ceea-467a-9c5b-3b1c1e0a1a11": encode_sparse("Симфонический вечер")},
     )
@@ -158,12 +202,15 @@ def catalog_store() -> InMemoryStore:
 @pytest.mark.asyncio
 async def test_catalog_hit_uses_booking_event_id():
     rows = [{"id": "8f14e45f-ceea-467a-9c5b-3b1c1e0a1a11",
-             "title": "Симфонический вечер", "price_min": None}]
+             "title": "Симфонический вечер", "price_min": None,
+             "start_at": "2026-10-24T19:00:00+00:00"}]
     service = make_service(catalog_store(), FakeCollector(rows))
     response = await service.search_turn(make_contract())
     card = response.messages[-1].results[0]
     # The card carries the numeric booking id, so the frontend can book it.
     assert card.event_id == "42"
+    # ...and the Qdrant UUID, so the card links to the event page.
+    assert card.detail_id == "8f14e45f-ceea-467a-9c5b-3b1c1e0a1a11"
     assert card.meta == "осталось мало"
     assert card.price == "от 90 руб."
 

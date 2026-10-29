@@ -46,9 +46,13 @@ def events(request: Request, city: str | None = None,
 
 @router.get("/events/search", response_model=EventsResponse)
 def events_search(request: Request, q: str, city: str | None = None,
-                  category: str | None = None, limit: int = 20) -> dict:
+                  category: str | None = None,
+                  date_from: str | None = None,
+                  date_to: str | None = None,
+                  limit: int = 20) -> dict:
     with db.get_conn(request.app.state.db_url) as conn:
-        rows = queries.search_events(conn, q, city, category, _limit(limit, 100))
+        rows = queries.search_events(conn, q, city, category, _limit(limit, 100),
+                                     date_from=date_from, date_to=date_to)
     return {"events": rows}
 
 

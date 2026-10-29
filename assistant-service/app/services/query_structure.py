@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -13,6 +14,10 @@ from ..errors import UpstreamError
 from .query_complexity import classify
 
 log = logging.getLogger(__name__)
+
+KNOWN_CATEGORIES = {
+    "concert", "theatre", "exhibition", "film", "sport", "kids", "other",
+}
 
 PROMPT = """Ты — парсер запросов к городской афише. Думай кратко, затем верни ТОЛЬКО JSON:
 {{
@@ -27,9 +32,12 @@ PROMPT = """Ты — парсер запросов к городской афи�
   "semantic_payload": {{"vector_query": "...", "language": "{language}"}}
 }}
 Правила: сегодня {today}, пояс {timezone}; относительные даты ("завтра",
-"в субботу") переводи в ISO; category только из concert, theatre, exhibition,
-film, sport, kids, other; budget — {{"max_price_per_person": N}} только если
-сумма названа; vector_query — смысл запроса без дат, цен и города.
+"в субботу") переводи в ISO; category — не больше одной, только из concert,
+theatre, exhibition, film, sport, kids, other; для общих запросов
+("что-нибудь", "любые события") category — []; budget — только если сумма
+названа; vector_query — только тема, жанр или атмосфера. Не включай в
+vector_query дату, цену, город, размер компании и служебные слова
+("найди", "что-нибудь", "на компанию"); если темы нет — "".
 """
 
 
@@ -47,6 +55,35 @@ def _extract_json(raw: str) -> dict:
     if not isinstance(data, dict):
         raise UpstreamError("LLM вернула не объект JSON")
     return data
+
+
+_FILLER_RE = re.compile(
+    r"\b(?:найди(?:те)?|подбери(?:те)?|покажи(?:те)?|"
+    r"что[- ]нибудь|что[- ]то|что\s+угодно|пожалуйста|пожалуй)\b",
+    re.IGNORECASE)
+_PARTY_RE = re.compile(
+    r"\b(?:на|для)\s+компани\w*(?:\s+из)?(?:\s+\d{1,2})?"
+    r"(?:\s+человек\w*)?|\bкомпани\w*\b|\b\d{1,2}\s+человек\w*|"
+    r"\bвдво[её]м\b|\bвтро[её]м\b",
+    re.IGNORECASE)
+_DATE_RE = re.compile(
+    r"\b(?:сегодня|завтра|послезавтра|выходн\w*)\b", re.IGNORECASE)
+
+
+def _clean_vector_query(text: str, city: str) -> str:
+    """Strip slots the search already filters on from the semantic query.
+
+    "найди что-нибудь на компанию из 3 человек на завтра" carries no theme;
+    leaving it in vector_query makes dense search match "команда"/"человек".
+    """
+    cleaned = _FILLER_RE.sub(" ", text or "")
+    cleaned = _PARTY_RE.sub(" ", cleaned)
+    cleaned = _DATE_RE.sub(" ", cleaned)
+    if city:
+        cleaned = re.sub(rf"\b{re.escape(city)}\w*\b", " ", cleaned,
+                         flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" ,.-")
+    return "" if len(cleaned) <= 2 else cleaned[:300]
 
 
 def _normalise(data: dict, settings: Settings) -> dict:
@@ -68,7 +105,17 @@ def _normalise(data: dict, settings: Settings) -> dict:
     category = hard.get("category")
     if isinstance(category, str):
         category = [category]
-    hard["category"] = category if isinstance(category, list) else []
+    if isinstance(category, list):
+        cleaned = [str(item).strip().lower() for item in category
+                   if str(item).strip().lower() in KNOWN_CATEGORIES]
+    else:
+        cleaned = []
+    # "Какие есть события?" makes the model list several categories. Search
+    # applies one category only, so any multi-category answer would silently
+    # narrow the result to the first one (usually concerts). Broad means all.
+    if len(set(cleaned)) > 1:
+        cleaned = []
+    hard["category"] = list(dict.fromkeys(cleaned))
     try:
         hard["party_size"] = int(hard.get("party_size") or settings.default_party_size)
     except (TypeError, ValueError):
@@ -134,8 +181,14 @@ class QueryStructureService:
         contract.context_state.session_id = session_id or ANONYMOUS_SESSION
         contract.context_state.turn_count = 1
         contract.semantic_payload.language = language
-        if contract.dialogue_action == "search" and not contract.semantic_payload.vector_query:
-            contract.semantic_payload.vector_query = query.strip()[:300]
+        if contract.dialogue_action == "search":
+            vector = _clean_vector_query(
+                contract.semantic_payload.vector_query,
+                self._settings.default_city)
+            if not vector:
+                vector = (_clean_vector_query(query, self._settings.default_city)
+                          or query.strip()[:300])
+            contract.semantic_payload.vector_query = vector
         log.info("structure stage: %s -> categories=%s datetime=%s reasoning=%s",
                  query[:80], contract.hard_filters.category,
                  contract.hard_filters.datetime.start if contract.hard_filters.datetime else None,

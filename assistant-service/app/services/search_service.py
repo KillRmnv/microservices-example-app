@@ -16,6 +16,7 @@ from ..clients.vector import VectorStore
 from ..filters import (
     CategoryFilter,
     CityFilter,
+    DateRangeFilter,
     ExcludeCategoriesFilter,
     FilterPipeline,
     MaxPriceFilter,
@@ -64,6 +65,8 @@ class SearchService:
             pipeline.add(CategoryFilter(plan.category))
         if plan.exclude_categories:
             pipeline.add(ExcludeCategoriesFilter(plan.exclude_categories))
+        if plan.date_from is not None and plan.date_to is not None:
+            pipeline.add(DateRangeFilter(plan.date_from, plan.date_to))
         return await self._search(plan, pipeline, venues=False)
 
     async def venues(self, plan: SearchPlan) -> list[FusedHit]:
@@ -113,7 +116,8 @@ class SearchService:
         else:
             rows = await self._collector.search_lexical(
                 plan.vector_query, params.get("city"), params.get("category"),
-                candidates)
+                candidates, date_from=params.get("date_from"),
+                date_to=params.get("date_to"))
         lexical_by_id = {str(row["id"]): row for row in rows}
         fused = fuse_search([], list(lexical_by_id), candidates)
         for hit in fused:

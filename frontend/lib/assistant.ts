@@ -8,9 +8,11 @@ import type { StateContract } from './types'
 
 export interface DialogResultCard {
   event_id: string
+  detail_id?: string
   title: string
   meta: string
   price: string
+  source?: string
 }
 
 export interface DialogMessage {

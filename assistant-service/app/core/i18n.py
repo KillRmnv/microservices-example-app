@@ -31,7 +31,7 @@ CATALOG: dict[str, dict[str, str]] = {
             "{date}: без дождя ({probability}%), макс. {temp}°. "
             "Для прогулки подходит."),
         "card_untitled": "Без названия",
-        "card_scraped": "Внешняя афиша — наличие уточняйте у источника",
+        "card_scraped": "наличие уточняйте у источника",
         "price_unknown": "цена уточняется",
         "price_range": "{price_min:g}–{price_max:g} {currency}",
         "price_from": "от {price_min:g} {currency}",
@@ -62,7 +62,7 @@ CATALOG: dict[str, dict[str, str]] = {
             "{date}: no rain ({probability}%), high {temp}°C. "
             "Good for a walk."),
         "card_untitled": "Untitled",
-        "card_scraped": "External listing — check availability with the source",
+        "card_scraped": "check availability with the source",
         "price_unknown": "price on request",
         "price_range": "{price_min:g}–{price_max:g} {currency}",
         "price_from": "from {price_min:g} {currency}",

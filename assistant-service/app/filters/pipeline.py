@@ -1,6 +1,8 @@
 """Ordered filter pipeline: one backend pass, one post-filter pass."""
 from __future__ import annotations
 
+from typing import Any
+
 from ..models.search import FusedHit
 from .base import Filter
 
@@ -13,14 +15,14 @@ class FilterPipeline:
         self._filters.append(specification)
         return self
 
-    def qdrant_must(self) -> dict[str, str]:
-        merged: dict[str, str] = {}
+    def qdrant_must(self) -> dict[str, Any]:
+        merged: dict[str, Any] = {}
         for specification in self._filters:
             merged.update(specification.qdrant_must())
         return merged
 
-    def lexical_params(self) -> dict[str, str]:
-        merged: dict[str, str] = {}
+    def lexical_params(self) -> dict[str, Any]:
+        merged: dict[str, Any] = {}
         for specification in self._filters:
             merged.update(specification.lexical_params())
         return merged

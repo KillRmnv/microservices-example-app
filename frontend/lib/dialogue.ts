@@ -35,6 +35,10 @@ export interface ParsedQuery {
   maxPrice?: number
   excludeTags: string[]
   vectorQuery: string
+  /** True when the user actually named a date (not an inherited one). */
+  dateExplicit: boolean
+  /** True when the user actually named the party size. */
+  partyExplicit: boolean
 }
 
 function pad(value: number): string {
@@ -68,6 +72,8 @@ export function parseQuery(text: string, now = new Date()): ParsedQuery {
     partySize: 2,
     excludeTags: [],
     vectorQuery: '',
+    dateExplicit: false,
+    partyExplicit: false,
   }
 
   // --- datetime ---
@@ -105,6 +111,7 @@ export function parseQuery(text: string, now = new Date()): ParsedQuery {
     result.start = `${isoDay(day)}T${stamp}:00`
     const end = endDay ?? day
     result.end = `${isoDay(end)}T${time ?? '23:59'}:00`
+    result.dateExplicit = true
   }
 
   // --- category ---
@@ -115,6 +122,7 @@ export function parseQuery(text: string, now = new Date()): ParsedQuery {
   // --- party size ---
   const party = lowered.match(/нас\s+(\d{1,2})|вдво[её]м|двое|втро[её]м|(\d{1,2})\s+человек/)
   if (party) {
+    result.partyExplicit = true
     if (/вдво[её]м|двое/.test(lowered)) result.partySize = 2
     else if (/втро[её]м/.test(lowered)) result.partySize = 3
     else result.partySize = Math.min(20, Math.max(1, Number(party[1] ?? party[2])))
@@ -145,25 +153,47 @@ export function parseQuery(text: string, now = new Date()): ParsedQuery {
     .replace(/до\s+\d[\d\s]*\s*(?:руб|р\b|byn)?/g, ' ')
     .replace(/без\s+[а-яёa-z,\s]+?(?=[.,;]|$)/g, ' ')
     .replace(/минск|минске|центре|центр|вдвоем|вдвоём|двое|нас\s+\d+/g, ' ')
+    .replace(/(найди|найдите|подбери|подберите|покажи|покажите|что-нибудь|что-то|что угодно|пожалуйста)/g, ' ')
+    .replace(/(?:на|для)\s+компани[а-яё]*(?:\s+из)?\s*\d*\s*человек[а-яё]*|компани[а-яё]*|\d{1,2}\s+человек[а-яё]*|вдво[её]м|втро[её]м/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
-  result.vectorQuery = semantic.slice(0, 300)
+    .replace(/^(?:на|из)\s+|\s+(?:на|из)$/g, '')
+  const followUpOnly = /^(?:а\s+)?(?:ещё|еще|подешевле|дешевле|подороже|дороже|другие|другой|варианты|что-нибудь|что-то|а\s+есть\s+ещё)[\s?.!]*$/
+  result.vectorQuery = followUpOnly.test(semantic) || semantic.length <= 2
+    ? ''
+    : semantic.slice(0, 300)
 
   return result
 }
 
 export function contractFromParsed(parsed: ParsedQuery, previous?: StateContract): StateContract {
   const previousTurn = previous?.context_state.turn_count ?? 0
+  const previousHard = previous?.hard_filters
+  const previousNegative = previous?.negative_filters
+  const excludeTags = Array.from(new Set([
+    ...(previousNegative?.exclude_tags ?? []),
+    ...parsed.excludeTags,
+  ]))
   const contract: StateContract = {
     dialogue_action: 'search',
     needs_clarification: false,
     clarification_prompt: null,
     hard_filters: {
-      location: { city: DEFAULT_CITY },
-      party_size: parsed.partySize,
+      location: previousHard?.location ?? { city: DEFAULT_CITY },
+      party_size: parsed.partyExplicit
+        ? parsed.partySize
+        : previousHard?.party_size ?? parsed.partySize,
+      amenities_required: previousHard?.amenities_required ?? [],
     },
-    negative_filters: { exclude_tags: parsed.excludeTags },
-    semantic_payload: { vector_query: parsed.vectorQuery, language: DEFAULT_LANGUAGE },
+    negative_filters: {
+      exclude_tags: excludeTags,
+      exclude_categories: previousNegative?.exclude_categories ?? [],
+      exclude_districts: previousNegative?.exclude_districts ?? [],
+    },
+    semantic_payload: {
+      vector_query: parsed.vectorQuery || previous?.semantic_payload.vector_query || '',
+      language: previous?.semantic_payload.language ?? DEFAULT_LANGUAGE,
+    },
     context_state: {
       turn_count: previousTurn,
       session_id: previous?.context_state.session_id ?? `web_${Date.now()}`,
@@ -175,27 +205,50 @@ export function contractFromParsed(parsed: ParsedQuery, previous?: StateContract
       end: parsed.end,
       raw_expression: parsed.rawExpression,
     }
+  } else if (previousHard?.datetime?.start) {
+    // Follow-up ("а подешевле?") keeps the date from the previous turn.
+    contract.hard_filters.datetime = previousHard.datetime
   } else if (parsed.rawExpression) {
     contract.hard_filters.datetime = { raw_expression: parsed.rawExpression }
   }
-  if (parsed.category.length) contract.hard_filters.category = parsed.category
+  const inheritedCategory = previousHard?.category?.length === 1
+    ? previousHard.category
+    : undefined
+  const category = parsed.category.length ? parsed.category : inheritedCategory
+  if (category?.length) contract.hard_filters.category = category
   if (parsed.maxPrice !== undefined) {
     contract.hard_filters.budget = { max_price_per_person: parsed.maxPrice }
+  } else if (previousHard?.budget) {
+    contract.hard_filters.budget = previousHard.budget
   }
   return contract
 }
 
 
+const FOLLOW_UP_VECTOR = /^(?:а\s+)?(?:ещё|еще|подешевле|дешевле|подороже|дороже|другие|другой|варианты|что-нибудь|что-то)[\s?.!]*$/i
+
 /** Prefer the model's semantic fields, keep deterministic local date parsing. */
-export function mergeContracts(remote: StateContract, local: StateContract): StateContract {
+export function mergeContracts(remote: StateContract, local: StateContract, parsed?: ParsedQuery): StateContract {
   const remoteDate = remote.hard_filters.datetime
+  const remoteVector = (remote.semantic_payload.vector_query || '').trim()
+  const localDateWins = parsed
+    ? parsed.dateExplicit
+    : Boolean(local.hard_filters.datetime?.start)
+  // A follow-up inherits the date, so the model's "ask for a date" verdict
+  // no longer applies: the turn has everything needed to search.
+  const action = remote.dialogue_action === 'ask_clarification'
+    && local.hard_filters.datetime?.start
+    ? 'search'
+    : remote.dialogue_action
   return {
     ...local,
-    dialogue_action: remote.dialogue_action,
+    dialogue_action: action,
     hard_filters: {
       ...local.hard_filters,
       // Local parser owns RU date arithmetic; models often get weekdays wrong.
-      datetime: local.hard_filters.datetime?.start
+      // It only wins when the user named a date in this turn (inherited dates
+      // must not mask a model-parsed "на следующей неделе").
+      datetime: localDateWins
         ? local.hard_filters.datetime
         : remoteDate?.start
           ? {
@@ -211,19 +264,34 @@ export function mergeContracts(remote: StateContract, local: StateContract): Sta
       category: remote.hard_filters.category?.length
         ? remote.hard_filters.category
         : local.hard_filters.category,
-      party_size: remote.hard_filters.party_size || local.hard_filters.party_size,
+      // Party size comes from the deterministic parser (incl. inheritance):
+      // the model always defaults it to 2, which would reset a follow-up.
+      party_size: local.hard_filters.party_size || remote.hard_filters.party_size,
       budget: remote.hard_filters.budget ?? local.hard_filters.budget,
       amenities_required: remote.hard_filters.amenities_required?.length
         ? remote.hard_filters.amenities_required
         : local.hard_filters.amenities_required,
     },
     negative_filters: {
-      ...local.negative_filters,
-      ...remote.negative_filters,
+      exclude_tags: Array.from(new Set([
+        ...(local.negative_filters.exclude_tags ?? []),
+        ...(remote.negative_filters.exclude_tags ?? []),
+      ])),
+      exclude_categories: Array.from(new Set([
+        ...(local.negative_filters.exclude_categories ?? []),
+        ...(remote.negative_filters.exclude_categories ?? []),
+      ])),
+      exclude_districts: Array.from(new Set([
+        ...(local.negative_filters.exclude_districts ?? []),
+        ...(remote.negative_filters.exclude_districts ?? []),
+      ])),
     },
     semantic_payload: {
       ...local.semantic_payload,
-      vector_query: remote.semantic_payload.vector_query || local.semantic_payload.vector_query,
+      // "а ещё?" carries no meaning of its own — keep the previous topic.
+      vector_query: FOLLOW_UP_VECTOR.test(remoteVector)
+        ? local.semantic_payload.vector_query
+        : remoteVector || local.semantic_payload.vector_query,
       language: remote.semantic_payload.language || local.semantic_payload.language,
     },
   }

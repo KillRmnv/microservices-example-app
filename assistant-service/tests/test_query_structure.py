@@ -86,6 +86,34 @@ async def test_structure_stage_rejects_empty_or_non_json():
 
 
 @pytest.mark.asyncio
+async def test_two_categories_are_treated_as_broad():
+    # Search applies one category; two would silently drop the second.
+    payload = contract_json()
+    data = json.loads(payload)
+    data["hard_filters"]["category"] = ["theatre", "concert"]
+    contract = await QueryStructureService(
+        FakeProvider(json.dumps(data, ensure_ascii=False)), Settings()).parse(
+            "найди что-нибудь для компании из 3 человек на завтра")
+    assert contract.hard_filters.category == []
+
+
+@pytest.mark.asyncio
+async def test_structure_stage_cleans_slots_out_of_vector_query():
+    payload = contract_json()
+    data = json.loads(payload)
+    data["semantic_payload"]["vector_query"] = (
+        "команда из 3 человек для компании, завтра Минск")
+    service = QueryStructureService(
+        FakeProvider(json.dumps(data, ensure_ascii=False)), Settings())
+    contract = await service.parse(
+        "найди что-нибудь на компанию из 3 человек на завтра")
+    vector = contract.semantic_payload.vector_query
+    assert "человек" not in vector
+    assert "завтра" not in vector
+    assert "Минск" not in vector
+
+
+@pytest.mark.asyncio
 async def test_structure_stage_repairs_null_location_and_string_category():
     payload = json.dumps({
         "dialogue_action": "search",
@@ -98,6 +126,20 @@ async def test_structure_stage_repairs_null_location_and_string_category():
     assert contract.hard_filters.location.city == "Минск"
     assert contract.hard_filters.category == ["concert"]
     assert contract.hard_filters.party_size == 2
+
+
+@pytest.mark.asyncio
+async def test_broad_request_does_not_filter_by_every_category():
+    # "Какие есть события на завтра?" makes the model list all categories;
+    # keeping them would narrow the search to the first one (concerts).
+    payload = contract_json()
+    data = json.loads(payload)
+    data["hard_filters"]["category"] = [
+        "concert", "theatre", "exhibition", "film", "sport", "kids", "other"]
+    contract = await QueryStructureService(
+        FakeProvider(json.dumps(data, ensure_ascii=False)), Settings()).parse(
+            "какие есть события на завтра?")
+    assert contract.hard_filters.category == []
 
 
 @pytest.mark.asyncio
