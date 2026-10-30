@@ -63,7 +63,7 @@ class Settings(BaseSettings):
     openrouter_model: str = ""
     openrouter_referer: str = "http://localhost:3000"
     openrouter_title: str = "Dosug Assistant"
-    llm_stages: str = "structure:openrouter,plan:openrouter"
+    llm_stages: str = "structure:mock,plan:mock,telegram:mock"
     llm_default_backend: str = "local"
     llm_fallback_enabled: bool = False
     # LFM/Qwen reasoning templates emit reasoning_content instead of the
