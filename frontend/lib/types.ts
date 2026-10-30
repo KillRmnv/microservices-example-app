@@ -82,6 +82,7 @@ export type DialogueAction =
 
 export interface StateContract {
   dialogue_action: DialogueAction
+  intent?: string
   needs_clarification: boolean
   clarification_prompt: string | null
   hard_filters: {
@@ -95,6 +96,7 @@ export interface StateContract {
       districts?: string[]
     }
     category?: string[]
+    themes?: string[]
     party_size?: number
     budget?: {
       max_price_per_person?: number

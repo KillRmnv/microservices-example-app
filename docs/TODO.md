@@ -38,28 +38,18 @@ refactor. Each item explains why it is deferred and what "done" looks like.
       build does not pass them through yet; exported static assets bake the
       defaults at build time.
 
-## Local LLM / embeddings
+## LLM / embeddings
 
-- [ ] **LFM3 reasoning is too verbose for the structure stage.** With thinking
-      enabled, LFM3-1.7B spends the whole budget in `reasoning_content`
-      (1024/2048 tokens, `finish_reason=length`) and returns an empty `content`;
-      only very short prompts close around ~1550 tokens (~2.5 min on CPU at
-      ~11 t/s). llama.cpp master supports `lfm3`, so this is model behaviour,
-      not a missing architecture. The assistant therefore runs
-      **Ling-3.0-tiny-Q4_K_M** for the reasoning-enabled `structure` stage
-      (`--jinja`, temp 1.0, top-p 0.95, top-k 20). Revisit LFM3 with a newer
-      chat template/runtime, a larger budget (4k+), or a reasoning budget knob;
-      "done" means a valid JSON contract within a usable token/time budget while
-      thinking stays on, covered by a structure-stage test. Update: `structure`
-      is now split — the fast no-think lane is the default and reasoning runs
-      only for complex requests (`services/query_complexity.py`) or
-      `force_reasoning=true`; the dedicated reasoning consumer is the new
-      `POST /assistant/plan` stage (`services/plan_service.py`).
-- [ ] **Model bootstrap.** `llama.cpp` servers are opt-in Compose profiles and
-      expect model files under `${MODEL_DIR}` (bge-m3 for embeddings,
-      Ling-3.0-tiny-Q4_K_M for chat; LFM3 remains an optional experiment). Add a documented download/verify step so a fresh clone can run
-      `structure:local` without manual work, and note that the image is built
-      from llama.cpp master (not the PyPI wheel) because of `lfm3` support.
+- [x] **Chat stages moved to OpenRouter.** `structure` and `plan` use the
+      hosted OpenRouter API (`clients/llm/openrouter.py`); the Ling/llama-chat
+      container is no longer part of Compose. The key and model come from
+      `ASSISTANT_OPENROUTER_KEY` / `ASSISTANT_OPENROUTER_MODEL` (secret env).
+      When the API is unavailable, `/assistant/query` returns the local
+      contract and the frontend falls back to its deterministic RU parser;
+      the plan stage falls back to cards.
+- [ ] **Embeddings stay local.** `llama-embed` (bge-m3, 1024 dims) remains
+      under the `llm` profile and still expects `${MODEL_DIR}` with the GGUF
+      file. Add a documented download/verify step for a fresh clone.
 
 ## Operations / cleanup
 

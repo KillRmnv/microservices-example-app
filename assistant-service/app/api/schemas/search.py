@@ -1,13 +1,14 @@
 """Search DTOs."""
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class SearchRequest(BaseModel):
     vector_query: str
     city: str | None = None
     category: str | None = None
+    categories: list[str] = Field(default_factory=list)
     max_price_per_person: float | None = None
     limit: int = 10
 

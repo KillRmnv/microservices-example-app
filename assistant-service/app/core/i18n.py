@@ -17,6 +17,13 @@ CATALOG: dict[str, dict[str, str]] = {
             "По этим условиям ничего не нашлось. "
             "Смягчите фильтры или уточните дату."),
         "search_results": "Вот что нашлось:",
+        "venue_results": "Вот какие места нашлись:",
+        "venue_empty": "Подходящих мест не нашлось. Уточните район или запрос.",
+        "assistant_capabilities": (
+            "Я помогаю с досугом в Минске: ищу события и места (бары, кафе, "
+            "рестораны), учитываю дату, бюджет и компанию, показываю погоду, "
+            "собираю план вечера и держу бронь. Спросите, например: «джаз "
+            "завтра», «где выпить пива с друзьями» или «план на субботу»."),
         "clarify_date": (
             "На какую дату и время ищем?{hint} "
             "Например: «в субботу вечером»."),
@@ -48,6 +55,12 @@ CATALOG: dict[str, dict[str, str]] = {
             "Nothing matched these filters. "
             "Try loosening them or picking another date."),
         "search_results": "Here is what we found:",
+        "venue_results": "Here are the places we found:",
+        "venue_empty": "No matching places. Try another district or query.",
+        "assistant_capabilities": (
+            "I help with leisure in Minsk: events, venues (bars, cafes, "
+            "restaurants), dates, budgets, weather, evening plans and holds. "
+            "Try: \"jazz tomorrow\" or \"where to drink beer with friends\"."),
         "clarify_date": (
             "Which date and time should we look for?{hint} "
             "For example: “Saturday evening”."),

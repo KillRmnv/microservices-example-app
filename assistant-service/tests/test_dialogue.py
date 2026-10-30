@@ -79,6 +79,7 @@ def make_service(store, collector, weather=None) -> DialogueService:
                             transport=httpx.MockTransport(booking_handler))
     return DialogueService(
         search=SearchService(FakeEmbedder(), store, collector),
+        search_venues=SearchService(FakeEmbedder(), store, collector),
         weather=weather or FakeWeather(),
         booking=booking,
         db_url="",
@@ -213,6 +214,33 @@ async def test_catalog_hit_uses_booking_event_id():
     assert card.detail_id == "8f14e45f-ceea-467a-9c5b-3b1c1e0a1a11"
     assert card.meta == "осталось мало"
     assert card.price == "от 90 руб."
+
+
+@pytest.mark.asyncio
+async def test_venue_intent_searches_places_without_asking_for_date():
+    from app.api.schemas.contract import StateContract
+
+    store = InMemoryStore(
+        [("11111111-1111-4111-8111-111111111111", [1.0, 0.0, 0.0],
+          {"name": "Пивной бар «Кран»", "rubric": "Бары",
+           "address": "ул. Немига, 5", "city": "Минск",
+           "source": "twogis_places"})],
+        {"11111111-1111-4111-8111-111111111111": encode_sparse("пивной бар")},
+    )
+    contract = StateContract.model_validate({
+        "dialogue_action": "search",
+        "intent": "find_venues",
+        "hard_filters": {"location": {"city": "Минск"}},
+        "semantic_payload": {"vector_query": "пиво с друзьями"},
+        "context_state": {"session_id": "v1"},
+    })
+    service = make_service(store, FakeCollector([]))
+    response = await service.search_turn(contract)
+    card = response.messages[-1].results[0]
+    assert card.kind == "venue"
+    assert card.title == "Пивной бар «Кран»"
+    assert card.detail_id == "11111111-1111-4111-8111-111111111111"
+    assert "Бары" in card.meta
 
 
 @pytest.mark.asyncio

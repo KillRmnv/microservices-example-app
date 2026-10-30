@@ -7,9 +7,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 class RoleAccessViewTest extends SeleniumTestBase {
 
     @Test
-    void shouldShowNoAccessOnProfileWhenLoggedOut() {
+    void shouldRedirectProfileToLoginWhenLoggedOut() {
         navigateTo("/profile");
-        assertThat(findByTestId("no-access").getText()).contains("Раздел для подписчиков");
+        waitForUrlContains("/login");
+        assertThat(driver.getCurrentUrl()).contains("next=/profile");
+        assertThat(findByTestId("login-email")).isNotNull();
     }
 
     @Test
@@ -25,9 +27,9 @@ class RoleAccessViewTest extends SeleniumTestBase {
     }
 
     @Test
-    void shouldLinkLoginFromNoAccessView() {
-        navigateTo("/profile");
-        assertThat(find("a[href='/login']")).isNotNull();
+    void shouldLinkLoginFromMastheadWhenLoggedOut() {
+        navigateTo("/");
+        assertThat(find("a[data-testid='masthead-login']")).isNotNull();
     }
 
     @Test

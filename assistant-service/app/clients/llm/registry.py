@@ -15,6 +15,7 @@ from .base import LLMProvider
 from .llama_cpp import LlamaCppProvider
 from .mock import MockProvider
 from .openai_compat import OpenAICompatProvider
+from .openrouter import OpenRouterProvider
 
 log = logging.getLogger(__name__)
 
@@ -47,6 +48,18 @@ def build_provider(backend: str, settings: Settings,
                                     settings.llm_external_model,
                                     settings.llm_external_api_key,
                                     settings.llm_timeout_s, transport=transport)
+    if backend == "openrouter":
+        if not settings.openrouter_key.strip() or not settings.openrouter_model.strip():
+            raise UnknownBackend(
+                "openrouter backend requires ASSISTANT_OPENROUTER_KEY and "
+                "ASSISTANT_OPENROUTER_MODEL")
+        return OpenRouterProvider(settings.openrouter_base_url,
+                                  settings.openrouter_model,
+                                  settings.openrouter_key,
+                                  settings.llm_timeout_s,
+                                  referer=settings.openrouter_referer,
+                                  title=settings.openrouter_title,
+                                  transport=transport)
     if backend == "mock":
         return MockProvider()
     raise UnknownBackend(f"unknown LLM backend: {backend!r}")

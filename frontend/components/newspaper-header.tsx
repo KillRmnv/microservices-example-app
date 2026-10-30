@@ -49,7 +49,7 @@ export function NewspaperHeader({ returnLink }: NewspaperHeaderProps) {
               <button aria-label="Выйти" onClick={() => auth.logout()} data-testid="masthead-logout"><LogOut size={17} /></button>
             </>
           ) : (
-            <Link href="/login" aria-label="Войти" data-testid="masthead-login"><UserRound size={18} /></Link>
+            <Link href="/login?next=/profile" aria-label="Войти" data-testid="masthead-login"><UserRound size={18} /></Link>
           )}
           <button aria-label="Ночная тема" onClick={toggle} className="theme-toggle" data-testid="theme-toggle">
             {theme === 'dark' ? '☼' : '☾'}
@@ -60,7 +60,7 @@ export function NewspaperHeader({ returnLink }: NewspaperHeaderProps) {
         <Link href="/" className={isActive('/') ? 'active' : undefined} data-testid="nav-home">ГЛАВНАЯ</Link>
         <Link href="/events" className={isActive('/events') ? 'active' : undefined} data-testid="nav-events">СОБЫТИЯ</Link>
         <Link href="/places" className={isActive('/places') ? 'active' : undefined} data-testid="nav-places">МЕСТА</Link>
-        <Link href="/profile" className={isActive('/profile') ? 'active' : undefined} data-testid="nav-profile">ЛИЧНЫЙ КАБИНЕТ</Link>
+        <Link href={auth.user ? '/profile' : '/login?next=/profile'} className={isActive('/profile') ? 'active' : undefined} data-testid="nav-profile">ЛИЧНЫЙ КАБИНЕТ</Link>
         <Link href="/about" className={isActive('/about') ? 'active' : undefined} data-testid="nav-about">О ПРОЕКТЕ</Link>
         {auth.isManager && <Link href="/manager" data-testid="nav-manager">МЕНЕДЖЕР</Link>}
         {auth.isAdmin && <Link href="/admin" data-testid="nav-admin">АДМИНКА</Link>}

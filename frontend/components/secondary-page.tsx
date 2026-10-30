@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { useEffect, useState, type ReactNode } from 'react'
+import { useRouter } from 'next/navigation'
 import { ChevronLeft, Eye, EyeOff, Newspaper, RefreshCcw } from 'lucide-react'
 import { NewspaperHeader, RuleTitle } from '@/components/newspaper-header'
 import { useAuth } from '@/lib/auth'
@@ -734,10 +735,15 @@ export function AdminPage({ manager }: { manager?: boolean }) {
 
 export function ProfilePage() {
   const auth = useAuth()
+  const router = useRouter()
   const [tab, setTab] = useState<'tickets' | 'info'>('tickets')
   const [tickets, setTickets] = useState<Ticket[]>([])
   const [seatable, setSeatable] = useState<SeatableTicket[]>([])
   const [error, setError] = useState<unknown>()
+
+  useEffect(() => {
+    if (auth.ready && !auth.user) router.replace('/login?next=/profile')
+  }, [auth.ready, auth.user, router])
 
   useEffect(() => {
     if (!auth.user) return
@@ -754,7 +760,7 @@ export function ProfilePage() {
   }, [auth.user])
 
   if (!auth.ready) return <LoadingView />
-  if (!auth.user) return <NoAccessView message="Войдите, чтобы увидеть билеты и настройки подписки." />
+  if (!auth.user) return <LoadingView />
 
   const refund = async (id: number, seatableTicket: boolean) => {
     setError(undefined)

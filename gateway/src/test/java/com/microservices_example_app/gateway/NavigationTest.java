@@ -24,12 +24,20 @@ class NavigationTest extends SeleniumTestBase {
         assertThat(find(".auth-logo").getText()).isEqualTo("ДОСУГ");
     }
 
-    /** Guarded pages render the no-access stub when logged out. */
+    /** Admin and manager are guarded; the profile redirects to auth. */
     @ParameterizedTest
-    @ValueSource(strings = {"/profile", "/admin", "/manager"})
+    @ValueSource(strings = {"/admin", "/manager"})
     void shouldServeGuardedRouteWithNoAccess(String path) {
         navigateTo(path);
         assertThat(findByTestId("no-access")).isNotNull();
+    }
+
+    @Test
+    void shouldRedirectProfileToLoginWhenLoggedOut() {
+        navigateTo("/profile");
+        waitForUrlContains("/login");
+        assertThat(driver.getCurrentUrl()).contains("next=/profile");
+        assertThat(findByTestId("login-email")).isNotNull();
     }
 
     @Test

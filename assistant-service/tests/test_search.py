@@ -136,6 +136,21 @@ async def test_hybrid_falls_back_to_lexical():
 
 
 @pytest.mark.asyncio
+async def test_multi_category_filter_uses_all_categories():
+    store = hybrid_store(
+        ("c", [1.0, 0.0, 0.0], {"title": "Концерт", "category": "concert"},
+         "концерт"),
+        ("t", [1.0, 0.0, 0.0], {"title": "Спектакль", "category": "theatre"},
+         "спектакль"),
+        ("s", [1.0, 0.0, 0.0], {"title": "Матч", "category": "sport"}, "матч"),
+    )
+    hits = await service(store, ExplodingCollector()).events(
+        SearchPlan(vector_query="события", limit=5,
+                   categories=["concert", "theatre"]))
+    assert {hit.id for hit in hits} == {"c", "t"}
+
+
+@pytest.mark.asyncio
 async def test_price_filter_reads_qdrant_payload():
     store = hybrid_store(
         ("cheap", [1.0, 0.0, 0.0],

@@ -39,14 +39,16 @@ _VENUE_LATERAL = f"""
 """
 
 
-def _filters(city, category, source, date_from, date_to, q, ids):
+def _filters(city, category, source, date_from, date_to, q, ids,
+             categories=None):
     clauses, params = [], []
     if city:
         clauses.append("e.city = %s")
         params.append(city)
-    if category:
-        clauses.append("e.category = %s")
-        params.append(category)
+    selected = categories or ([category] if category else None)
+    if selected:
+        clauses.append("e.category = ANY(%s::TEXT[])")
+        params.append(selected)
     if source:
         clauses.append("e.source = %s")
         params.append(source)
@@ -67,9 +69,9 @@ def _filters(city, category, source, date_from, date_to, q, ids):
 
 def list_events(conn, *, city=None, category=None, source=None,
                 date_from=None, date_to=None, q=None, ids=None,
-                limit=40, offset=0) -> tuple[list[dict], int]:
+                categories=None, limit=40, offset=0) -> tuple[list[dict], int]:
     clauses, params = _filters(city, category, source, date_from, date_to,
-                               q, ids)
+                               q, ids, categories)
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
     total = conn.execute(
         f"SELECT count(*) AS n FROM collected_events e {where}",
@@ -100,8 +102,10 @@ def get_event(conn, event_id: str) -> dict | None:
 
 def search_events(conn, q: str, city: str | None, category: str | None,
                   limit: int, date_from: str | None = None,
-                  date_to: str | None = None) -> list[dict]:
+                  date_to: str | None = None,
+                  categories: list[str] | None = None) -> list[dict]:
     """Lexical half of hybrid search: tsvector rank + filters."""
+    selected = categories or ([category] if category else None)
     rows = conn.execute(
         f"""SELECT {CARD_COLUMNS},
                    ts_rank_cd(e.search_vector,
@@ -110,11 +114,11 @@ def search_events(conn, q: str, city: str | None, category: str | None,
             {_VENUE_LATERAL}
             WHERE e.search_vector @@ plainto_tsquery('russian', %s)
             AND (%s::TEXT IS NULL OR e.city = %s)
-            AND (%s::TEXT IS NULL OR e.category = %s)
+            AND (%s::TEXT[] IS NULL OR e.category = ANY(%s::TEXT[]))
             AND (%s::TIMESTAMPTZ IS NULL OR e.start_at >= %s::TIMESTAMPTZ)
             AND (%s::TIMESTAMPTZ IS NULL OR e.start_at < %s::TIMESTAMPTZ)
             ORDER BY rank DESC LIMIT %s""",
-        (q, q, city, city, category, category,
+        (q, q, city, city, selected, selected,
          date_from, date_from, date_to, date_to, limit)).fetchall()
     return [dict(row) for row in rows]
 
@@ -191,8 +195,8 @@ def unembedded_events(conn, source: str, limit: int | None) -> list:
 
 
 def unembedded_venues(conn, limit: int | None) -> list:
-    query = ("SELECT id, name, rubric, address, city FROM collected_venues"
-             " WHERE embedded_at IS NULL ORDER BY fetched_at")
+    query = ("SELECT id, source, name, rubric, address, city"
+             " FROM collected_venues WHERE embedded_at IS NULL ORDER BY fetched_at")
     params: list = []
     if limit:
         query += " LIMIT %s"
@@ -224,7 +228,7 @@ def all_events_for_reindex(conn) -> list:
 
 def all_venues_for_reindex(conn) -> list:
     return conn.execute(
-        "SELECT id, name, rubric, address, city FROM collected_venues"
+        "SELECT id, source, name, rubric, address, city FROM collected_venues"
         " ORDER BY fetched_at").fetchall()
 
 

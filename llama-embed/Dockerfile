@@ -1,6 +1,6 @@
 # Local llama.cpp servers (bge-m3 embeddings + chat models) via the `llm`
 # compose profile. Models are mounted read-only from the host:
-#   docker compose --profile llm up -d llama-embed llama-chat
+#   docker compose --profile llm up -d llama-embed
 #
 # Built from llama.cpp master: PyPI llama-cpp-python still bundles an older
 # runtime without `lfm3` support, and we need it for LFM3-1.7B.

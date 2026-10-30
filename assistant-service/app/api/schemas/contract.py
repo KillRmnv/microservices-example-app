@@ -55,6 +55,7 @@ class HardFilters(StrictModel):
     datetime: DateTimeFilter | None = None
     location: LocationFilter = Field(default_factory=LocationFilter)
     category: list[str] = Field(default_factory=list)
+    themes: list[str] = Field(default_factory=list)
     party_size: int = 0
     budget: BudgetFilter | None = None
     amenities_required: list[str] = Field(default_factory=list)
@@ -80,6 +81,7 @@ class ContextState(StrictModel):
 
 class StateContract(StrictModel):
     dialogue_action: DialogueAction = "search"
+    intent: str = "find_events"
     needs_clarification: bool = False
     clarification_prompt: str | None = None
     hard_filters: HardFilters = Field(default_factory=HardFilters)
@@ -90,7 +92,10 @@ class StateContract(StrictModel):
 
 def sanitize(contract: StateContract) -> StateContract:
     """Server-side normalization: clamp slots and fill configured defaults."""
+    from ...models import intent as intents
+
     data = contract.model_dump()
+    data["intent"] = intents.normalize(data.get("intent"))
     hard = data["hard_filters"]
     hard["party_size"] = max(
         PARTY_SIZE_MIN,
@@ -100,6 +105,10 @@ def sanitize(contract: StateContract) -> StateContract:
     if not location.get("city"):
         location["city"] = settings.default_city
     hard["location"] = location
+    themes = hard.get("themes")
+    hard["themes"] = ([str(theme).strip().lower() for theme in themes
+                       if str(theme).strip()][:5]
+                      if isinstance(themes, list) else [])
     if hard.get("datetime") is not None and not hard["datetime"].get("timezone"):
         hard["datetime"]["timezone"] = settings.default_timezone
     budget = hard.get("budget")

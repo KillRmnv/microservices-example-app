@@ -44,7 +44,7 @@ class HomeViewTest extends SeleniumTestBase {
     @Test
     void shouldShowLoginActionWhenLoggedOut() {
         navigateTo("/");
-        assertThat(findByTestId("masthead-login").getAttribute("href")).endsWith("/login");
+        assertThat(findByTestId("masthead-login").getAttribute("href")).contains("/login");
         assertThat(findAllByTestId("masthead-logout")).isEmpty();
         assertThat(findAllByTestId("masthead-profile")).isEmpty();
     }
@@ -79,7 +79,7 @@ class HomeViewTest extends SeleniumTestBase {
         navigateTo("/");
         List<WebElement> tabs = findAll("[data-testid='home-day-tabs'] button");
         assertThat(tabs).hasSize(4);
-        assertThat(tabs.get(0).getText()).isEqualTo("Все даты");
+        assertThat(tabs.get(0).getText()).isEqualTo("За всё время");
     }
 
     @Test

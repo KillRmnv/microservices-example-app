@@ -34,11 +34,13 @@ class VectorStore(ABC):
 
 
 class QdrantStore(VectorStore):
-    def __init__(self, url: str, collection: str) -> None:
+    def __init__(self, url: str, collection: str,
+                 dense_min_score: float = 0.0) -> None:
         from qdrant_client import AsyncQdrantClient, models
         self._client = AsyncQdrantClient(url=url)
         self._models = models
         self._collection = collection
+        self._dense_min_score = dense_min_score
 
     async def hybrid_search(self, dense: list[float] | None,
                             sparse: SparseVector | None, limit: int,
@@ -54,6 +56,9 @@ class QdrantStore(VectorStore):
                     conditions.append(models.FieldCondition(
                         key=key,
                         range=models.DatetimeRange(gte=value.gte, lt=value.lt)))
+                elif isinstance(value, (list, tuple, set)):
+                    conditions.append(models.FieldCondition(
+                        key=key, match=models.MatchAny(any=list(value))))
                 else:
                     conditions.append(models.FieldCondition(
                         key=key, match=models.MatchValue(value=value)))
@@ -63,7 +68,8 @@ class QdrantStore(VectorStore):
                 self._collection,
                 query=models.FusionQuery(fusion=models.Fusion.RRF),
                 prefetch=[
-                    models.Prefetch(query=dense, limit=limit),
+                    models.Prefetch(query=dense, limit=limit,
+                                    score_threshold=self._dense_min_score),
                     models.Prefetch(
                         query=models.SparseVector(indices=sparse.indices,
                                                   values=sparse.values),
@@ -74,7 +80,8 @@ class QdrantStore(VectorStore):
             log.warning("hybrid degraded to dense-only for %s", self._collection)
             hits = await self._client.query_points(
                 self._collection, query=dense, limit=limit,
-                query_filter=query_filter, with_payload=True)
+                query_filter=query_filter, with_payload=True,
+                score_threshold=self._dense_min_score)
         else:
             assert sparse is not None
             log.warning("hybrid degraded to sparse-only for %s", self._collection)
@@ -129,6 +136,9 @@ def _matches_must(payload: dict, must: dict) -> bool:
         value = payload.get(key)
         if isinstance(expected, PayloadDateRange):
             if not _in_range(value, expected):
+                return False
+        elif isinstance(expected, (list, tuple, set)):
+            if value not in expected:
                 return False
         elif value != expected:
             return False

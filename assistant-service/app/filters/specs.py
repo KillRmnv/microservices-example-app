@@ -34,18 +34,19 @@ class CityFilter(Filter):
 
 
 class CategoryFilter(Filter):
-    def __init__(self, category: str) -> None:
-        self._category = category
+    def __init__(self, categories: str | list[str]) -> None:
+        self._categories = ([categories] if isinstance(categories, str)
+                            else list(categories))
 
-    def qdrant_must(self) -> dict[str, str]:
-        return {"category": self._category}
+    def qdrant_must(self):
+        return {"category": self._categories}
 
-    def lexical_params(self) -> dict[str, str]:
-        return {"category": self._category}
+    def lexical_params(self):
+        return {"categories": self._categories}
 
     def matches(self, hit: FusedHit) -> bool:
         value = hit.payload.get("category")
-        return value is None or value == self._category
+        return value is None or value in self._categories
 
 
 class DateRangeFilter(Filter):

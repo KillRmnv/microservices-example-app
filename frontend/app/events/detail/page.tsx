@@ -10,6 +10,7 @@ import { useAuth } from '@/lib/auth'
 import { api } from '@/lib/api'
 import { FALLBACK_EVENT_IMAGE, categoryLabel, eventImage, eventPlace, eventPrice, isBookable, sourceLabel } from '@/lib/catalog'
 import { admissionLabel, formatDateTime, formatEventDuration, formatMoney, summarizeZones } from '@/lib/format'
+import { formatDescription } from '@/lib/format-text'
 import type { CatalogEvent, Event, Seat, Ticket, ZonedPrice } from '@/lib/types'
 
 const ZONE_SUBTITLES: Record<string, string> = {
@@ -69,6 +70,7 @@ function EventDetails() {
   }, [load])
 
   const zonedPrices: ZonedPrice[] = useMemo(() => summarizeZones(zoneTickets), [zoneTickets])
+  const description = useMemo(() => formatDescription(catalog?.description), [catalog?.description])
 
   const buy = async (zoneInfo: ZonedPrice) => {
     if (!auth.user) {
@@ -137,7 +139,11 @@ function EventDetails() {
           {catalog.description && (
             <div className="detail-section">
               <RuleTitle>Описание</RuleTitle>
-              <p className="detail-description">{catalog.description}</p>
+              <div className="detail-description" data-testid="event-description">
+                {description.map((paragraph, index) => (
+                  <p key={`${index}-${paragraph.slice(0, 24)}`}>{paragraph}</p>
+                ))}
+              </div>
             </div>
           )}
 

@@ -49,6 +49,7 @@ def _event_payload(row) -> dict:
 def _venue_payload(row) -> dict:
     return {
         "name": row["name"],
+        "source": row["source"],
         "city": row["city"],
         "rubric": row["rubric"] or "",
         "address": row["address"] or "",

@@ -14,3 +14,6 @@ class QueryResponse(BaseModel):
     contract: StateContract
     reasoning_used: bool = False
     complex: bool = False
+    intent: str = "event_search"
+    supported: bool = True
+    reply: str | None = None

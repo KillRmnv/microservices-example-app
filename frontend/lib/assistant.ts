@@ -8,6 +8,7 @@ import type { StateContract } from './types'
 
 export interface DialogResultCard {
   event_id: string
+  kind?: 'event' | 'venue'
   detail_id?: string
   title: string
   meta: string
@@ -66,14 +67,17 @@ export function sendDialogue(contract: StateContract): Promise<DialogResponse> {
 }
 
 /** LLM structure stage; throws when the model backend is unavailable. */
-export function structureQuery(query: string, language = 'ru', sessionId?: string, forceReasoning?: boolean): Promise<QueryResponse> {
-  return postJson<QueryResponse>('/assistant/query', { query, language, session_id: sessionId, force_reasoning: forceReasoning })
+export function structureQuery(query: string, language = 'ru', sessionId?: string, forceReasoning?: boolean, previous?: StateContract): Promise<QueryResponse> {
+  return postJson<QueryResponse>('/assistant/query', { query, language, session_id: sessionId, force_reasoning: forceReasoning, contract: previous })
 }
 
 export interface QueryResponse {
   contract: StateContract
   reasoning_used: boolean
   complex: boolean
+  intent: string
+  supported: boolean
+  reply: string | null
 }
 
 /** Reasoning plan stage: explicit evening itinerary, may take minutes. */

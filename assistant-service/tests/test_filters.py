@@ -13,8 +13,14 @@ def make_hit(doc_id="e1", **payload) -> FusedHit:
 
 def test_pipeline_merges_backend_filters():
     pipeline = FilterPipeline([CityFilter("Минск"), CategoryFilter("concert")])
-    assert pipeline.qdrant_must() == {"city": "Минск", "category": "concert"}
-    assert pipeline.lexical_params() == {"city": "Минск", "category": "concert"}
+    assert pipeline.qdrant_must() == {"city": "Минск", "category": ["concert"]}
+    assert pipeline.lexical_params() == {"city": "Минск", "categories": ["concert"]}
+
+
+def test_category_filter_accepts_multiple_categories():
+    pipeline = FilterPipeline([CategoryFilter(["concert", "theatre"])])
+    assert pipeline.matches(make_hit("e1", category="theatre"))
+    assert not pipeline.matches(make_hit("e2", category="sport"))
 
 
 def test_pipeline_applies_specs_in_one_pass():

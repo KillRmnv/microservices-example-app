@@ -176,10 +176,13 @@ export function contractFromParsed(parsed: ParsedQuery, previous?: StateContract
   ]))
   const contract: StateContract = {
     dialogue_action: 'search',
+    intent: previous?.intent ?? 'find_events',
     needs_clarification: false,
     clarification_prompt: null,
     hard_filters: {
       location: previousHard?.location ?? { city: DEFAULT_CITY },
+      category: previousHard?.category ?? [],
+      themes: previousHard?.themes ?? [],
       party_size: parsed.partyExplicit
         ? parsed.partySize
         : previousHard?.party_size ?? parsed.partySize,
@@ -211,7 +214,7 @@ export function contractFromParsed(parsed: ParsedQuery, previous?: StateContract
   } else if (parsed.rawExpression) {
     contract.hard_filters.datetime = { raw_expression: parsed.rawExpression }
   }
-  const inheritedCategory = previousHard?.category?.length === 1
+  const inheritedCategory = previousHard?.category?.length
     ? previousHard.category
     : undefined
   const category = parsed.category.length ? parsed.category : inheritedCategory
@@ -243,6 +246,7 @@ export function mergeContracts(remote: StateContract, local: StateContract, pars
   return {
     ...local,
     dialogue_action: action,
+    intent: remote.intent || local.intent,
     hard_filters: {
       ...local.hard_filters,
       // Local parser owns RU date arithmetic; models often get weekdays wrong.
@@ -264,6 +268,9 @@ export function mergeContracts(remote: StateContract, local: StateContract, pars
       category: remote.hard_filters.category?.length
         ? remote.hard_filters.category
         : local.hard_filters.category,
+      themes: remote.hard_filters.themes?.length
+        ? remote.hard_filters.themes
+        : local.hard_filters.themes,
       // Party size comes from the deterministic parser (incl. inheritance):
       // the model always defaults it to 2, which would reset a follow-up.
       party_size: local.hard_filters.party_size || remote.hard_filters.party_size,

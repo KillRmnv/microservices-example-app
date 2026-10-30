@@ -11,6 +11,7 @@ from ..api.schemas.contract import ANONYMOUS_SESSION, StateContract, sanitize
 from ..clients.llm.base import LLMProvider
 from ..core.config import Settings
 from ..errors import UpstreamError
+from ..models import intent as intents
 from .query_complexity import classify
 
 log = logging.getLogger(__name__)
@@ -19,25 +20,42 @@ KNOWN_CATEGORIES = {
     "concert", "theatre", "exhibition", "film", "sport", "kids", "other",
 }
 
-PROMPT = """Ты — парсер запросов к городской афише. Думай кратко, затем верни ТОЛЬКО JSON:
+PROMPT = """Ты — классификатор и парсер запросов к городской афише и справочнику мест. Думай кратко, затем верни ТОЛЬКО JSON:
 {{
+  "intent": "find_events",
   "dialogue_action": "search",
   "hard_filters": {{
     "datetime": {{"start": "ISO-8601 или null", "raw_expression": "..."}},
     "location": {{"city": "{city}"}},
     "category": ["concert"],
+    "themes": ["classical"],
     "party_size": 2,
     "budget": null
   }},
   "semantic_payload": {{"vector_query": "...", "language": "{language}"}}
 }}
 Правила: сегодня {today}, пояс {timezone}; относительные даты ("завтра",
-"в субботу") переводи в ISO; category — не больше одной, только из concert,
-theatre, exhibition, film, sport, kids, other; для общих запросов
-("что-нибудь", "любые события") category — []; budget — только если сумма
-названа; vector_query — только тема, жанр или атмосфера. Не включай в
+"в субботу") переводи в ISO; category — список подходящих категорий из
+concert, theatre, exhibition, film, sport, kids, other. Для классики это
+["concert","theatre"], для балета/оперы — ["theatre"]. Для общих запросов
+("что-нибудь", "любые события") category — []; themes — жанровые темы,
+например ["classical"], ["jazz"], ["rock"], ["beer"]; budget — только если
+сумма названа; vector_query — только тема, жанр или атмосфера. Не включай в
 vector_query дату, цену, город, размер компании и служебные слова
 ("найди", "что-нибудь", "на компанию"); если темы нет — "".
+
+intent — главное решение, выбери ровно одно:
+- find_events — пользователь ищет мероприятия (концерт, спектакль, выставку и т.п.);
+- find_venues — пользователь ищет место/заведение (бар, паб, кафе, ресторан,
+  где выпить/поесть/посидеть), а не событие;
+- both — просит и события, и места;
+- plan — просит собрать план/маршрут вечера;
+- booking — просит забронировать/купить билет;
+- weather — спрашивает только погоду;
+- capabilities — спрашивает, что ты умеешь, или здоровается;
+- unsupported — запрос не про досуг, еду, места, события или город.
+"Место, чтобы выпить с друзьями" и "где можно пивка попить" — find_venues.
+"Концерт в баре" — find_events, если главное событие.
 """
 
 
@@ -69,7 +87,6 @@ _PARTY_RE = re.compile(
 _DATE_RE = re.compile(
     r"\b(?:сегодня|завтра|послезавтра|выходн\w*)\b", re.IGNORECASE)
 
-
 def _clean_vector_query(text: str, city: str) -> str:
     """Strip slots the search already filters on from the semantic query.
 
@@ -91,6 +108,7 @@ def _normalise(data: dict, settings: Settings) -> dict:
     actions = {"search", "update_filters", "confirm_booking", "ask_clarification"}
     if data.get("dialogue_action") not in actions:
         data["dialogue_action"] = "search"
+    data["intent"] = intents.normalize(data.get("intent"))
     hard = data.get("hard_filters")
     if not isinstance(hard, dict):
         hard = {}
@@ -110,12 +128,18 @@ def _normalise(data: dict, settings: Settings) -> dict:
                    if str(item).strip().lower() in KNOWN_CATEGORIES]
     else:
         cleaned = []
-    # "Какие есть события?" makes the model list several categories. Search
-    # applies one category only, so any multi-category answer would silently
-    # narrow the result to the first one (usually concerts). Broad means all.
-    if len(set(cleaned)) > 1:
+    # Multiple categories are a supported filter (e.g. classics: concert +
+    # theatre); keep every known value, deduplicated. "All seven" is just a
+    # broad request — no category filter.
+    if set(cleaned) >= KNOWN_CATEGORIES:
         cleaned = []
     hard["category"] = list(dict.fromkeys(cleaned))
+    themes = hard.get("themes")
+    if isinstance(themes, str):
+        themes = [themes]
+    hard["themes"] = (list(dict.fromkeys(
+        str(theme).strip().lower() for theme in themes
+        if str(theme).strip())) if isinstance(themes, list) else [])
     try:
         hard["party_size"] = int(hard.get("party_size") or settings.default_party_size)
     except (TypeError, ValueError):
@@ -145,15 +169,17 @@ class QueryStructureService:
 
     async def parse(self, query: str, language: str | None = None,
                     session_id: str | None = None,
-                    force_reasoning: bool | None = None) -> StateContract:
+                    force_reasoning: bool | None = None,
+                    previous: StateContract | None = None) -> StateContract:
         contract, _, _ = await self.parse_meta(
             query, language=language, session_id=session_id,
-            force_reasoning=force_reasoning)
+            force_reasoning=force_reasoning, previous=previous)
         return contract
 
     async def parse_meta(self, query: str, language: str | None = None,
                          session_id: str | None = None,
-                         force_reasoning: bool | None = None
+                         force_reasoning: bool | None = None,
+                         previous: StateContract | None = None
                          ) -> tuple[StateContract, bool, bool]:
         """Parse the request; also report (reasoning_used, complex)."""
         language = language or self._settings.default_language
@@ -170,14 +196,34 @@ class QueryStructureService:
         system = PROMPT.format(city=self._settings.default_city,
                                timezone=validate, language=language,
                                today=today)
+        if previous is not None:
+            system += (
+                "\nЭто продолжение диалога. Предыдущий intent: "
+                f"{previous.intent}. Если запрос является уточнением, сохрани "
+                "intent и уже известные слоты (дата, город, тема, категории), "
+                "если пользователь явно не сменил тему.")
         raw = await provider.complete(
             system=system, user=query.strip(), json_mode=True,
             max_tokens=max_tokens)
-        data = _normalise(_extract_json(raw), self._settings)
-        try:
-            contract = StateContract.model_validate(data)
-        except ValueError as exc:
-            raise UpstreamError(f"LLM вернула контракт неверной формы: {exc}") from exc
+        last_error: Exception | None = None
+        contract = None
+        for attempt in range(2):
+            try:
+                data = _normalise(_extract_json(raw), self._settings)
+                contract = StateContract.model_validate(data)
+                break
+            except (UpstreamError, ValueError) as exc:
+                last_error = exc
+                if attempt == 0:
+                    log.warning("structure JSON invalid, retrying: %s", exc)
+                    raw = await provider.complete(
+                        system=system + "\nВерни строго валидный JSON без "
+                        "комментариев и без незакрытых строк.",
+                        user=query.strip(), json_mode=True,
+                        max_tokens=max_tokens)
+        if contract is None:
+            raise UpstreamError(
+                f"LLM вернула контракт неверной формы: {last_error}")
         contract.context_state.session_id = session_id or ANONYMOUS_SESSION
         contract.context_state.turn_count = 1
         contract.semantic_payload.language = language
@@ -186,8 +232,7 @@ class QueryStructureService:
                 contract.semantic_payload.vector_query,
                 self._settings.default_city)
             if not vector:
-                vector = (_clean_vector_query(query, self._settings.default_city)
-                          or query.strip()[:300])
+                vector = _clean_vector_query(query, self._settings.default_city)
             contract.semantic_payload.vector_query = vector
         log.info("structure stage: %s -> categories=%s datetime=%s reasoning=%s",
                  query[:80], contract.hard_filters.category,

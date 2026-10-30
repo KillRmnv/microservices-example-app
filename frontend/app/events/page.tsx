@@ -20,6 +20,7 @@ function EventsList() {
   const [city, setCity] = useState('Минск')
   const [category, setCategory] = useState('')
   const [date, setDate] = useState('')
+  const [allTime, setAllTime] = useState(false)
   const [events, setEvents] = useState<CatalogEvent[]>([])
   const [total, setTotal] = useState(0)
   const [offset, setOffset] = useState(0)
@@ -36,8 +37,8 @@ function EventsList() {
       const page = await api.catalogEvents({
         city: city || undefined,
         category: category || undefined,
-        dateFrom: date || todayIso(),
-        dateTo: date || undefined,
+        dateFrom: allTime ? undefined : date || todayIso(),
+        dateTo: allTime ? undefined : date || undefined,
         limit: PAGE_SIZE,
         offset: nextOffset,
       })
@@ -50,7 +51,7 @@ function EventsList() {
       setLoading(false)
       setLoadingMore(false)
     }
-  }, [city, category, date])
+  }, [city, category, date, allTime])
 
   useEffect(() => {
     const fromUrl = params.get('category')
@@ -119,7 +120,21 @@ function EventsList() {
               <option value="">Все категории</option>
               {CATEGORY_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
             </select>
-            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} data-testid="event-date-filter" aria-label="Дата события" />
+            <button
+              type="button"
+              className={allTime ? 'black-chip' : 'chip'}
+              onClick={() => { setAllTime(true); setDate('') }}
+              data-testid="event-all-time-filter"
+            >
+              За всё время
+            </button>
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => { setDate(e.target.value); setAllTime(false) }}
+              data-testid="event-date-filter"
+              aria-label="Дата события"
+            />
           </div>
         }
       />

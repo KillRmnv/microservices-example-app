@@ -86,15 +86,28 @@ async def test_structure_stage_rejects_empty_or_non_json():
 
 
 @pytest.mark.asyncio
-async def test_two_categories_are_treated_as_broad():
-    # Search applies one category; two would silently drop the second.
+async def test_two_categories_are_preserved():
+    # Search supports multi-category filters (classical = concert + theatre).
     payload = contract_json()
     data = json.loads(payload)
     data["hard_filters"]["category"] = ["theatre", "concert"]
     contract = await QueryStructureService(
         FakeProvider(json.dumps(data, ensure_ascii=False)), Settings()).parse(
-            "найди что-нибудь для компании из 3 человек на завтра")
-    assert contract.hard_filters.category == []
+            "классика завтра")
+    assert contract.hard_filters.category == ["theatre", "concert"]
+
+
+@pytest.mark.asyncio
+async def test_classical_theme_is_preserved_and_visible():
+    payload = contract_json()
+    data = json.loads(payload)
+    data["hard_filters"]["category"] = ["concert", "theatre"]
+    data["hard_filters"]["themes"] = ["classical"]
+    contract = await QueryStructureService(
+        FakeProvider(json.dumps(data, ensure_ascii=False)), Settings()).parse(
+            "хочу что-нибудь классическое завтра")
+    assert contract.hard_filters.themes == ["classical"]
+    assert contract.hard_filters.category == ["concert", "theatre"]
 
 
 @pytest.mark.asyncio

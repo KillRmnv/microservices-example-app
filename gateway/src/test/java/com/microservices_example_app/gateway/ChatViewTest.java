@@ -63,6 +63,45 @@ class ChatViewTest extends SeleniumTestBase {
     }
 
     @Test
+    void shouldCreateAndSwitchChats() {
+        openChat();
+        typeByTestId("chat-input", "Что-нибудь на выходные");
+        clickByTestId("chat-send");
+        assertThat(findAllByTestId("chat-user-message")).hasSize(1);
+
+        clickByTestId("chat-new");
+        assertThat(findAllByTestId("chat-user-message")).isEmpty();
+
+        clickByTestId("chat-list-toggle");
+        var items = findAllByTestId("chat-list-item");
+        assertThat(items).hasSize(2);
+        items.get(1).click();
+
+        assertThat(findByTestId("chat-user-message").getText())
+                .isEqualTo("Что-нибудь на выходные");
+    }
+
+    @Test
+    void shouldKeepChatsAfterReload() {
+        openChat();
+        typeByTestId("chat-input", "Что-нибудь на выходные");
+        clickByTestId("chat-send");
+        assertThat(findAllByTestId("chat-user-message")).hasSize(1);
+
+        driver.navigate().refresh();
+        waitForPageLoad();
+        clickByTestId("assistant-fab");
+
+        new org.openqa.selenium.support.ui.WebDriverWait(driver, java.time.Duration.ofSeconds(10))
+                .until(d -> !d.findElements(org.openqa.selenium.By.cssSelector(
+                        "[data-testid='chat-user-message']")).isEmpty()
+                        && !d.findElement(org.openqa.selenium.By.cssSelector(
+                        "[data-testid='chat-user-message']")).getText().isEmpty());
+        assertThat(findByTestId("chat-user-message").getText())
+                .isEqualTo("Что-нибудь на выходные");
+    }
+
+    @Test
     void shouldShowErrorWithoutBackend() {
         openChat();
         typeByTestId("chat-input", "Тихий джаз в субботу");

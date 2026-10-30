@@ -47,7 +47,9 @@ def _search_service(config: Settings, *, venues: bool) -> SearchService:
                   else config.qdrant_collection)
     return SearchService(
         _embedder(config),
-        QdrantStore(config.qdrant_url, collection),
+        QdrantStore(config.qdrant_url, collection,
+                    dense_min_score=(config.search_venue_min_score if venues
+                                     else config.search_dense_min_score)),
         CollectorClient(config.collector_base_url),
         candidate_multiplier=config.search_candidate_multiplier,
         query_timeout_s=config.query_embedding_timeout_s,
@@ -68,13 +70,15 @@ def build_components(config: Settings | None = None) -> Components:
         timezone=config.default_timezone,
     )
     search_events = _search_service(config, venues=False)
-    dialogue = DialogueService(search=search_events, weather=weather,
+    search_venues = _search_service(config, venues=True)
+    dialogue = DialogueService(search=search_events, search_venues=search_venues,
+                               weather=weather,
                                booking=booking, db_url=config.database_url,
                                settings=config)
     return Components(
         dialogue=dialogue,
         search_events=search_events,
-        search_venues=_search_service(config, venues=True),
+        search_venues=search_venues,
         structure=QueryStructureService(
             provider_for("structure", config, thinking=False), config,
             max_tokens=config.llm_structure_max_tokens,

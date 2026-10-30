@@ -22,6 +22,7 @@ from ..core.config import Settings, settings as default_settings
 from ..core.dates import parse_iso_date
 from ..core.geo import resolve_location
 from ..models.availability import AVAILABLE, FEW_LEFT, SOLD_OUT, UNKNOWN, Availability
+from ..models import intent as intents
 from ..models.search import FusedHit, SearchPlan
 from ..repositories import dialogue_runs
 from .search_service import SearchService
@@ -39,10 +40,11 @@ STATUS_KEYS = {
 
 
 class DialogueService:
-    def __init__(self, *, search: SearchService, weather: WeatherService,
-                 booking: BookingClient, db_url: str,
+    def __init__(self, *, search: SearchService, search_venues: SearchService,
+                 weather: WeatherService, booking: BookingClient, db_url: str,
                  settings: Settings = default_settings) -> None:
         self._search = search
+        self._search_venues = search_venues
         self._weather = weather
         self._booking = booking
         self._db_url = db_url
@@ -55,7 +57,8 @@ class DialogueService:
             contract.needs_clarification = True
             contract.clarification_prompt = i18n.t("clarify_booking", language)
             return contract
-        if contract.dialogue_action in SEARCH_ACTIONS:
+        if contract.dialogue_action in SEARCH_ACTIONS \
+                and contract.intent == intents.EVENT_SEARCH:
             date_filter = contract.hard_filters.datetime
             if date_filter is None or not date_filter.start:
                 contract.dialogue_action = "ask_clarification"
@@ -77,6 +80,10 @@ class DialogueService:
         return int((time.monotonic() - started) * 1000)
 
     async def search_turn(self, contract: StateContract) -> DialogResponse:
+        if contract.intent == intents.VENUE_SEARCH:
+            return await self._venue_turn(contract)
+        if contract.intent == intents.BOTH:
+            return await self._both_turn(contract)
         language = i18n.resolve_locale(contract.semantic_payload.language)
         messages: list[ChatMessage] = [
             ChatMessage(kind="filters", text=i18n.t("filters_locked", language))
@@ -96,6 +103,75 @@ class DialogueService:
         messages.append(ChatMessage(
             kind="results", text=i18n.t("search_results", language), results=cards))
         return DialogResponse(contract=contract, messages=messages)
+
+    async def _venue_turn(self, contract: StateContract) -> DialogResponse:
+        language = i18n.resolve_locale(contract.semantic_payload.language)
+        messages: list[ChatMessage] = [
+            ChatMessage(kind="filters", text=i18n.t("filters_locked", language))
+        ]
+        hard = contract.hard_filters
+        day = parse_iso_date(hard.datetime.start if hard.datetime else None)
+        if day is not None:
+            messages.append(await self._weather_message(contract, day, language))
+        fused = await self._search_venues.venues(self._venue_plan(contract))
+        if not fused:
+            messages.append(ChatMessage(
+                kind="assistant", text=i18n.t("venue_empty", language)))
+            return DialogResponse(contract=contract, messages=messages)
+        messages.append(ChatMessage(
+            kind="results", text=i18n.t("venue_results", language),
+            results=[self._to_venue_card(hit, language) for hit in fused]))
+        return DialogResponse(contract=contract, messages=messages)
+
+    async def _both_turn(self, contract: StateContract) -> DialogResponse:
+        language = i18n.resolve_locale(contract.semantic_payload.language)
+        messages: list[ChatMessage] = [
+            ChatMessage(kind="filters", text=i18n.t("filters_locked", language))
+        ]
+        hard = contract.hard_filters
+        day = parse_iso_date(hard.datetime.start if hard.datetime else None)
+        if day is not None:
+            messages.append(await self._weather_message(contract, day, language))
+        events, venues = await asyncio.gather(
+            self._search.events(self._search_plan(contract)),
+            self._search_venues.venues(self._venue_plan(contract)),
+        )
+        event_cards = await self._cards(events, language) if events else []
+        venue_cards = ([self._to_venue_card(hit, language) for hit in venues])
+        cards = event_cards + venue_cards
+        if not cards:
+            messages.append(ChatMessage(
+                kind="assistant", text=i18n.t("search_empty", language)))
+            return DialogResponse(contract=contract, messages=messages)
+        messages.append(ChatMessage(
+            kind="results", text=i18n.t("search_results", language), results=cards))
+        return DialogResponse(contract=contract, messages=messages)
+
+    def _venue_plan(self, contract: StateContract) -> SearchPlan:
+        hard = contract.hard_filters
+        vector = contract.semantic_payload.vector_query.strip()
+        return SearchPlan(
+            vector_query=vector or hard.location.city or "места",
+            limit=self._settings.max_results,
+            city=hard.location.city or None,
+            dense_only=True,
+        )
+
+    def _to_venue_card(self, hit: FusedHit, language: str) -> ResultCard:
+        payload = hit.payload
+        title = payload.get("name") or i18n.t("card_untitled", language)
+        meta = " · ".join(part for part in
+                          (payload.get("rubric"), payload.get("address"))
+                          if part) or payload.get("city", "")
+        return ResultCard(
+            event_id=hit.id,
+            kind="venue",
+            detail_id=hit.id,
+            title=title,
+            meta=meta,
+            price="",
+            source=str(payload.get("source") or ""),
+        )
 
     async def _weather_message(self, contract: StateContract, day,
                                language: str) -> ChatMessage:
@@ -119,12 +195,13 @@ class DialogueService:
             vector_query=vector_query or self._fallback_query(hard),
             limit=self._settings.max_results,
             city=hard.location.city or None,
-            category=(hard.category or [None])[0],
+            categories=list(hard.category),
             max_price_per_person=(
                 budget.max_price_per_person if budget else None),
             exclude_categories=list(contract.negative_filters.exclude_categories),
             date_from=date_from,
             date_to=date_to,
+            dense_only=bool(hard.themes),
         )
 
     def _date_window(self, hard) -> tuple[datetime | None, datetime | None]:
@@ -147,10 +224,9 @@ class DialogueService:
         end = datetime.combine(end_day + timedelta(days=1), dt_time.min, tzinfo=tz)
         return start, end
 
-    @staticmethod
-    def _fallback_query(hard) -> str:
+    def _fallback_query(self, hard) -> str:
         parts = list(hard.category) + hard.amenities_required
-        return " ".join(parts) if parts else "events"
+        return " ".join(parts) if parts else self._settings.default_search_query
 
     async def _cards(self, hits: list[FusedHit], language: str) -> list[ResultCard]:
         availabilities = await asyncio.gather(

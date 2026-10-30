@@ -6,6 +6,7 @@ import (
 	"net/smtp"
 	"strings"
 	"sync"
+	"time"
 
 	"notification-service-go/logging"
 )
@@ -15,6 +16,7 @@ type Config struct {
 	Port     string
 	Username string
 	Password string
+	From     string
 }
 
 type Service struct {
@@ -30,12 +32,27 @@ func (s *Service) addr() string {
 	return s.cfg.Host + ":" + s.cfg.Port
 }
 
+func (s *Service) sender() string {
+	if s.cfg.From != "" {
+		return s.cfg.From
+	}
+	return s.cfg.Username
+}
+
 func (s *Service) auth() smtp.Auth {
 	return smtp.PlainAuth("", s.cfg.Username, s.cfg.Password, s.cfg.Host)
 }
 
-func (s *Service) send(to, subject, body string) error {
-	msg := []byte("From: " + s.cfg.Username + "\r\n" +
+func isTransient(err error) bool {
+	text := strings.ToLower(err.Error())
+	// Bad credentials / policy errors never heal by retrying.
+	return !strings.Contains(text, "535") &&
+		!strings.Contains(text, "username and password") &&
+		!strings.Contains(text, "authentication")
+}
+
+func (s *Service) sendOnce(to, subject, body string) error {
+	msg := []byte("From: " + s.sender() + "\r\n" +
 		"To: " + to + "\r\n" +
 		"Subject: " + subject + "\r\n" +
 		"MIME-Version: 1.0\r\n" +
@@ -43,24 +60,38 @@ func (s *Service) send(to, subject, body string) error {
 		"\r\n" +
 		body + "\r\n")
 
-	err := smtp.SendMail(s.addr(), s.auth(), s.cfg.Username, []string{to}, msg)
-	if err != nil {
-		slog.Warn("send failed", "email", logging.MaskEmail(to), "err", err)
-		return fmt.Errorf("failed to send email to %s: %w", logging.MaskEmail(to), err)
+	// smtp.SendMail uses STARTTLS when the server advertises it (Gmail 587).
+	return smtp.SendMail(s.addr(), s.auth(), s.sender(), []string{to}, msg)
+}
+
+func (s *Service) send(to, subject, body string) error {
+	var err error
+	for attempt := 1; attempt <= 3; attempt++ {
+		err = s.sendOnce(to, subject, body)
+		if err == nil {
+			slog.Info("email sent", "email", logging.MaskEmail(to))
+			return nil
+		}
+		if !isTransient(err) || attempt == 3 {
+			break
+		}
+		slog.Warn("email send retry", "email", logging.MaskEmail(to),
+			"attempt", attempt, "err", err)
+		time.Sleep(time.Duration(attempt) * 500 * time.Millisecond)
 	}
-	slog.Info("email sent", "email", logging.MaskEmail(to))
-	return nil
+	slog.Warn("send failed", "email", logging.MaskEmail(to), "err", err)
+	return fmt.Errorf("failed to send email to %s: %w", logging.MaskEmail(to), err)
 }
 
 func (s *Service) sendBatch(to []string, subject, body string) error {
-	msg := []byte("From: " + s.cfg.Username + "\r\n" +
+	msg := []byte("From: " + s.sender() + "\r\n" +
 		"Subject: " + subject + "\r\n" +
 		"MIME-Version: 1.0\r\n" +
 		"Content-Type: text/plain; charset=\"utf-8\"\r\n" +
 		"\r\n" +
 		body + "\r\n")
 
-	return smtp.SendMail(s.addr(), s.auth(), s.cfg.Username, to, msg)
+	return smtp.SendMail(s.addr(), s.auth(), s.sender(), to, msg)
 }
 
 func (s *Service) SendSuccessfulRegistrationEmail(email, username, sourceService string) {

@@ -31,14 +31,16 @@ class CollectorClient:
             raise UpstreamError(f"collector search failed: {exc}") from exc
 
     async def search_lexical(self, query: str, city: str | None,
-                             category: str | None, limit: int,
+                             category: str | list[str] | None, limit: int,
                              *, date_from: str | None = None,
                              date_to: str | None = None) -> list[dict]:
         params = {"q": query, "limit": limit}
         if city:
             params["city"] = city
         if category:
-            params["category"] = category
+            categories = ([category] if isinstance(category, str)
+                          else list(category))
+            params["categories"] = ",".join(categories)
         if date_from:
             params["date_from"] = date_from
         if date_to:

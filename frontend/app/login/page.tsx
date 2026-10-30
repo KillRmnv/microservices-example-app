@@ -19,7 +19,8 @@ export default function Page() {
     setBusy(true)
     try {
       await auth.login(email.trim(), password)
-      router.push('/profile')
+      const next = new URLSearchParams(window.location.search).get('next')
+      router.push(next && next.startsWith('/') ? next : '/profile')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Не удалось войти')
     } finally {

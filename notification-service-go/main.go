@@ -36,12 +36,17 @@ func main() {
 	mailPort := envOrDefault("MAIL_PORT", "587")
 	mailUser := os.Getenv("MAIL_USERNAME")
 	mailPass := os.Getenv("MAIL_PASSWORD")
-
+	mailFrom := os.Getenv("MAIL_FROM")
+	if mailUser == "" || mailPass == "" {
+		slog.Warn("mail credentials are empty: registration and other emails " +
+			"will fail; set MAIL_USERNAME and MAIL_PASSWORD (Gmail app password)")
+	}
 	emailSvc := email.NewService(email.Config{
 		Host:     mailHost,
 		Port:     mailPort,
 		Username: mailUser,
 		Password: mailPass,
+		From:     mailFrom,
 	})
 
 	topics := kafkamodule.Topics{

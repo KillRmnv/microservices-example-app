@@ -31,28 +31,35 @@ def _uuid(value: str, what: str) -> str:
 @router.get("/events", response_model=EventListResponse)
 def events(request: Request, city: str | None = None,
            category: str | None = None, source: str | None = None,
+           categories: str | None = None,
            date_from: str | None = None, date_to: str | None = None,
            q: str | None = None, ids: str | None = None,
            limit: int = 40, offset: int = 0) -> dict:
     id_list = [value for value in (ids or "").split(",") if value.strip()]
+    selected = [item.strip() for item in (categories or "").split(",")
+                if item.strip()]
     with db.get_conn(request.app.state.db_url) as conn:
         rows, total = queries.list_events(
             conn, city=city, category=category, source=source,
             date_from=date_from, date_to=date_to, q=q,
-            ids=id_list or None, limit=_limit(limit, 200),
-            offset=_offset(offset))
+            ids=id_list or None, categories=selected or None,
+            limit=_limit(limit, 200), offset=_offset(offset))
     return {"events": rows, "total": total, "limit": limit, "offset": offset}
 
 
 @router.get("/events/search", response_model=EventsResponse)
 def events_search(request: Request, q: str, city: str | None = None,
                   category: str | None = None,
+                  categories: str | None = None,
                   date_from: str | None = None,
                   date_to: str | None = None,
                   limit: int = 20) -> dict:
+    selected = [item.strip() for item in (categories or "").split(",")
+                if item.strip()]
     with db.get_conn(request.app.state.db_url) as conn:
         rows = queries.search_events(conn, q, city, category, _limit(limit, 100),
-                                     date_from=date_from, date_to=date_to)
+                                     date_from=date_from, date_to=date_to,
+                                     categories=selected or None)
     return {"events": rows}
 
 

@@ -12,7 +12,8 @@ MessageKind = Literal["assistant", "filters", "results", "plan", "weather"]
 
 class ResultCard(BaseModel):
     event_id: str
-    # Catalog UUID: the id of the event page, distinct from the numeric
+    kind: Literal["event", "venue"] = "event"
+    # Catalog UUID: the id of the event/place page, distinct from the numeric
     # booking id (which is what "Выбрать" needs).
     detail_id: str = ""
     title: str

@@ -6,6 +6,7 @@ from app.clients.llm import (
     LlamaCppProvider,
     MockProvider,
     OpenAICompatProvider,
+    OpenRouterProvider,
     provider_for,
 )
 from app.core.config import Settings
@@ -42,6 +43,33 @@ def test_provider_for_selects_backend():
     assert isinstance(provider_for("structure", settings), LlamaCppProvider)
     assert isinstance(provider_for("plan", settings), OpenAICompatProvider)
     assert isinstance(provider_for("telegram", settings), MockProvider)
+
+
+@pytest.mark.asyncio
+async def test_openrouter_provider_sends_attribution_headers():
+    settings = make_settings(
+        llm_stages="structure:openrouter",
+        openrouter_base_url="https://openrouter.ai/api/v1",
+        openrouter_key="or-secret",
+        openrouter_model="z-ai/glm-5.3-flash",
+        openrouter_referer="http://localhost:3000",
+        openrouter_title="Dosug Assistant",
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/v1/chat/completions"
+        assert request.headers["Authorization"] == "Bearer or-secret"
+        assert request.headers["HTTP-Referer"] == "http://localhost:3000"
+        assert request.headers["X-Title"] == "Dosug Assistant"
+        return httpx.Response(200, json={
+            "choices": [{"message": {"content": "{\"ok\": true}"}}]})
+
+    provider = provider_for("structure", settings,
+                            transport=httpx.MockTransport(handler))
+    assert isinstance(provider, OpenRouterProvider)
+    result = await provider.complete(system="s", user="u", json_mode=True,
+                                     max_tokens=16)
+    assert result == "{\"ok\": true}"
 
 
 def test_thinking_override_switches_no_think_mode():

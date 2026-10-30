@@ -22,6 +22,7 @@ export const SOURCE_LABELS: Record<string, string> = {
   bycard: 'ByCard',
   '24afisha': '24afisha',
   twogis_places: '2ГИС',
+  twogis: '2ГИС',
   booking: 'Досуг',
   assistant: 'Ассистент',
 }

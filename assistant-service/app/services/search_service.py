@@ -61,8 +61,8 @@ class SearchService:
         pipeline = FilterPipeline()
         if plan.city:
             pipeline.add(CityFilter(plan.city))
-        if plan.category:
-            pipeline.add(CategoryFilter(plan.category))
+        if plan.categories:
+            pipeline.add(CategoryFilter(plan.categories))
         if plan.exclude_categories:
             pipeline.add(ExcludeCategoriesFilter(plan.exclude_categories))
         if plan.date_from is not None and plan.date_to is not None:
@@ -82,6 +82,8 @@ class SearchService:
         candidates = plan.limit * self._candidate_multiplier
         must = pipeline.qdrant_must()
         dense, sparse = await self._encode_query(plan.vector_query)
+        if plan.dense_only:
+            sparse = None
         try:
             if dense is None and sparse is None:
                 raise ValueError("empty query")
@@ -115,7 +117,7 @@ class SearchService:
                 candidates)
         else:
             rows = await self._collector.search_lexical(
-                plan.vector_query, params.get("city"), params.get("category"),
+                plan.vector_query, params.get("city"), params.get("categories"),
                 candidates, date_from=params.get("date_from"),
                 date_to=params.get("date_to"))
         lexical_by_id = {str(row["id"]): row for row in rows}

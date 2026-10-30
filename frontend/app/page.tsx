@@ -48,7 +48,7 @@ function dayStart(offset: number): number {
 }
 
 export default function Page() {
-  const [activeDay, setActiveDay] = useState('Все даты')
+  const [activeDay, setActiveDay] = useState('За всё время')
   const [customDate, setCustomDate] = useState('')
   const [activeCategory, setActiveCategory] = useState('Все')
   const [activeDistrict, setActiveDistrict] = useState<string[]>([])
@@ -63,13 +63,18 @@ export default function Page() {
   const [venues, setVenues] = useState<CatalogVenue[]>([])
 
   const catalogCity = city
+  const allTime = activeDay === 'За всё время' && !customDate
 
   useEffect(() => {
     let cancelled = false
     ;(async () => {
       try {
         const [eventsPage, venuesPage] = await Promise.all([
-          api.catalogEvents({ city: catalogCity, dateFrom: todayIso(), limit: 60 }),
+          api.catalogEvents({
+            city: catalogCity,
+            dateFrom: allTime ? undefined : todayIso(),
+            limit: 100,
+          }),
           api.catalogVenues({ city: catalogCity, limit: 8 }),
         ])
         if (cancelled) return
@@ -86,7 +91,7 @@ export default function Page() {
     return () => {
       cancelled = true
     }
-  }, [catalogCity])
+  }, [catalogCity, allTime])
 
   const matchesDay = (startsAt: string) => {
     const ts = new Date(startsAt).getTime()
@@ -142,7 +147,7 @@ export default function Page() {
   const categories = ['Все', 'Концерты', 'Театр', 'Кино', 'Выставки', 'Спорт', 'Детям']
   const activeFilterCount = useMemo(() => {
     let count = 0
-    if (activeDay !== 'Все даты' || customDate) count += 1
+    if (activeDay !== 'За всё время' || customDate) count += 1
     if (activeCategory !== 'Все') count += 1
     count += activeDistrict.length
     if (maxBudget < 100) count += 1
@@ -151,7 +156,7 @@ export default function Page() {
   }, [activeDay, customDate, activeCategory, activeDistrict, maxBudget, atmosphere])
 
   const resetFilters = () => {
-    setActiveDay('Все даты')
+    setActiveDay('За всё время')
     setActiveCategory('Все')
     setActiveDistrict([])
     setMaxBudget(100)
@@ -175,7 +180,7 @@ export default function Page() {
 
           <div className="filters-row">
             <div className="filter-tabs" data-testid="home-day-tabs">
-              {['Все даты', 'Сегодня', 'Завтра', 'Выходные'].map((day) => (
+              {['За всё время', 'Сегодня', 'Завтра', 'Выходные'].map((day) => (
                 <button key={day} className={activeDay === day && !customDate ? 'selected' : ''} onClick={() => { setActiveDay(day); setCustomDate('') }}>{day}</button>
               ))}
             </div>
@@ -296,7 +301,7 @@ export default function Page() {
           <div className="side-section">
             <label>КОГДА</label>
             <div className="side-chips" data-testid="filters-days">
-              {['Сегодня', 'Завтра', 'Выходные'].map((day) => (
+              {['За всё время', 'Сегодня', 'Завтра', 'Выходные'].map((day) => (
                 <button key={day} className={activeDay === day && !customDate ? 'black-chip' : ''} onClick={() => { setActiveDay(day); setCustomDate('') }}>{day}</button>
               ))}
             </div>
@@ -304,7 +309,7 @@ export default function Page() {
               <CalendarDays size={15} />
               <span>{customDate ? new Date(`${customDate}T00:00:00`).toLocaleDateString('ru-RU') : 'Любая дата'}</span>
               <ChevronRight size={14} />
-              <input aria-label="Выбрать любую дату" type="date" value={customDate} onChange={(e) => { setCustomDate(e.target.value); setActiveDay('Все даты') }} data-testid="filters-date" />
+              <input aria-label="Выбрать любую дату" type="date" value={customDate} onChange={(e) => { setCustomDate(e.target.value); setActiveDay('За всё время') }} data-testid="filters-date" />
             </label>
           </div>
           <div className="side-section">

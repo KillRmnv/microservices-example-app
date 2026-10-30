@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     default_latitude: float = 53.9056
     default_longitude: float = 27.5539
     default_party_size: int = 2
+    # Semantic query used for broad "что-нибудь" requests without a topic.
+    default_search_query: str = "события"
 
     qdrant_url: str = "http://localhost:6333"
     qdrant_collection: str = "events"
@@ -55,7 +57,13 @@ class Settings(BaseSettings):
     llm_external_base_url: str = "https://api.openai.com/v1"
     llm_external_api_key: str = ""
     llm_external_model: str = "gpt-4o-mini"
-    llm_stages: str = "structure:mock,plan:mock,telegram:mock"
+    # OpenRouter: hosted OpenAI-compatible API used by the assistant stages.
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    openrouter_key: str = ""
+    openrouter_model: str = ""
+    openrouter_referer: str = "http://localhost:3000"
+    openrouter_title: str = "Dosug Assistant"
+    llm_stages: str = "structure:openrouter,plan:openrouter"
     llm_default_backend: str = "local"
     llm_fallback_enabled: bool = False
     # LFM/Qwen reasoning templates emit reasoning_content instead of the
@@ -81,6 +89,10 @@ class Settings(BaseSettings):
     sweep_interval_s: int = 300
 
     search_candidate_multiplier: int = 2
+    # Dense hits below this cosine score are noise ("jazz" -> random pop).
+    search_dense_min_score: float = 0.45
+    # Places are sparse and semantically broad; keep a lower relevance floor.
+    search_venue_min_score: float = 0.30
     max_results: int = 5
 
     # OpenAPI/Swagger: disable in production (docs_enabled=false hides

@@ -63,6 +63,23 @@ def test_dialogue_endpoint_asks_for_date():
     assert "дату" in body["clarification_prompt"]
 
 
+def test_dialogue_v2_clarification_has_visible_message():
+    from app.main import app
+
+    client = TestClient(app)
+    response = client.post("/assistant/dialogue/v2", json={
+        "dialogue_action": "search",
+        "hard_filters": {},
+        "context_state": {"session_id": "s1"},
+    })
+    assert response.status_code == 200
+    body = response.json()
+    assert body["contract"]["needs_clarification"] is True
+    assert len(body["messages"]) == 1
+    assert body["messages"][0]["kind"] == "assistant"
+    assert "дату" in body["messages"][0]["text"]
+
+
 def test_dialogue_endpoint_accepts_dated_search():
     from app.main import app
 

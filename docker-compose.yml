@@ -58,6 +58,15 @@ services:
       timeout: 5s
       retries: 5
 
+  # Local SMTP catcher: docker compose --profile mail up -d mailhog
+  # UI: http://localhost:8025, SMTP: mailhog:1025 (no auth, no TLS).
+  mailhog:
+    image: mailhog/mailhog:latest
+    profiles: ["mail"]
+    ports:
+      - "8025:8025"
+      - "1025:1025"
+
   postgres:
     image: postgres:16
     environment:
@@ -180,13 +189,11 @@ services:
       - ./.env
       - ./assistant-service/.env
     environment:
-      ASSISTANT_LLM_LOCAL_BASE_URL: http://llama-chat:8089/v1
-      ASSISTANT_LLM_LOCAL_MODEL: ling-3.0-tiny
-      ASSISTANT_LLM_STAGES: ${ASSISTANT_LLM_STAGES:-structure:local,plan:local}
+      ASSISTANT_LLM_STAGES: ${ASSISTANT_LLM_STAGES:-structure:openrouter,plan:openrouter}
       ASSISTANT_LLM_DISABLE_THINKING: "false"
       ASSISTANT_LLM_MAX_TOKENS: 2048
       ASSISTANT_LLM_PLAN_MAX_TOKENS: 3072
-      ASSISTANT_LLM_TIMEOUT_S: 300
+      ASSISTANT_LLM_TIMEOUT_S: ${ASSISTANT_LLM_TIMEOUT_S:-120}
 
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -227,22 +234,6 @@ services:
 
   # Chat/completions server for the assistant LLM stages (LFM3 is small enough
   # to run next to bge-m3). Same image, chat mode.
-  llama-chat:
-    profiles: ["llm"]
-    build:
-      context: .
-      dockerfile: ./llama-embed/Dockerfile
-    volumes:
-      - ${MODEL_DIR:-~/models}:/models:ro
-    environment:
-      LLAMA_MODEL_FILE: /models/${CHAT_MODEL_FILE:-Ling3.0.gguf}
-      LLAMA_CTX: ${LLAMA_CHAT_CTX:-8192}
-      LLAMA_THREADS: ${LLAMA_CHAT_THREADS:-6}
-      LLAMA_PORT: 8089
-      LLAMA_EXTRA_ARGS: "--jinja --n-predict 2048 --batch-size 512 --alias ling-3.0-tiny"
-    ports:
-      - "${LLAMA_CHAT_PORT:-8089}:8089"
-
   prometheus:
     image: prom/prometheus:latest
     ports:
