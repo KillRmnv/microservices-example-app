@@ -32,13 +32,22 @@ def _venue_text(row) -> str:
 
 
 def _event_payload(row) -> dict:
+    try:
+        end_at = row["end_at"]
+    except (KeyError, IndexError):
+        end_at = None
+    start_at = row["start_at"]
+    # Single-day events have no end; store the start as the interval end so
+    # the assistant can filter by overlap without special-casing the payload.
+    interval_end = end_at or start_at
     return {
         "title": row["title"],
         "source": row["source"],
         "city": row["city"],
         "category": row["category"],
         "venue": row["venue_name"] or "",
-        "start_at": row["start_at"].isoformat() if row["start_at"] else "",
+        "start_at": start_at.isoformat() if start_at else "",
+        "end_at": interval_end.isoformat() if interval_end else "",
         "price_min": float(row["price_min"]) if row["price_min"] is not None else None,
         "price_max": float(row["price_max"]) if row["price_max"] is not None else None,
         "booking_event_id": (int(row["booking_event_id"])

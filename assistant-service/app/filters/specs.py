@@ -50,10 +50,12 @@ class CategoryFilter(Filter):
 
 
 class DateRangeFilter(Filter):
-    """Only events inside [from, to) — requested dates must be respected.
+    """Only events overlapping [from, to).
 
-    Events without `start_at` are dropped when the user named a date: a
-    scraped post without a date cannot be promised for that evening.
+    Multi-day events (a dolphinarium running for a month) must match a query
+    for any day inside their period, not only the start date. Events without
+    `start_at` are dropped when the user named a date: a scraped post without
+    a date cannot be promised for that evening.
     """
 
     def __init__(self, start: datetime, end: datetime) -> None:
@@ -61,16 +63,23 @@ class DateRangeFilter(Filter):
         self._end = end
 
     def qdrant_must(self) -> dict[str, PayloadDateRange]:
-        return {"start_at": PayloadDateRange(
-            gte=self._start.isoformat(), lt=self._end.isoformat())}
+        # start_at < query_end AND end_at >= query_start.
+        # Payload stores end_at = start_at for single-day events.
+        return {
+            "start_at": PayloadDateRange(lt=self._end.isoformat()),
+            "end_at": PayloadDateRange(gte=self._start.isoformat()),
+        }
 
     def lexical_params(self) -> dict[str, str]:
         return {"date_from": self._start.isoformat(),
                 "date_to": self._end.isoformat()}
 
     def matches(self, hit: FusedHit) -> bool:
-        value = _parse_datetime(hit.payload.get("start_at"))
-        return value is not None and self._start <= value < self._end
+        start = _parse_datetime(hit.payload.get("start_at"))
+        if start is None:
+            return False
+        end = _parse_datetime(hit.payload.get("end_at")) or start
+        return start < self._end and end >= self._start
 
 
 class RubricFilter(Filter):

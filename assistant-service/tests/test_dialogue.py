@@ -66,6 +66,7 @@ def make_contract(**overrides) -> StateContract:
         "hard_filters": {
             "datetime": {"start": "2026-10-24T12:00:00"},
             "location": {"city": "Минск"},
+            "category": ["concert"],
         },
         "semantic_payload": {"vector_query": "тихий джаз"},
         "context_state": {"session_id": "s1"},
@@ -93,10 +94,11 @@ def two_event_store() -> InMemoryStore:
         [
             ("aaa", [1.0, 0.0, 0.0],
              {"title": "Джазовый вечер", "city": "Минск", "price_min": 25.0,
-              "source": "ticketpro", "start_at": "2026-10-24T19:00:00+00:00"}),
+              "category": "concert", "source": "ticketpro",
+              "start_at": "2026-10-24T19:00:00+00:00"}),
             ("7", [0.9, 0.1, 0.0],
              {"title": "Концерт в филармонии", "city": "Минск",
-              "price_min": 120.0,
+              "price_min": 120.0, "category": "concert",
               "start_at": "2026-10-24T19:00:00+00:00"}),
         ],
         {
@@ -130,15 +132,15 @@ async def test_search_turn_keeps_only_requested_day():
         [
             ("aaa", [1.0, 0.0, 0.0],
              {"title": "Джазовый вечер", "city": "Минск",
-              "price_min": 25.0,
+              "price_min": 25.0, "category": "concert",
               "start_at": "2026-10-24T19:00:00+00:00"}),
             ("jjj", [1.0, 0.0, 0.0],
              {"title": "Январский концерт", "city": "Минск",
-              "price_min": 25.0,
+              "price_min": 25.0, "category": "concert",
               "start_at": "2027-01-24T19:00:00+00:00"}),
             ("undated", [1.0, 0.0, 0.0],
              {"title": "Пост без даты", "city": "Минск",
-              "price_min": 25.0}),
+              "price_min": 25.0, "category": "concert"}),
         ],
         {doc_id: encode_sparse(title) for doc_id, title in (
             ("aaa", "Джазовый вечер"), ("jjj", "Январский концерт"),
@@ -194,6 +196,7 @@ def catalog_store() -> InMemoryStore:
             ("8f14e45f-ceea-467a-9c5b-3b1c1e0a1a11", [1.0, 0.0, 0.0],
              {"title": "Симфонический вечер", "city": "Минск",
               "price_min": None, "booking_event_id": 42,
+              "category": "concert",
               "start_at": "2026-10-24T19:00:00+00:00"}),
         ],
         {"8f14e45f-ceea-467a-9c5b-3b1c1e0a1a11": encode_sparse("Симфонический вечер")},

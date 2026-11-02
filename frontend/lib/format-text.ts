@@ -10,6 +10,20 @@ function decodeEntities(raw: string): string {
 const BLOCK_TAG = /<\s*\/?\s*(?:p|div|li|h[1-6]|section|article|br)\b[^>]*>/gi
 const ANY_TAG = /<[^>]+>/g
 
+/**
+ * Pictographs, dingbats, flags, skin-tone/keycap modifiers and the invisible
+ * glue Telegram leaves around them (variation selectors, ZWJ, zero-width).
+ */
+const EMOJI = /[\u{1F000}-\u{1FAFF}\u{1FC00}-\u{1FFFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0E}\u{FE0F}\u{20E3}\u{E0020}-\u{E007F}]/gu
+const ZERO_WIDTH = /[\u200B-\u200F\u202A-\u202E\u2060-\u2064\uFEFF]/g
+
+function stripEmoji(text: string): string {
+  return text
+    .replace(EMOJI, ' ')
+    .replace(ZERO_WIDTH, '')
+    .replace(/[ \t]{2,}/g, ' ')
+}
+
 function splitSentences(text: string): string[] {
   // Protect common abbreviations so "г. Минск" / "им. Купалы" stay intact.
   const guarded = text
@@ -37,7 +51,7 @@ function groupParagraphs(sentences: string[]): string[] {
 
 export function formatDescription(raw?: string | null): string[] {
   if (!raw) return []
-  let text = decodeEntities(raw)
+  let text = stripEmoji(decodeEntities(raw))
     .replace(/\r\n?/g, '\n')
     .replace(BLOCK_TAG, '\n')
     .replace(ANY_TAG, ' ')

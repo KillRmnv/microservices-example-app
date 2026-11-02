@@ -19,13 +19,14 @@ from .dialogue_service import DialogueService
 
 log = logging.getLogger(__name__)
 
-PROMPT = """Ты — составитель вечернего плана досуга. Сначала кратко рассуди
+PROMPT = """Ты — составитель плана досуга. Сначала кратко рассуди
 (совместимость по времени, бюджет, погода), затем верни ТОЛЬКО JSON:
 {{"summary": "одно предложение", "steps": [
-  {{"time": "19:00", "title": "...", "detail": "место · цена", "source": "..."}}]}}
-Правила: 2–4 шага; время — из данных кандидатов, не выдумывай; порядок
-хронологический; уложись в бюджет {budget}; город {city}; погода: {weather}.
-"""
+  {{"candidate": 1, "time": "19:00", "title": "...", "detail": "место · цена", "source": "..."}}]}}
+Правила: 2–4 шага; candidate — номер кандидата из списка; время — из данных
+кандидатов, не выдумывай; порядок хронологический; уложись в бюджет {budget};
+город {city}; погода: {weather}. Не называй план вечерним, если в контракте
+время не вечернее; это план на указанный период."""
 
 MAX_CANDIDATES = 8
 
@@ -74,7 +75,8 @@ class PlanService:
                 steps = data.get("steps")
                 if not isinstance(steps, list) or not steps:
                     raise UpstreamError("LLM вернула план без шагов")
-                plan = [{"time": str(step.get("time", "—")),
+                plan = [{"candidate": int(step.get("candidate") or 0),
+                         "time": str(step.get("time", "—")),
                          "title": str(step.get("title", "")),
                          "detail": str(step.get("detail", "")),
                          "source": str(step.get("source", "assistant"))}
@@ -83,7 +85,7 @@ class PlanService:
                 if not plan:
                     raise UpstreamError("LLM вернула план без шагов")
                 summary = str(data.get("summary")
-                              or "Готовый план вечера — проверьте шаги и подтвердите.")
+                              or "Готовый план досуга — проверьте шаги и подтвердите.")
                 return plan, summary
             except Exception as exc:  # noqa: BLE001 — retry/fallback by design
                 last_error = exc
@@ -94,11 +96,37 @@ class PlanService:
     @staticmethod
     def _fallback_steps(cards: list) -> list[dict]:
         """Deterministic itinerary from the best cards (no invented places)."""
-        return [{"time": "—", "title": card.title,
+        return [{"candidate": index + 1, "time": "—", "title": card.title,
                  "detail": " · ".join(part for part in (card.meta, card.price)
                                       if part),
                  "source": card.source or "assistant"}
-                for card in cards[:3]]
+                for index, card in enumerate(cards[:3])]
+
+    @staticmethod
+    def _attach_cards(plan: list[dict], cards: list) -> list[dict]:
+        """Map model steps back to real cards; never trust bare titles."""
+        def norm(value: str) -> str:
+            return "".join(ch for ch in value.casefold() if ch.isalnum())
+
+        by_title = {norm(card.title): card for card in cards}
+        for step in plan:
+            card = None
+            index = step.get("candidate")
+            if isinstance(index, int) and 1 <= index <= len(cards):
+                card = cards[index - 1]
+            if card is None:
+                card = by_title.get(norm(step["title"]))
+            if card is not None:
+                step.update({
+                    "kind": card.kind,
+                    "detail_id": card.detail_id,
+                    "event_id": card.event_id,
+                    "bookable": bool(card.kind == "event"
+                                     and card.event_id.isdigit()),
+                    "title": step["title"] or card.title,
+                })
+            step.pop("candidate", None)
+        return plan
 
     async def build_plan(self, contract: StateContract) -> DialogResponse:
         clean = sanitize(contract)
@@ -128,7 +156,7 @@ class PlanService:
             budget=(f"до {budget}" if budget else "без ограничений"),
             city=ruled.hard_filters.location.city or self._settings.default_city,
             weather=weather)
-        summary = "Готовый план вечера — проверьте шаги и подтвердите."
+        summary = "Готовый план досуга — проверьте шаги и подтвердите."
         try:
             plan, summary = await self._model_plan(system, candidates)
         except Exception as exc:  # noqa: BLE001 — deterministic fallback
@@ -138,6 +166,7 @@ class PlanService:
                        "Время и наличие уточните на странице события.")
         if not plan:
             raise UpstreamError("LLM вернула план без шагов")
+        plan = self._attach_cards(plan, cards)
         log.info("plan stage: %d candidates -> %d steps", len(cards), len(plan))
         message = ChatMessage(kind="plan", text=summary, plan=plan)
         return DialogResponse(contract=response.contract,

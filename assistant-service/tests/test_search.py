@@ -221,6 +221,29 @@ async def test_date_filter_drops_other_days_and_undated_events():
 
 
 @pytest.mark.asyncio
+async def test_date_filter_keeps_multiday_event_overlapping_the_day():
+    from datetime import datetime, timezone
+
+    store = hybrid_store(
+        ("dolphinarium", [1.0, 0.0, 0.0],
+         {"title": "Дельфинарий",
+          "start_at": "2026-10-29T09:00:00+00:00",
+          "end_at": "2026-11-28T21:00:00+00:00"},
+         "дельфинарий животные"),
+        ("past", [1.0, 0.0, 0.0],
+         {"title": "Прошлое",
+          "start_at": "2026-10-01T09:00:00+00:00",
+          "end_at": "2026-10-02T21:00:00+00:00"},
+         "прошлое животные"),
+    )
+    hits = await service(store, ExplodingCollector()).events(SearchPlan(
+        vector_query="животные", limit=5,
+        date_from=datetime(2026, 11, 4, tzinfo=timezone.utc),
+        date_to=datetime(2026, 11, 5, tzinfo=timezone.utc)))
+    assert [hit.id for hit in hits] == ["dolphinarium"]
+
+
+@pytest.mark.asyncio
 async def test_collector_client_uses_mock_transport():
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/events/search"

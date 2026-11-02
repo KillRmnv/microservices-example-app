@@ -16,8 +16,8 @@ from selectolax.lexbor import LexborHTMLParser
 from ..core import db
 from ..core.config import settings
 from ..normalize import RawEvent, parse_price
-from ..parse import clean_text
 from ..repositories.store import upsert_events
+from ..text import clean_text
 from .base import CollectContext, RunStats, SourceAdapter
 from ..text_ru import parse_ru_datetime
 

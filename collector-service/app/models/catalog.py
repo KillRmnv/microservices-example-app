@@ -6,6 +6,8 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from ..text import clean_text
+
 
 @dataclass
 class RawEvent:
@@ -32,6 +34,14 @@ class RawEvent:
     organizer: str | None = None
     status: str = "scheduled"
     raw: dict = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        # Single cleanup point for every adapter: dedup keys and persistence
+        # both see decoration-free text. clean_text is idempotent.
+        if self.title:
+            self.title = clean_text(self.title) or ""
+        if self.description is not None:
+            self.description = clean_text(self.description)
 
     @property
     def dedup_key(self) -> str:

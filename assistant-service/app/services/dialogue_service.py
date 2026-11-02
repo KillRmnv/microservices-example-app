@@ -57,16 +57,32 @@ class DialogueService:
             contract.needs_clarification = True
             contract.clarification_prompt = i18n.t("clarify_booking", language)
             return contract
-        if contract.dialogue_action in SEARCH_ACTIONS \
-                and contract.intent == intents.EVENT_SEARCH:
-            date_filter = contract.hard_filters.datetime
-            if date_filter is None or not date_filter.start:
+        if contract.dialogue_action in SEARCH_ACTIONS and contract.clarify_missing:
+            spec = intents.spec(contract.intent)
+            hard = contract.hard_filters
+            missing: list[tuple[str, str]] = []
+            date_filter = hard.datetime
+            if spec.scope in ("events", "both") and (
+                    date_filter is None
+                    or (not date_filter.any and not date_filter.start)):
+                missing.append(("datetime", "дата"))
+            if not hard.location.any and not hard.location.city:
+                missing.append(("city", "город"))
+            budget = hard.budget
+            if budget is None or (not budget.any
+                                  and budget.max_price_per_person is None):
+                missing.append(("budget", "бюджет"))
+            if hard.party_size is None:
+                missing.append(("party", "количество человек"))
+            if missing:
                 contract.dialogue_action = "ask_clarification"
                 contract.needs_clarification = True
-                hint = (f" «{date_filter.raw_expression}»"
-                        if date_filter and date_filter.raw_expression else "")
+                contract.clarification_slots = [key for key, _ in missing]
                 contract.clarification_prompt = i18n.t(
-                    "clarify_date", language, hint=hint)
+                    "clarify_missing", language,
+                    missing=", ".join(label for _, label in missing))
+            else:
+                contract.clarification_slots = []
         return contract
 
     def record_run(self, contract: StateContract, duration_ms: int) -> None:
@@ -80,15 +96,21 @@ class DialogueService:
         return int((time.monotonic() - started) * 1000)
 
     async def search_turn(self, contract: StateContract) -> DialogResponse:
-        if contract.intent == intents.VENUE_SEARCH:
+        spec = intents.spec(contract.intent)
+        scope = spec.scope
+        hard = contract.hard_filters
+        # A generic request with no explicit category/theme ("что-нибудь")
+        # should not silently exclude venues.
+        if scope == "events" and not hard.category and not hard.themes:
+            scope = "both"
+        if scope == "venues":
             return await self._venue_turn(contract)
-        if contract.intent == intents.BOTH:
+        if scope == "both":
             return await self._both_turn(contract)
         language = i18n.resolve_locale(contract.semantic_payload.language)
         messages: list[ChatMessage] = [
             ChatMessage(kind="filters", text=i18n.t("filters_locked", language))
         ]
-        hard = contract.hard_filters
         date_value = hard.datetime.start if hard.datetime else None
         day = parse_iso_date(date_value)
         if day is not None:
@@ -149,11 +171,15 @@ class DialogueService:
 
     def _venue_plan(self, contract: StateContract) -> SearchPlan:
         hard = contract.hard_filters
+        spec = intents.spec(contract.intent)
         vector = contract.semantic_payload.vector_query.strip()
+        if not vector and spec.rubrics:
+            vector = spec.rubrics[0]
         return SearchPlan(
-            vector_query=vector or hard.location.city or "места",
+            vector_query=vector or (
+                None if hard.location.any else hard.location.city) or "места",
             limit=self._settings.max_results,
-            city=hard.location.city or None,
+            city=None if hard.location.any else (hard.location.city or None),
             dense_only=True,
         )
 
@@ -191,13 +217,15 @@ class DialogueService:
         budget = hard.budget
         vector_query = contract.semantic_payload.vector_query.strip()
         date_from, date_to = self._date_window(hard)
+        spec = intents.spec(contract.intent)
         return SearchPlan(
             vector_query=vector_query or self._fallback_query(hard),
             limit=self._settings.max_results,
-            city=hard.location.city or None,
-            categories=list(hard.category),
+            city=None if hard.location.any else (hard.location.city or None),
+            categories=list(hard.category) or list(spec.categories),
             max_price_per_person=(
-                budget.max_price_per_person if budget else None),
+                budget.max_price_per_person
+                if budget and not budget.any else None),
             exclude_categories=list(contract.negative_filters.exclude_categories),
             date_from=date_from,
             date_to=date_to,
@@ -207,7 +235,7 @@ class DialogueService:
     def _date_window(self, hard) -> tuple[datetime | None, datetime | None]:
         """Whole days from the contract date; a named date must filter search."""
         date_filter = hard.datetime
-        if date_filter is None:
+        if date_filter is None or date_filter.any:
             return None, None
         start_day = parse_iso_date(date_filter.start)
         if start_day is None:

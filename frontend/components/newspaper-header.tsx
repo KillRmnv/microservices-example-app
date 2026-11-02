@@ -7,6 +7,7 @@ import { useAuth } from '@/lib/auth'
 import { mastheadDate } from '@/lib/format'
 import { useTheme } from '@/lib/theme'
 import { CITY_OPTIONS, useCity } from '@/lib/city'
+import { EDITION_NUMBER } from '@/lib/edition'
 import { usePathname } from 'next/navigation'
 
 interface NewspaperHeaderProps {
@@ -19,13 +20,35 @@ export function NewspaperHeader({ returnLink }: NewspaperHeaderProps) {
   const pathname = usePathname()
   const isActive = (href: string) => (href === '/' ? pathname === '/' : pathname.startsWith(href))
   const [cityOpen, setCityOpen] = useState(false)
+  const [editionClicks, setEditionClicks] = useState(0)
+  const [easterEgg, setEasterEgg] = useState(false)
   const { cityLabel, setCity } = useCity()
+
+  const handleEditionClick = () => {
+    const next = editionClicks + 1
+    if (next >= 3) {
+      setEditionClicks(0)
+      setEasterEgg(true)
+      return
+    }
+    setEditionClicks(next)
+  }
 
   return (
     <header className="masthead-wrap">
       <div className="topline">
         <span>{mastheadDate()}</span>
-        <span>№ 014 · {cityLabel}</span>
+        <span>
+          <button
+            type="button"
+            className="edition-number"
+            onClick={handleEditionClick}
+            title="Номер выпуска"
+            aria-label={`Номер выпуска ${EDITION_NUMBER}`}
+          >
+            № {EDITION_NUMBER}
+          </button>{' '}· {cityLabel}
+        </span>
         <span className="topline-right">Свежий выпуск <span className="red-dot" /></span>
       </div>
       <div className="masthead">
@@ -77,6 +100,19 @@ export function NewspaperHeader({ returnLink }: NewspaperHeaderProps) {
           )}
         </div>
       </nav>
+      {easterEgg && (
+        <div className="edition-egg" role="status" data-testid="edition-easter-egg">
+          <button
+            type="button"
+            className="edition-egg-close"
+            aria-label="Скрыть заметку"
+            onClick={() => setEasterEgg(false)}
+          >
+            ×
+          </button>
+          <span>{EDITION_NUMBER} — ответ на главный вопрос жизни, вселенной и всего такого. Не паникуйте.</span>
+        </div>
+      )}
     </header>
   )
 }

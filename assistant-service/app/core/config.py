@@ -80,7 +80,7 @@ class Settings(BaseSettings):
     # requests only.
     llm_complex_min_chars: int = 140
     llm_complex_min_signals: int = 2
-    llm_temperature: float = 1.0
+    llm_temperature: float = 0.2
     llm_top_p: float = 0.95
     llm_top_k: int = 20
     llm_timeout_s: float = 300.0

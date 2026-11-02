@@ -17,8 +17,8 @@ class FusedHit:
 class PayloadDateRange:
     """Backend-neutral date range pushed into the payload condition."""
 
-    gte: str
-    lt: str
+    gte: str | None = None
+    lt: str | None = None
 
 
 @dataclass

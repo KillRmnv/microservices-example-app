@@ -22,9 +22,11 @@ import {
 } from 'lucide-react'
 import { NewspaperHeader, RuleTitle } from '@/components/newspaper-header'
 import { MapView } from '@/components/map-view'
+import { EventImage } from '@/components/event-image'
 import { api } from '@/lib/api'
 import { useCity } from '@/lib/city'
-import { CATEGORY_LABELS, FALLBACK_EVENT_IMAGE, eventImage, eventPlace, eventPrice, isBookable, todayIso } from '@/lib/catalog'
+import { CATEGORY_LABELS, eventImage, eventPlace, eventPrice, isBookable, todayIso } from '@/lib/catalog'
+import { EDITION_NUMBER } from '@/lib/edition'
 import { formatDateTime } from '@/lib/format'
 import type { CatalogEvent, CatalogVenue } from '@/lib/types'
 
@@ -172,7 +174,7 @@ export default function Page() {
         <section className="content">
           <div className="intro">
             <div>
-              <div className="kicker">ПЕРВАЯ ПОЛОСА · ВЫПУСК 014</div>
+              <div className="kicker">ПЕРВАЯ ПОЛОСА · ВЫПУСК {EDITION_NUMBER}</div>
               <h2>Куда пойти<br /><em>сегодня</em></h2>
             </div>
             <p className="intro-copy">Собрали лучшее, что происходит в городе: от тихих выставок до концертов под открытым небом. Выбирайте по настроению.</p>
@@ -217,10 +219,9 @@ export default function Page() {
             <>
               {!loading && lead && (
                 <div className="lead-story" data-testid="lead-story">
-                  <div className="lead-image">
-                    <img src={lead.image} alt={lead.title} onError={(e) => { e.currentTarget.src = FALLBACK_EVENT_IMAGE }} />
+                  <EventImage className="lead-image" src={lead.image} alt={lead.title} loading="eager">
                     <span className="image-caption">{lead.bookable ? 'БИЛЕТЫ В КАССЕ' : 'ИСТОЧНИК: ВНЕШНЯЯ АФИША'}</span>
-                  </div>
+                  </EventImage>
                   <div className="lead-copy">
                     <div className="kicker">ВЫБОР РЕДАКЦИИ</div>
                     <h3>{lead.title}</h3>
@@ -234,8 +235,7 @@ export default function Page() {
               <div className="story-grid" data-testid="events-grid">
                 {!loading && rest.map((event, index) => (
                   <article className="story-card" key={event.id} data-testid="event-card">
-                    <div className="card-image">
-                      <img src={event.image} alt={event.title} loading="lazy" onError={(e) => { e.currentTarget.src = FALLBACK_EVENT_IMAGE }} />
+                    <EventImage className="card-image" src={event.image} alt={event.title}>
                       <button
                         className={liked.includes(event.id) ? 'fav-heart liked' : 'fav-heart'}
                         aria-label="Добавить в избранное"
@@ -244,7 +244,7 @@ export default function Page() {
                       >
                         <Heart size={16} fill={liked.includes(event.id) ? 'currentColor' : 'none'} />
                       </button>
-                    </div>
+                    </EventImage>
                     <div className="kicker">{(index % 2 === 0 ? 'СОБЫТИЕ' : 'АФИША') + (event.bookable ? ' · БИЛЕТЫ' : '')}</div>
                     <h3><Link href={`/events/detail?id=${encodeURIComponent(event.id)}`}>{event.title}</Link></h3>
                     <p className="meta-line"><Clock3 size={13} /> {event.date}</p>

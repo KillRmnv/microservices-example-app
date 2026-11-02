@@ -6,6 +6,7 @@ import { useSearchParams } from 'next/navigation'
 import { ArrowRight, CalendarDays, MapPin } from 'lucide-react'
 import { ErrorView, ListPageHeader, LoadingView, PageHeader } from '@/components/secondary-page'
 import { CatalogEventCard } from '@/components/catalog-card'
+import { EventImage } from '@/components/event-image'
 import { api } from '@/lib/api'
 import { CATEGORY_OPTIONS, categoryLabel, eventImage, eventPlace, eventPrice, isBookable, todayIso } from '@/lib/catalog'
 import { formatDateTime } from '@/lib/format'
@@ -150,10 +151,9 @@ function EventsList() {
 
       {!searching && lead && (
         <div className="lead-story" data-testid="lead-story">
-          <div className="lead-image">
-            <img src={eventImage(lead)} alt={lead.title} />
+          <EventImage className="lead-image" src={eventImage(lead)} alt={lead.title} loading="eager">
             <span className="image-caption">{isBookable(lead) ? 'БИЛЕТЫ В КАССЕ' : 'ИСТОЧНИК: ВНЕШНЯЯ АФИША'}</span>
-          </div>
+          </EventImage>
           <div className="lead-copy">
             <div className="kicker">ВЫБОР РЕДАКЦИИ · {categoryLabel(lead.category).toUpperCase()}</div>
             <h3>{lead.title}</h3>

@@ -2,6 +2,7 @@ import json
 
 import pytest
 
+from app.api.schemas.contract import StateContract
 from app.core.config import Settings
 from app.errors import UpstreamError
 from app.services.query_structure import QueryStructureService
@@ -86,6 +87,19 @@ async def test_structure_stage_rejects_empty_or_non_json():
 
 
 @pytest.mark.asyncio
+async def test_other_category_is_dropped_when_theme_is_known():
+    payload = contract_json()
+    data = json.loads(payload)
+    data["hard_filters"]["category"] = ["other"]
+    data["hard_filters"]["themes"] = ["animals"]
+    contract = await QueryStructureService(
+        FakeProvider(json.dumps(data, ensure_ascii=False)), Settings()).parse(
+            "зоопарк завтра")
+    assert contract.hard_filters.category == []
+    assert contract.hard_filters.themes == ["animals"]
+
+
+@pytest.mark.asyncio
 async def test_two_categories_are_preserved():
     # Search supports multi-category filters (classical = concert + theatre).
     payload = contract_json()
@@ -136,9 +150,9 @@ async def test_structure_stage_repairs_null_location_and_string_category():
         "semantic_payload": {"vector_query": "джаз"},
     }, ensure_ascii=False)
     contract = await QueryStructureService(FakeProvider(payload), Settings()).parse("джаз")
-    assert contract.hard_filters.location.city == "Минск"
+    assert contract.hard_filters.location.city is None
     assert contract.hard_filters.category == ["concert"]
-    assert contract.hard_filters.party_size == 2
+    assert contract.hard_filters.party_size is None
 
 
 @pytest.mark.asyncio
@@ -199,3 +213,78 @@ async def test_reasoning_falls_back_to_fast_without_reasoning_provider():
     assert complex is True
     assert reasoning_used is False
     assert contract.semantic_payload.vector_query == "тихий джаз"
+
+
+def clarification_previous(**overrides) -> StateContract:
+    data = {
+        "dialogue_action": "ask_clarification",
+        "intent": "find_venue_restaurant",
+        "needs_clarification": True,
+        "clarification_slots": ["city", "budget", "party"],
+        "clarify_missing": True,
+        "hard_filters": {
+            "category": ["restaurant"],
+            "themes": ["lunch"],
+        },
+        "semantic_payload": {"vector_query": "обед, поесть", "language": "ru"},
+    }
+    data.update(overrides)
+    return StateContract.model_validate(data)
+
+
+@pytest.mark.asyncio
+async def test_clarification_fills_only_asked_slots():
+    payload = json.dumps({
+        "city": "Минск",
+        "budget_any": True,
+        "party_size": 3,
+    }, ensure_ascii=False)
+    service = QueryStructureService(FakeProvider(payload), Settings())
+    previous = clarification_previous()
+    contract = await service.parse(
+        "Минск, не важно, для 2-3 человек", previous=previous)
+
+    assert contract.intent == "find_venue_restaurant"
+    assert contract.semantic_payload.vector_query == "обед, поесть"
+    assert contract.hard_filters.themes == ["lunch"]
+    assert contract.hard_filters.location.city == "Минск"
+    assert contract.hard_filters.budget.any is True
+    assert contract.hard_filters.party_size == 3
+    assert contract.clarification_slots == []
+
+
+@pytest.mark.asyncio
+async def test_clarification_answer_keeps_previous_slots():
+    payload = json.dumps({"budget_any": True}, ensure_ascii=False)
+    service = QueryStructureService(FakeProvider(payload), Settings())
+    previous = clarification_previous(
+        clarification_slots=["budget"],
+        hard_filters={
+            "category": ["restaurant"],
+            "themes": ["lunch"],
+            "location": {"city": "Минск"},
+            "party_size": 3,
+        },
+    )
+    contract = await service.parse("не важен", previous=previous)
+
+    assert contract.hard_filters.location.city == "Минск"
+    assert contract.hard_filters.party_size == 3
+    assert contract.hard_filters.budget.any is True
+    assert contract.semantic_payload.vector_query == "обед, поесть"
+
+
+@pytest.mark.asyncio
+async def test_clarification_survives_broken_llm_json():
+    service = QueryStructureService(FakeProvider("не json"), Settings())
+    previous = clarification_previous(
+        clarification_slots=["city", "party"],
+        hard_filters={"category": ["restaurant"], "themes": ["lunch"]},
+    )
+    contract = await service.parse(
+        "Минск, для 2-3 человек", previous=previous)
+
+    assert contract.hard_filters.location.city == "Минск"
+    assert contract.hard_filters.party_size == 3
+    assert contract.semantic_payload.vector_query == "обед, поесть"
+    assert contract.dialogue_action == "search"

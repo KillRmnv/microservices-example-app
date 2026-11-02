@@ -24,7 +24,7 @@ def test_follow_up_inherits_missing_slots():
     previous = contract()
     fresh = StateContract.model_validate({
         "dialogue_action": "search",
-        "hard_filters": {"location": {"city": "Минск"}, "party_size": 2},
+        "hard_filters": {"location": {"city": "Минск"}, "party_size": None},
         "semantic_payload": {"vector_query": ""},
     })
     merged = _inherit(fresh, previous)
@@ -34,6 +34,60 @@ def test_follow_up_inherits_missing_slots():
     assert merged.hard_filters.party_size == 3
     assert merged.semantic_payload.vector_query == "джаз"
     assert merged.negative_filters.exclude_categories == ["sport"]
+
+
+def test_follow_up_keeps_explicit_party_size():
+    previous = contract()
+    fresh = StateContract.model_validate({
+        "dialogue_action": "search",
+        "hard_filters": {"party_size": 2},
+    })
+    assert _inherit(fresh, previous).hard_filters.party_size == 2
+
+
+def test_clarification_answer_keeps_previous_topic():
+    previous = contract()
+    previous.needs_clarification = True
+    previous.intent = "find_venues"
+    previous.hard_filters.category = []
+    previous.hard_filters.themes = ["food"]
+    previous.semantic_payload.vector_query = "пообедать"
+    fresh = StateContract.model_validate({
+        "dialogue_action": "search",
+        "intent": "find_venues",
+        "clarify_missing": True,
+        "hard_filters": {"location": {"city": "Минск"}, "party_size": 3},
+        "semantic_payload": {"vector_query": "бюджет не важен, для 2-3 человек"},
+    })
+    merged = _inherit(fresh, previous)
+    assert merged.semantic_payload.vector_query == "пообедать"
+    assert merged.hard_filters.themes == ["food"]
+    assert merged.hard_filters.location.city == "Минск"
+    assert merged.hard_filters.party_size == 3
+
+
+def test_clarification_answer_keeps_intent_even_if_llm_flips_it():
+    """The LLM sometimes re-labels a slot answer as find_events."""
+    previous = contract()
+    previous.needs_clarification = True
+    previous.intent = "find_venue_restaurant"
+    previous.hard_filters.category = []
+    previous.hard_filters.themes = ["lunch"]
+    previous.semantic_payload.vector_query = "обед, поесть"
+    fresh = StateContract.model_validate({
+        "dialogue_action": "search",
+        "intent": "find_events",
+        "hard_filters": {
+            "location": {"city": "Минск"},
+            "themes": ["lunch"],
+            "party_size": 3,
+        },
+        "semantic_payload": {"vector_query": "бюджет не важен, для 2"},
+    })
+    merged = _inherit(fresh, previous)
+    assert merged.intent == "find_venue_restaurant"
+    assert merged.semantic_payload.vector_query == "обед, поесть"
+    assert merged.hard_filters.location.city == "Минск"
 
 
 def test_explicit_values_win_over_previous():

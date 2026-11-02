@@ -17,13 +17,14 @@ export interface ChatMessage {
   text: string
   filters?: StateContract
   results?: ChatResult[]
-  plan?: { time: string; title: string; detail: string; source: string }[]
+  plan?: { time: string; title: string; detail: string; source: string; kind?: 'event' | 'venue'; detail_id?: string; event_id?: string; bookable?: boolean }[]
   holdId?: string
   error?: boolean
 }
 
 export interface Chat {
   id: string
+  number: number
   title: string
   createdAt: number
   updatedAt: number
@@ -33,6 +34,7 @@ export interface Chat {
 
 const CHATS_KEY = 'dosugChats.v1'
 const ACTIVE_KEY = 'dosugActiveChat'
+const SEQUENCE_KEY = 'dosugChatSequence'
 const LEGACY_CONTRACT_KEY = 'dosugDialogue'
 const MAX_CHATS = 20
 const MAX_MESSAGES = 200
@@ -45,10 +47,12 @@ export function welcomeMessage(): ChatMessage {
   return { id: 1, kind: 'assistant', text: WELCOME }
 }
 
-export function createChat(contract: StateContract | null = null): Chat {
+export function createChat(contract: StateContract | null = null,
+                           number = 1): Chat {
   const now = Date.now()
   return {
     id: `chat_${now}_${Math.floor(Math.random() * 10000)}`,
+    number,
     title: NEW_TITLE,
     createdAt: now,
     updatedAt: now,
@@ -100,12 +104,64 @@ function asChat(value: unknown): Chat | null {
     .slice(-MAX_MESSAGES)
   return {
     id: raw.id,
+    number: typeof raw.number === 'number' && raw.number > 0
+      ? raw.number : 0,
     title: typeof raw.title === 'string' ? raw.title : NEW_TITLE,
     createdAt: typeof raw.createdAt === 'number' ? raw.createdAt : Date.now(),
     updatedAt: typeof raw.updatedAt === 'number' ? raw.updatedAt : Date.now(),
     messages: messages.length ? messages : [welcomeMessage()],
     contract: asContract(raw.contract),
   }
+}
+
+function readSequence(): number {
+  try {
+    const value = Number(localStorage.getItem(SEQUENCE_KEY) ?? 0)
+    return Number.isFinite(value) && value > 0 ? value : 0
+  } catch {
+    return 0
+  }
+}
+
+function writeSequence(value: number): void {
+  try {
+    localStorage.setItem(SEQUENCE_KEY, String(value))
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Give every chat a permanent number; older chats are numbered oldest-first. */
+function normalizeNumbers(list: Chat[]): Chat[] {
+  const result = [...list]
+  const used = new Set<number>()
+  let max = readSequence()
+  for (const chat of result) {
+    if (chat.number > 0) {
+      used.add(chat.number)
+      max = Math.max(max, chat.number)
+    }
+  }
+  // The list is newest-first, so walk it backwards: the oldest chat gets 1.
+  for (let index = result.length - 1; index >= 0; index -= 1) {
+    if (result[index].number > 0) continue
+    let candidate = max + 1
+    while (used.has(candidate)) candidate += 1
+    used.add(candidate)
+    max = candidate
+    result[index] = { ...result[index], number: candidate }
+  }
+  writeSequence(max)
+  return result
+}
+
+/** Next permanent chat number: never reused after deletion. */
+export function nextChatNumber(chats: Chat[]): number {
+  let max = readSequence()
+  for (const chat of chats) max = Math.max(max, chat.number || 0)
+  const next = max + 1
+  writeSequence(next)
+  return next
 }
 
 function readLegacyContract(): StateContract | null {
@@ -124,10 +180,10 @@ export function loadChats(): Chat[] {
     const list = Array.isArray(parsed)
       ? parsed.map(asChat).filter((chat): chat is Chat => chat !== null)
       : []
-    if (list.length) return list.slice(0, MAX_CHATS)
+    if (list.length) return normalizeNumbers(list).slice(0, MAX_CHATS)
     // One-time migration: keep the old single dialogue as the first chat.
     const legacy = readLegacyContract()
-    return [createChat(legacy)]
+    return normalizeNumbers([createChat(legacy)])
   } catch {
     return [createChat()]
   }
@@ -140,6 +196,8 @@ export function saveChats(chats: Chat[]): void {
       messages: chat.messages.slice(-MAX_MESSAGES),
     }))
     localStorage.setItem(CHATS_KEY, JSON.stringify(trimmed))
+    const max = trimmed.reduce((acc, chat) => Math.max(acc, chat.number || 0), readSequence())
+    writeSequence(max)
   } catch {
     /* private mode / quota: dialogue works in memory */
   }

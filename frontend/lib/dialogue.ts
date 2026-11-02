@@ -37,6 +37,14 @@ export interface ParsedQuery {
   vectorQuery: string
   /** True when the user actually named a date (not an inherited one). */
   dateExplicit: boolean
+  /** True when the user explicitly said any date is fine. */
+  dateAny: boolean
+  /** True when the user explicitly said any city is fine. */
+  cityAny: boolean
+  /** True when the user explicitly said price does not matter. */
+  budgetAny: boolean
+  /** True when the user explicitly said party size does not matter. */
+  partyAny: boolean
   /** True when the user actually named the party size. */
   partyExplicit: boolean
 }
@@ -73,6 +81,10 @@ export function parseQuery(text: string, now = new Date()): ParsedQuery {
     excludeTags: [],
     vectorQuery: '',
     dateExplicit: false,
+    dateAny: false,
+    cityAny: false,
+    budgetAny: false,
+    partyAny: false,
     partyExplicit: false,
   }
 
@@ -82,27 +94,54 @@ export function parseQuery(text: string, now = new Date()): ParsedQuery {
   let time: string | null = null
   const timeMatch = lowered.match(/(\d{1,2})[:.](\d{2})/)
   if (timeMatch) time = `${pad(Number(timeMatch[1]))}:${timeMatch[2]}`
-  const dayMonth = lowered.match(/(\d{1,2})\s+(января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)/)
-  if (dayMonth) {
-    day = new Date(now.getFullYear(), MONTHS[dayMonth[2]] - 1, Number(dayMonth[1]))
-    if (day.getTime() < now.getTime() - 12 * 3600 * 1000) day.setFullYear(day.getFullYear() + 1)
-  } else if (/послезавтра/.test(lowered)) {
-    day = new Date(now)
-    day.setDate(day.getDate() + 2)
-  } else if (/завтра/.test(lowered)) {
+  const anyAll = /^(?:не\s+важно|все\s+равно|любой\s+вариант|без\s+разницы)[.!?]*$/.test(lowered)
+  const dateAny = anyAll || /не\s+имеет\s+значения|не\s+важно|любая\s+дата|без\s+даты|все\s+равно/.test(lowered)
+  result.cityAny = anyAll || /любой\s+город|без\s+разницы\s+где|не\s+важно\s+где|город\s+не\s+важен/.test(lowered)
+  result.budgetAny = anyAll || /без\s+бюджета|цена\s*не\s*важна|цена\s+неважна|любая\s+цена|деньги\s+не\s+важны/.test(lowered)
+  result.partyAny = anyAll || /компания\s+любая|сколько\s+угодно\s+человек|нас\s+любое|число\s+человек\s+не\s+важно/.test(lowered)
+  const numericRange = lowered.match(/(\d{1,2})[./](\d{1,2})\s*[-–—]\s*(\d{1,2})[./](\d{1,2})/)
+  const namedRange = lowered.match(/(?:с\s+)?(\d{1,2})\s*(?:[-–—]|по)\s*(\d{1,2})\s+(января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)/)
+  const tomorrowRange = /завтра\s*[-–—]\s*послезавтра/.test(lowered)
+  if (dateAny) {
+    result.dateAny = true
+    result.dateExplicit = true
+  } else if (numericRange) {
+    const startMonth = Number(numericRange[2]) - 1
+    const endMonth = Number(numericRange[4]) - 1
+    day = new Date(now.getFullYear(), startMonth, Number(numericRange[1]), 12, 0, 0)
+    endDay = new Date(now.getFullYear(), endMonth, Number(numericRange[3]), 23, 59, 0)
+  } else if (namedRange) {
+    const month = MONTHS[namedRange[3]] - 1
+    day = new Date(now.getFullYear(), month, Number(namedRange[1]), 12, 0, 0)
+    endDay = new Date(now.getFullYear(), month, Number(namedRange[2]), 23, 59, 0)
+  } else if (tomorrowRange) {
     day = new Date(now)
     day.setDate(day.getDate() + 1)
-  } else if (/сегодня|сегодняшн/.test(lowered)) {
-    day = new Date(now)
-  } else if (/выходн/.test(lowered)) {
-    const weekend = nextWeekend(now)
-    day = weekend.start
-    endDay = weekend.end
+    endDay = new Date(now)
+    endDay.setDate(endDay.getDate() + 2)
   } else {
-    for (let index = 0; index < WEEKDAYS.length; index += 1) {
-      if (lowered.includes(WEEKDAYS[index])) {
-        day = nextWeekday(now, index)
-        break
+    const dayMonth = lowered.match(/(\d{1,2})\s+(января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)/)
+    if (dayMonth) {
+      day = new Date(now.getFullYear(), MONTHS[dayMonth[2]] - 1, Number(dayMonth[1]))
+      if (day.getTime() < now.getTime() - 12 * 3600 * 1000) day.setFullYear(day.getFullYear() + 1)
+    } else if (/послезавтра/.test(lowered)) {
+      day = new Date(now)
+      day.setDate(day.getDate() + 2)
+    } else if (/завтра/.test(lowered)) {
+      day = new Date(now)
+      day.setDate(day.getDate() + 1)
+    } else if (/сегодня|сегодняшн/.test(lowered)) {
+      day = new Date(now)
+    } else if (/выходн/.test(lowered)) {
+      const weekend = nextWeekend(now)
+      day = weekend.start
+      endDay = weekend.end
+    } else {
+      for (let index = 0; index < WEEKDAYS.length; index += 1) {
+        if (lowered.includes(WEEKDAYS[index])) {
+          day = nextWeekday(now, index)
+          break
+        }
       }
     }
   }
@@ -120,8 +159,13 @@ export function parseQuery(text: string, now = new Date()): ParsedQuery {
   }
 
   // --- party size ---
+  const partyRange = lowered.match(/(\d{1,2})\s*[-–—]\s*(\d{1,2})\s+человек/)
+  if (partyRange) {
+    result.partyExplicit = true
+    result.partySize = Math.min(20, Math.max(1, Number(partyRange[2])))
+  }
   const party = lowered.match(/нас\s+(\d{1,2})|вдво[её]м|двое|втро[её]м|(\d{1,2})\s+человек/)
-  if (party) {
+  if (party && !partyRange) {
     result.partyExplicit = true
     if (/вдво[её]м|двое/.test(lowered)) result.partySize = 2
     else if (/втро[её]м/.test(lowered)) result.partySize = 3
@@ -177,15 +221,20 @@ export function contractFromParsed(parsed: ParsedQuery, previous?: StateContract
   const contract: StateContract = {
     dialogue_action: 'search',
     intent: previous?.intent ?? 'find_events',
+    clarify_missing: previous?.clarify_missing ?? true,
     needs_clarification: false,
     clarification_prompt: null,
     hard_filters: {
-      location: previousHard?.location ?? { city: DEFAULT_CITY },
+      location: parsed.cityAny
+        ? { city: null, any: true }
+        : previousHard?.location ?? {},
       category: previousHard?.category ?? [],
       themes: previousHard?.themes ?? [],
-      party_size: parsed.partyExplicit
-        ? parsed.partySize
-        : previousHard?.party_size ?? parsed.partySize,
+      party_size: parsed.partyAny
+        ? 0
+        : parsed.partyExplicit
+          ? parsed.partySize
+          : previousHard?.party_size,
       amenities_required: previousHard?.amenities_required ?? [],
     },
     negative_filters: {
@@ -202,24 +251,28 @@ export function contractFromParsed(parsed: ParsedQuery, previous?: StateContract
       session_id: previous?.context_state.session_id ?? `web_${Date.now()}`,
     },
   }
-  if (parsed.start) {
+  if (parsed.dateAny) {
+    contract.hard_filters.datetime = { any: true, raw_expression: parsed.rawExpression }
+  } else if (parsed.start) {
     contract.hard_filters.datetime = {
       start: parsed.start,
       end: parsed.end,
       raw_expression: parsed.rawExpression,
     }
+  } else if (previousHard?.datetime?.any) {
+    contract.hard_filters.datetime = previousHard.datetime
   } else if (previousHard?.datetime?.start) {
     // Follow-up ("а подешевле?") keeps the date from the previous turn.
     contract.hard_filters.datetime = previousHard.datetime
-  } else if (parsed.rawExpression) {
-    contract.hard_filters.datetime = { raw_expression: parsed.rawExpression }
   }
   const inheritedCategory = previousHard?.category?.length
     ? previousHard.category
     : undefined
   const category = parsed.category.length ? parsed.category : inheritedCategory
   if (category?.length) contract.hard_filters.category = category
-  if (parsed.maxPrice !== undefined) {
+  if (parsed.budgetAny) {
+    contract.hard_filters.budget = { any: true }
+  } else if (parsed.maxPrice !== undefined) {
     contract.hard_filters.budget = { max_price_per_person: parsed.maxPrice }
   } else if (previousHard?.budget) {
     contract.hard_filters.budget = previousHard.budget
@@ -235,7 +288,7 @@ export function mergeContracts(remote: StateContract, local: StateContract, pars
   const remoteDate = remote.hard_filters.datetime
   const remoteVector = (remote.semantic_payload.vector_query || '').trim()
   const localDateWins = parsed
-    ? parsed.dateExplicit
+    ? parsed.dateAny || parsed.dateExplicit
     : Boolean(local.hard_filters.datetime?.start)
   // A follow-up inherits the date, so the model's "ask for a date" verdict
   // no longer applies: the turn has everything needed to search.
@@ -247,6 +300,7 @@ export function mergeContracts(remote: StateContract, local: StateContract, pars
     ...local,
     dialogue_action: action,
     intent: remote.intent || local.intent,
+    clarify_missing: local.clarify_missing ?? remote.clarify_missing,
     hard_filters: {
       ...local.hard_filters,
       // Local parser owns RU date arithmetic; models often get weekdays wrong.
@@ -261,10 +315,15 @@ export function mergeContracts(remote: StateContract, local: StateContract, pars
               raw_expression: remoteDate.raw_expression,
             }
           : local.hard_filters.datetime,
-      location: {
-        ...(local.hard_filters.location ?? {}),
-        city: remote.hard_filters.location?.city || local.hard_filters.location?.city,
-      },
+      location: local.hard_filters.location?.any
+        ? { ...(local.hard_filters.location ?? {}), city: null, any: true }
+        : remote.hard_filters.location?.any
+          ? { ...(local.hard_filters.location ?? {}), ...remote.hard_filters.location, city: null, any: true }
+          : {
+              ...(local.hard_filters.location ?? {}),
+              city: remote.hard_filters.location?.city || local.hard_filters.location?.city,
+              any: false,
+            },
       category: remote.hard_filters.category?.length
         ? remote.hard_filters.category
         : local.hard_filters.category,
@@ -273,8 +332,14 @@ export function mergeContracts(remote: StateContract, local: StateContract, pars
         : local.hard_filters.themes,
       // Party size comes from the deterministic parser (incl. inheritance):
       // the model always defaults it to 2, which would reset a follow-up.
-      party_size: local.hard_filters.party_size || remote.hard_filters.party_size,
-      budget: remote.hard_filters.budget ?? local.hard_filters.budget,
+      party_size: local.hard_filters.party_size === 0
+        ? 0
+        : remote.hard_filters.party_size === 0
+          ? 0
+          : local.hard_filters.party_size || remote.hard_filters.party_size,
+      budget: local.hard_filters.budget?.any
+        ? { any: true }
+        : remote.hard_filters.budget ?? local.hard_filters.budget,
       amenities_required: remote.hard_filters.amenities_required?.length
         ? remote.hard_filters.amenities_required
         : local.hard_filters.amenities_required,

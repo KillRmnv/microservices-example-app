@@ -33,14 +33,14 @@ async def dialogue_v2(contract: StateContract) -> DialogResponse:
     components = get_components()
     clean = sanitize(contract)
     language = i18n.resolve_locale(clean.semantic_payload.language)
-    if clean.intent in (intents.CAPABILITIES, intents.UNSUPPORTED):
+    if intents.spec(clean.intent).scope in ("capabilities", "unsupported"):
         return DialogResponse(
             contract=clean,
             messages=[ChatMessage(
                 kind="assistant",
                 text=i18n.t("assistant_capabilities", language))],
         )
-    if clean.intent == intents.PLAN:
+    if intents.spec(clean.intent).scope == "plan":
         return await components.plan.build_plan(clean)
     ruled = components.dialogue.apply_rules(clean, language)
     if ruled.needs_clarification or ruled.dialogue_action not in ("search", "update_filters"):

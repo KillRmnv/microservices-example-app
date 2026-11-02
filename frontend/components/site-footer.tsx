@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { EDITION_NUMBER } from '@/lib/edition'
 
 export function SiteFooter() {
   return (
@@ -10,7 +11,7 @@ export function SiteFooter() {
           <Link href="/places">Места</Link>
           <Link href="/about">О проекте</Link>
         </nav>
-        <span className="site-footer-edition">№ 014 · МИНСК · СВЕЖИЙ ВЫПУСК</span>
+        <span className="site-footer-edition">№ {EDITION_NUMBER} · МИНСК · СВЕЖИЙ ВЫПУСК</span>
       </div>
     </footer>
   )

@@ -6,9 +6,10 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { ExternalLink, MapPin } from 'lucide-react'
 import { DetailPageHeader, ErrorView, LoadingView, PageHeader, RuleTitle, VenueLocationBlock } from '@/components/secondary-page'
 import { MapView } from '@/components/map-view'
+import { EventImage } from '@/components/event-image'
 import { useAuth } from '@/lib/auth'
 import { api } from '@/lib/api'
-import { FALLBACK_EVENT_IMAGE, categoryLabel, eventImage, eventPlace, eventPrice, isBookable, sourceLabel } from '@/lib/catalog'
+import { categoryLabel, eventImage, eventPlace, eventPrice, isBookable, sourceLabel } from '@/lib/catalog'
 import { admissionLabel, formatDateTime, formatEventDuration, formatMoney, summarizeZones } from '@/lib/format'
 import { formatDescription } from '@/lib/format-text'
 import type { CatalogEvent, Event, Seat, Ticket, ZonedPrice } from '@/lib/types'
@@ -110,7 +111,7 @@ function EventDetails() {
       <div className="detail-body">
         <div>
           <div className="media-block">
-            <img src={eventImage(catalog)} alt={catalog.title} onError={(e) => { e.currentTarget.src = FALLBACK_EVENT_IMAGE }} />
+            <EventImage src={eventImage(catalog)} alt={catalog.title} loading="eager" />
             <div className="media-bar">
               <div>
                 <strong>{eventPlace(catalog)}</strong>

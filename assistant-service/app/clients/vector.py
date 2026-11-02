@@ -134,6 +134,10 @@ class InMemoryStore(VectorStore):
 def _matches_must(payload: dict, must: dict) -> bool:
     for key, expected in must.items():
         value = payload.get(key)
+        if key == "end_at" and not value:
+            # Older points were embedded without end_at; a single-day event
+            # ends when it starts.
+            value = payload.get("start_at")
         if isinstance(expected, PayloadDateRange):
             if not _in_range(value, expected):
                 return False
@@ -151,11 +155,19 @@ def _in_range(value, window: PayloadDateRange) -> bool:
         return False
     try:
         parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-        start = datetime.fromisoformat(window.gte)
-        end = datetime.fromisoformat(window.lt)
+        start = (datetime.fromisoformat(window.gte)
+                 if window.gte else None)
+        end = (datetime.fromisoformat(window.lt)
+               if window.lt else None)
     except ValueError:
         return False
-    return parsed.tzinfo is not None and start <= parsed < end
+    if parsed.tzinfo is None:
+        return False
+    if start is not None and parsed < start:
+        return False
+    if end is not None and parsed >= end:
+        return False
+    return True
 
 
 def _rrf(rankings: list[list[str]], k: int = 60) -> list[tuple[str, float]]:

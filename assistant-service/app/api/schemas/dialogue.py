@@ -27,6 +27,10 @@ class PlanStep(BaseModel):
     title: str = ""
     detail: str = ""
     source: str = "assistant"
+    kind: Literal["event", "venue"] = "event"
+    detail_id: str = ""
+    event_id: str = ""
+    bookable: bool = False
 
 
 class ChatMessage(BaseModel):

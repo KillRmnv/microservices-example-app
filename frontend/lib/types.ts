@@ -83,23 +83,29 @@ export type DialogueAction =
 export interface StateContract {
   dialogue_action: DialogueAction
   intent?: string
+  clarify_missing?: boolean
   needs_clarification: boolean
   clarification_prompt: string | null
+  clarification_slots?: string[]
   hard_filters: {
     datetime?: {
       start?: string
       end?: string
       raw_expression?: string
+      timezone?: string
+      any?: boolean
     }
     location?: {
-      city?: string
+      city?: string | null
       districts?: string[]
+      any?: boolean
     }
     category?: string[]
     themes?: string[]
     party_size?: number
     budget?: {
       max_price_per_person?: number
+      any?: boolean
     }
     amenities_required?: string[]
   }

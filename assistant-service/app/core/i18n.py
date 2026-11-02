@@ -27,6 +27,9 @@ CATALOG: dict[str, dict[str, str]] = {
         "clarify_date": (
             "На какую дату и время ищем?{hint} "
             "Например: «в субботу вечером»."),
+        "clarify_missing": (
+            "Уточните, пожалуйста: {missing}. "
+            "Для любого варианта можно ответить «не важно»."),
         "clarify_booking": (
             "Бронирование через ассистента появится позже. "
             "Пока оформите билет на странице события."),
@@ -34,6 +37,9 @@ CATALOG: dict[str, dict[str, str]] = {
         "weather_rain": (
             "{date}: дождь вероятен ({probability}%), макс. {temp}°. "
             "Уличное лучше перенести в помещение."),
+        "weather_light_rain": (
+            "{date}: возможен небольшой дождь ({probability}%), макс. {temp}°. "
+            "Возьмите зонт, план можно не менять."),
         "weather_dry": (
             "{date}: без дождя ({probability}%), макс. {temp}°. "
             "Для прогулки подходит."),
@@ -64,6 +70,9 @@ CATALOG: dict[str, dict[str, str]] = {
         "clarify_date": (
             "Which date and time should we look for?{hint} "
             "For example: “Saturday evening”."),
+        "clarify_missing": (
+            "Please specify: {missing}. "
+            "For any option you can answer “doesn't matter”."),
         "clarify_booking": (
             "Booking through the assistant is not available yet. "
             "Please buy a ticket on the event page."),
@@ -71,6 +80,9 @@ CATALOG: dict[str, dict[str, str]] = {
         "weather_rain": (
             "{date}: rain is likely ({probability}%), high {temp}°C. "
             "Consider an indoor activity."),
+        "weather_light_rain": (
+            "{date}: light rain possible ({probability}%), high {temp}°C. "
+            "Take an umbrella; the plan can stay as is."),
         "weather_dry": (
             "{date}: no rain ({probability}%), high {temp}°C. "
             "Good for a walk."),

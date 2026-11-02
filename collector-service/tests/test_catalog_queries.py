@@ -6,16 +6,16 @@ from datetime import datetime, timedelta, timezone
 from app.repositories import queries
 
 
-def _insert_event(conn, *, slug: str, title: str, start, city="Минск",
+def _insert_event(conn, *, slug: str, title: str, start, end=None, city="Минск",
                   category="concert", venue_name=None, price=50.0):
     row = conn.execute(
         """INSERT INTO collected_events
                (source, source_id, source_url, title, category, city,
-                start_at, venue_name, price_min, currency)
-           VALUES ('ticketpro', %s, %s, %s, %s, %s, %s, %s, %s, 'BYN')
+                start_at, end_at, venue_name, price_min, currency)
+           VALUES ('ticketpro', %s, %s, %s, %s, %s, %s, %s, %s, %s, 'BYN')
            RETURNING id""",
         (slug, f"https://example.com/{slug}", title, category, city,
-         start, venue_name, price)).fetchone()
+         start, end, venue_name, price)).fetchone()
     conn.commit()
     return row["id"]
 
@@ -71,6 +71,28 @@ def test_search_events_respects_date_window(conn):
         date_to="2026-11-01T00:00:00+00:00")
 
     assert [row["title"] for row in rows] == ["Концерт сегодня"]
+
+
+def test_multiday_event_matches_a_day_inside_its_period(conn):
+    _insert_event(
+        conn, slug="dolphinarium", title="Дельфинарий",
+        start=datetime(2026, 10, 29, 9, tzinfo=timezone.utc),
+        end=datetime(2026, 11, 28, 21, tzinfo=timezone.utc))
+    _insert_event(
+        conn, slug="past", title="Прошлое",
+        start=datetime(2026, 10, 1, 9, tzinfo=timezone.utc),
+        end=datetime(2026, 10, 2, 21, tzinfo=timezone.utc))
+
+    rows, total = queries.list_events(
+        conn, date_from="2026-11-04", date_to="2026-11-04")
+    assert total == 1
+    assert rows[0]["title"] == "Дельфинарий"
+
+    found = queries.search_events(
+        conn, "дельфинарий", "Минск", None, 10,
+        date_from="2026-11-04T00:00:00+00:00",
+        date_to="2026-11-05T00:00:00+00:00")
+    assert [row["title"] for row in found] == ["Дельфинарий"]
 
 
 def test_get_event_links_venue_by_normalised_name(conn):

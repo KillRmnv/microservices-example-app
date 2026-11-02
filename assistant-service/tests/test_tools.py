@@ -5,6 +5,7 @@ from app.clients.booking import BookingClient
 from app.clients.weather import OpenMeteoClient
 from app.core.dates import get_current_datetime
 from app.core.geo import resolve_location
+from app.models.weather import Weather
 
 CENTER = (53.9056, 27.5539)
 
@@ -48,6 +49,27 @@ async def test_weather_parses_open_meteo():
     assert weather.is_rainy is True
     assert "дождь" in weather.advice("ru")
     assert "rain" in weather.advice("en")
+
+
+def test_light_rain_does_not_cancel_the_plan():
+    weather = Weather(date="2026-11-02", temp_max=9.0,
+                      precipitation_probability=6, weathercode=61)
+    assert weather.is_rainy is False
+    assert weather.is_light_rain is False
+    assert "перенести" not in weather.advice("ru")
+
+    drizzle = Weather(date="2026-11-02", temp_max=9.0,
+                      precipitation_probability=30, weathercode=61)
+    assert drizzle.is_rainy is False
+    assert drizzle.is_light_rain is True
+    assert "зонт" in drizzle.advice("ru")
+    assert "перенести" not in drizzle.advice("ru")
+
+
+def test_heavy_rain_needs_lower_probability():
+    heavy = Weather(date="2026-11-02", temp_max=9.0,
+                    precipitation_probability=30, weathercode=65)
+    assert heavy.is_rainy is True
 
 
 @pytest.mark.asyncio

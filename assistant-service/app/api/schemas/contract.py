@@ -30,6 +30,7 @@ class DateTimeFilter(StrictModel):
     timezone: str | None = None
     is_relative: bool = False
     raw_expression: str | None = None
+    any: bool = False
 
 
 class GeoRadius(StrictModel):
@@ -43,12 +44,14 @@ class LocationFilter(StrictModel):
     districts: list[str] = Field(default_factory=list)
     landmarks: list[str] = Field(default_factory=list)
     geo_radius: GeoRadius | None = None
+    any: bool = False
 
 
 class BudgetFilter(StrictModel):
     level: str | None = None
     currency: str | None = None
     max_price_per_person: float | None = None
+    any: bool = False
 
 
 class HardFilters(StrictModel):
@@ -56,7 +59,7 @@ class HardFilters(StrictModel):
     location: LocationFilter = Field(default_factory=LocationFilter)
     category: list[str] = Field(default_factory=list)
     themes: list[str] = Field(default_factory=list)
-    party_size: int = 0
+    party_size: int | None = None
     budget: BudgetFilter | None = None
     amenities_required: list[str] = Field(default_factory=list)
 
@@ -82,8 +85,10 @@ class ContextState(StrictModel):
 class StateContract(StrictModel):
     dialogue_action: DialogueAction = "search"
     intent: str = "find_events"
+    clarify_missing: bool = False
     needs_clarification: bool = False
     clarification_prompt: str | None = None
+    clarification_slots: list[str] = Field(default_factory=list)
     hard_filters: HardFilters = Field(default_factory=HardFilters)
     negative_filters: NegativeFilters = Field(default_factory=NegativeFilters)
     semantic_payload: SemanticPayload = Field(default_factory=SemanticPayload)
@@ -96,14 +101,21 @@ def sanitize(contract: StateContract) -> StateContract:
 
     data = contract.model_dump()
     data["intent"] = intents.normalize(data.get("intent"))
+    data["clarify_missing"] = bool(data.get("clarify_missing"))
     hard = data["hard_filters"]
-    hard["party_size"] = max(
-        PARTY_SIZE_MIN,
-        min(PARTY_SIZE_MAX, int(hard.get("party_size") or settings.default_party_size)),
-    )
+    raw_party = hard.get("party_size")
+    if raw_party is None:
+        hard["party_size"] = None
+    else:
+        value = int(raw_party)
+        # 0 is an explicit "any party size"; None means "not specified".
+        hard["party_size"] = (0 if value == 0 else
+                              min(PARTY_SIZE_MAX, max(PARTY_SIZE_MIN, value)))
     location = hard.get("location") or {}
-    if not location.get("city"):
-        location["city"] = settings.default_city
+    if location.get("any"):
+        location["city"] = None
+    elif not location.get("city"):
+        location["city"] = None
     hard["location"] = location
     themes = hard.get("themes")
     hard["themes"] = ([str(theme).strip().lower() for theme in themes
@@ -111,6 +123,9 @@ def sanitize(contract: StateContract) -> StateContract:
                       if isinstance(themes, list) else [])
     if hard.get("datetime") is not None and not hard["datetime"].get("timezone"):
         hard["datetime"]["timezone"] = settings.default_timezone
+    if hard.get("datetime") is not None and hard["datetime"].get("any"):
+        hard["datetime"]["start"] = None
+        hard["datetime"]["end"] = None
     budget = hard.get("budget")
     if budget is not None and not budget.get("currency"):
         budget["currency"] = settings.default_currency

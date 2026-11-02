@@ -21,7 +21,7 @@ export interface DialogMessage {
   text: string
   results?: DialogResultCard[]
   weather?: string
-  plan?: Array<{ time: string; title: string; detail: string; source: string }>
+  plan?: Array<{ time: string; title: string; detail: string; source: string; kind?: 'event' | 'venue'; detail_id?: string; event_id?: string; bookable?: boolean }>
 }
 
 export interface DialogResponse {

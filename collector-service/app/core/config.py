@@ -72,7 +72,7 @@ class Settings(BaseSettings):
     twogis_bbox: str = "53.5,54.3,27.1,28.1"
     # Test set first; expand after the trial ("кафе,рестораны,бары,кинотеатры,
     # театры,музеи,клубы,выставки,караоке,парки,библиотеки,спортзалы,...").
-    twogis_rubrics: str = "кафе,кинотеатры,театры,музеи"
+    twogis_rubrics: str = "кафе,кинотеатры,театры,музеи,спортзалы,фитнес,библиотеки,книжные магазины"
 
     def city_alias(self, name: str) -> str:
         for chunk in self.booking_city_map.split(","):

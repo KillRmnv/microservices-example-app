@@ -2,12 +2,11 @@
 
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { ArrowRight, CheckCircle2, CloudRain, MessageCircle, MessageSquare, Plus, RefreshCcw, Sun, Trash2, X } from 'lucide-react'
+import { ArrowRight, CheckCircle2, CloudRain, HelpCircle, MessageCircle, MessageSquare, Plus, RefreshCcw, Sun, Trash2, X } from 'lucide-react'
 import type { StateContract } from '@/lib/types'
 import { api } from '@/lib/api'
 import { sourceLabel } from '@/lib/catalog'
 import {
-  confirmHold,
   createHold,
   isMockMode,
   requestPlan,
@@ -22,6 +21,7 @@ import {
   createChat,
   loadActiveChatId,
   loadChats,
+  nextChatNumber,
   saveActiveChatId,
   saveChats,
   titleFromMessage,
@@ -44,6 +44,46 @@ const THEME_LABELS: Record<string, string> = {
   rock: 'рок',
   beer: 'пиво',
   kids: 'детям',
+}
+
+function formatWhen(dt: StateContract['hard_filters']['datetime']): string | null {
+  if (!dt) return null
+  if (dt.any) return 'любая дата'
+  if (!dt.start) return null
+  const start = new Date(dt.start)
+  if (Number.isNaN(start.getTime())) return null
+  const fmt = (date: Date) => date.toLocaleDateString('ru-RU', {
+    day: 'numeric', month: 'long', year: 'numeric',
+  })
+  const end = dt.end ? new Date(dt.end) : null
+  if (end && !Number.isNaN(end.getTime())
+      && end.toDateString() !== start.toDateString()) {
+    return `${fmt(start)} — ${fmt(end)}`
+  }
+  return fmt(start)
+}
+
+function timeOfDay(date: Date): string {
+  const hour = date.getHours()
+  if (hour < 5) return 'НОЧЬ'
+  if (hour < 12) return 'УТРО'
+  if (hour < 17) return 'ДЕНЬ'
+  if (hour < 23) return 'ВЕЧЕР'
+  return 'НОЧЬ'
+}
+
+function planLabel(contract: StateContract | undefined,
+                   plan: ChatMessage['plan']): string {
+  const start = contract?.hard_filters.datetime?.start
+  const date = start ? new Date(start) : null
+  const firstTime = plan?.find((step) => /^\d{1,2}:\d{2}$/.test(step.time))?.time
+  let hour = date && !Number.isNaN(date.getTime()) ? date.getHours() : 12
+  if (firstTime) hour = Number(firstTime.split(':')[0])
+  const period = hour < 5 ? 'НОЧЬ' : hour < 12 ? 'УТРО'
+    : hour < 17 ? 'ДЕНЬ' : 'ВЕЧЕР'
+  return date && !Number.isNaN(date.getTime())
+    ? `ПЛАН ${period} · ${formatWhen(contract?.hard_filters.datetime)}`
+    : `ПЛАН ${period}`
 }
 
 function baseContract(): StateContract {
@@ -157,8 +197,18 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
   const [busy, setBusy] = useState(false)
   const [thinking, setThinking] = useState<number | null>(null)
   const [planThinking, setPlanThinking] = useState<number | null>(null)
+  const [clarifyMissing, setClarifyMissing] = useState(true)
   const endRef = useRef<HTMLDivElement | null>(null)
   const mock = isMockMode()
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('dosugClarify')
+      if (saved !== null) setClarifyMissing(saved === 'true')
+    } catch {
+      /* ignore */
+    }
+  }, [])
 
   useEffect(() => {
     const loaded = loadChats()
@@ -190,6 +240,24 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
     )))
   }
 
+  const toggleClarify = () => {
+    const next = !clarifyMissing
+    setClarifyMissing(next)
+    try {
+      localStorage.setItem('dosugClarify', String(next))
+    } catch {
+      /* ignore */
+    }
+    if (activeChat?.contract) {
+      updateChat(activeChat.id, (chat) => ({
+        ...chat,
+        contract: chat.contract
+          ? { ...chat.contract, clarify_missing: next }
+          : chat.contract,
+      }))
+    }
+  }
+
   const appendToChat = (chatId: string, items: ChatMessage[]) => {
     if (!items.length) return
     updateChat(chatId, (chat) => ({ ...chat, messages: [...chat.messages, ...items] }))
@@ -208,7 +276,7 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
   }
 
   const startNewChat = (): Chat => {
-    const chat = createChat()
+    const chat = createChat(null, nextChatNumber(chats))
     setChats((prev) => [chat, ...prev].slice(0, 20))
     setActiveChatId(chat.id)
     setListOpen(false)
@@ -224,7 +292,7 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
   const deleteChat = (chatId: string) => {
     const rest = chats.filter((chat) => chat.id !== chatId)
     if (!rest.length) {
-      const fresh = createChat()
+      const fresh = createChat(null, nextChatNumber([]))
       setChats([fresh])
       setActiveChatId(fresh.id)
       return
@@ -248,6 +316,7 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
     try {
       const parsed = parseQuery(text)
       let contract = contractFromParsed(parsed, previous ?? undefined)
+      contract.clarify_missing = clarifyMissing
       try {
         // Model fills semantic slots; deterministic parser keeps RU dates.
         const remote = await structureQuery(text, contract.semantic_payload.language || 'ru',
@@ -261,8 +330,16 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
           return
         }
         contract = mergeContracts(remote.contract, contract, parsed)
-      } catch {
-        /* model backend down: keep the local contract */
+      } catch (e) {
+        // Never replay the previous contract on a structure failure: that
+        // returned the same stale list for a completely new question.
+        pushError(
+          e instanceof Error
+            ? `Не удалось разобрать запрос ассистентом: ${e.message}. Попробуйте ещё раз.`
+            : 'Не удалось разобрать запрос ассистентом. Попробуйте ещё раз.',
+          chatId,
+        )
+        return
       }
       const response = await sendDialogue(contract)
       const incoming = response.messages.length
@@ -378,23 +455,52 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
   }
 
   const confirmPlan = async (chatId: string, message: ChatMessage) => {
-    if (!message.holdId) return
+    const steps = (message.plan ?? []).filter((step) =>
+      step.bookable && step.event_id && /^\d+$/.test(step.event_id))
+    if (!steps.length) {
+      pushError('В этом плане нет событий с онлайн-бронью — откройте события по ссылкам.', chatId)
+      return
+    }
+    const chat = chats.find((item) => item.id === chatId)
+    const contract = chat?.contract
+    const sessionId = contract?.context_state.session_id ?? `web_${Date.now()}`
+    const partySize = contract?.hard_filters.party_size || 2
     setBusy(true)
+    const booked: string[] = []
+    const failed: string[] = []
     try {
-      const hold = await confirmHold(message.holdId)
+      for (const step of steps) {
+        try {
+          const tickets = await api.getTickets(Number(step.event_id))
+          const active = tickets.filter((ticket) => ticket.active)
+          if (!active.length) {
+            failed.push(`${step.title}: нет активных билетов`)
+            continue
+          }
+          const cheapest = active.reduce((best, ticket) =>
+            (ticket.price < best.price ? ticket : best))
+          const hold = await createHold({
+            session_id: sessionId,
+            event_id: Number(step.event_id),
+            zone: String(cheapest.zone),
+            price: cheapest.price,
+            party_size: partySize,
+          })
+          booked.push(`${step.title} — ${cheapest.zone}, ${cheapest.price} руб. (бронь №${hold.id})`)
+        } catch (e) {
+          failed.push(`${step.title}: ${e instanceof Error ? e.message : 'ошибка брони'}`)
+        }
+      }
+      const lines = [
+        booked.length ? `План подтверждён. Брони на 10 минут:\n${booked.join('\n')}` : '',
+        failed.length ? `Не удалось забронировать:\n${failed.join('\n')}` : '',
+      ].filter(Boolean)
       appendToChat(chatId, [{
         id: nextId(),
         kind: 'assistant',
-        text: `Готово! Бронь №${hold.id} подтверждена: событие ${hold.event_id}, зона ${hold.zone}, ${hold.price} руб.`,
+        text: lines.join('\n\n') || 'Не удалось подтвердить план.',
+        error: booked.length === 0,
       }])
-      const confirmedId = message.id
-      updateChat(chatId, (chat) => ({
-        ...chat,
-        messages: chat.messages.map((item) =>
-          item.id === confirmedId ? { ...item, holdId: undefined } : item),
-      }))
-    } catch (e) {
-      pushError(e instanceof Error ? `Не удалось подтвердить: ${e.message}` : 'Не удалось подтвердить бронь.', chatId)
     } finally {
       setBusy(false)
     }
@@ -449,6 +555,9 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
     }, 400)
   }
 
+  const chatNumber = activeChat?.number ?? 1
+  const summaryDate = activeChat ? new Date(activeChat.createdAt) : new Date()
+
   return (
     <div className="chat-overlay" onClick={onClose} data-testid="chat-overlay">
       <section className="chat-panel" onClick={(e) => e.stopPropagation()} data-testid="chat-panel">
@@ -459,6 +568,15 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
           </div>
           <div className="chat-header-actions">
             <button onClick={openChatList} aria-label="Чаты" data-testid="chat-list-toggle"><MessageSquare size={18} /></button>
+            <button
+              onClick={toggleClarify}
+              aria-label={clarifyMissing ? 'Отключить уточнения' : 'Включить уточнения'}
+              className={clarifyMissing ? 'chat-toggle active' : 'chat-toggle'}
+              data-testid="chat-clarify-toggle"
+              title={clarifyMissing ? 'Ассистент уточняет недостающие параметры' : 'Ассистент ищет сразу'}
+            >
+              <HelpCircle size={18} />
+            </button>
             <button onClick={() => { startNewChat() }} aria-label="Новый чат" data-testid="chat-new"><Plus size={19} /></button>
             <button onClick={onClose} aria-label="Закрыть" data-testid="chat-close"><X size={19} /></button>
           </div>
@@ -480,6 +598,9 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
             ))}
           </div>
         )}
+        <div className="chat-summary" data-testid="chat-summary">
+          СВОДКА № {chatNumber} · {summaryDate.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })} · {timeOfDay(summaryDate)}
+        </div>
         <div className="chat-body">
           {messages.map((message) => {
             if (message.kind === 'user') {
@@ -501,13 +622,25 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
                   <span className="message-number">КОНТРАКТ ДИАЛОГА · ШАГ {contract.context_state.turn_count}</span>
                   <p>{message.text}</p>
                   <div className="filter-chips" data-testid="chat-hard-filters">
-                    {contract.hard_filters.datetime?.raw_expression && <span className="chip chip-dark">когда: {contract.hard_filters.datetime.raw_expression}</span>}
-                    {contract.hard_filters.datetime?.start && !contract.hard_filters.datetime.raw_expression && <span className="chip chip-dark">когда: выходные</span>}
-                    {contract.hard_filters.location?.city && <span className="chip chip-dark">где: {contract.hard_filters.location.city}</span>}
+                    {formatWhen(contract.hard_filters.datetime) && (
+                      <span className="chip chip-dark">
+                        когда: {formatWhen(contract.hard_filters.datetime)}
+                      </span>
+                    )}
+                    {contract.hard_filters.location?.any
+                      ? <span className="chip chip-dark">где: любой город</span>
+                      : contract.hard_filters.location?.city && <span className="chip chip-dark">где: {contract.hard_filters.location.city}</span>}
                     {contract.hard_filters.category?.map((cat) => <span className="chip chip-dark" key={cat}>тип: {cat}</span>)}
                     {contract.hard_filters.themes?.map((theme) => <span className="chip chip-dark" key={theme}>тема: {THEME_LABELS[theme] ?? theme}</span>)}
-                    {contract.intent === 'find_venues' && <span className="chip chip-dark">раздел: места</span>}
-                    {contract.hard_filters.party_size && <span className="chip chip-dark">нас: {contract.hard_filters.party_size}</span>}
+                    {contract.intent?.startsWith('find_venue') && <span className="chip chip-dark">раздел: места</span>}
+                    {contract.intent === 'both' && <span className="chip chip-dark">раздел: события и места</span>}
+                    {contract.hard_filters.party_size === 0
+                      ? <span className="chip chip-dark">нас: любое</span>
+                      : contract.hard_filters.party_size && <span className="chip chip-dark">нас: {contract.hard_filters.party_size}</span>}
+                    {contract.hard_filters.budget?.any
+                      ? <span className="chip chip-dark">цена: любая</span>
+                      : contract.hard_filters.budget?.max_price_per_person != null
+                        && <span className="chip chip-dark">до {contract.hard_filters.budget.max_price_per_person} руб.</span>}
                     {contract.negative_filters?.exclude_tags?.map((tag) => <span className="chip chip-neg" key={tag}>без {tag}</span>)}
                     {contract.negative_filters?.exclude_categories?.map((cat) => <span className="chip chip-neg" key={cat}>кроме {cat}</span>)}
                   </div>
@@ -565,31 +698,47 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
               )
             }
             if (message.kind === 'plan' && message.plan) {
+              const planBookable = message.plan.some((step) => step.bookable)
               return (
                 <div className="assistant-message" key={message.id} data-testid="chat-plan">
-                  <span className="message-number">ПЛАН ДОСУГА · НА ПОДТВЕРЖДЕНИЕ</span>
+                  <span className="message-number">{planLabel(activeChat?.contract ?? undefined, message.plan)}</span>
                   <p>{message.text}</p>
                   <ol className="plan-steps">
-                    {message.plan.map((step) => (
-                      <li key={step.time} data-testid="chat-plan-step">
-                        <strong>{step.time}</strong>
-                        <div>
-                          <h3>{step.title}</h3>
-                          <p>{step.detail}</p>
-                          <span>Источник: {sourceLabel(step.source)}</span>
-                        </div>
-                      </li>
-                    ))}
+                    {message.plan.map((step) => {
+                      const href = step.detail_id
+                        ? (step.kind === 'venue'
+                          ? `/places/detail?id=${encodeURIComponent(step.detail_id)}`
+                          : `/events/detail?id=${encodeURIComponent(step.detail_id)}`)
+                        : null
+                      return (
+                        <li key={`${step.time}-${step.title}`} data-testid="chat-plan-step">
+                          <strong>{step.time}</strong>
+                          <div>
+                            <h3>
+                              {href ? <Link href={href}>{step.title}</Link> : step.title}
+                            </h3>
+                            <p>{step.detail}</p>
+                            <span>Источник: {sourceLabel(step.source)}</span>
+                          </div>
+                        </li>
+                      )
+                    })}
                   </ol>
                   <div className="plan-actions">
                     <button
                       className="apply-button"
-                      disabled={busy || !message.holdId}
+                      disabled={busy || !planBookable}
                       onClick={() => void confirmPlan(activeChat?.id ?? '', message)}
                       data-testid="chat-plan-confirm"
+                      title={planBookable
+                        ? 'Забронировать события плана на 10 минут'
+                        : 'В плане нет событий с онлайн-бронью'}
                     >
                       <CheckCircle2 size={15} /> Подтвердить план
                     </button>
+                    {!planBookable && (
+                      <p className="side-hint">В плане нет событий с онлайн-бронью — откройте карточки по ссылкам.</p>
+                    )}
                     <button
                       className="reset-button"
                       onClick={() => dismissPlan(activeChat?.id ?? '', message.id)}
@@ -603,7 +752,7 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
             }
             return (
               <div className="assistant-message" key={message.id} data-testid={message.error ? 'chat-error' : undefined}>
-                <span className="message-number">СВОДКА № 001 · ТОЛЬКО ЧТО</span>
+                {message.error && <span className="message-number">ОШИБКА</span>}
                 <p>{message.text}</p>
                 {mock && (
                 <div className="quick-replies" data-testid="chat-quick-replies">

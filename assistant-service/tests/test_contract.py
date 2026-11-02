@@ -11,9 +11,9 @@ def test_valid_contract_passes():
         "context_state": {"turn_count": 3, "session_id": "s1"},
     })
     assert contract.dialogue_action == "search"
-    # Defaults are filled from settings by sanitize, not by the DTO.
+    # Missing location stays unset: the assistant asks or applies "any".
     assert contract.hard_filters.location.city is None
-    assert sanitize(contract).hard_filters.location.city == "Минск"
+    assert sanitize(contract).hard_filters.location.city is None
 
 
 def test_unknown_action_rejected():
@@ -30,7 +30,7 @@ def test_sanitize_clamps_and_bumps_turn():
     })
     clean = sanitize(contract)
     assert clean.hard_filters.party_size == 20
-    assert clean.hard_filters.location.city == "Минск"
+    assert clean.hard_filters.location.city is None
     assert clean.context_state.turn_count == 2
     assert clean.semantic_payload.language == "ru"
     assert clean.hard_filters.datetime is None
@@ -47,7 +47,28 @@ def test_sanitize_drops_unknown_fields():
     assert not hasattr(contract, "injected")
 
 
-def test_dialogue_endpoint_asks_for_date():
+def test_sanitize_keeps_any_filters():
+    from app.api.schemas.contract import sanitize
+
+    contract = StateContract.model_validate({
+        "hard_filters": {
+            "datetime": {"start": "2026-10-31T00:00:00", "any": True},
+            "location": {"city": "Минск", "any": True},
+            "party_size": 0,
+            "budget": {"max_price_per_person": 50, "any": True},
+        },
+        "context_state": {"session_id": "s1"},
+    })
+    clean = sanitize(contract)
+    assert clean.hard_filters.datetime.any is True
+    assert clean.hard_filters.datetime.start is None
+    assert clean.hard_filters.location.any is True
+    assert clean.hard_filters.location.city is None
+    assert clean.hard_filters.party_size == 0
+    assert clean.hard_filters.budget.any is True
+
+
+def test_dialogue_endpoint_accepts_no_date():
     from app.main import app
 
     client = TestClient(app)
@@ -58,26 +79,25 @@ def test_dialogue_endpoint_asks_for_date():
     })
     assert response.status_code == 200
     body = response.json()
-    assert body["dialogue_action"] == "ask_clarification"
-    assert body["needs_clarification"] is True
-    assert "дату" in body["clarification_prompt"]
+    assert body["dialogue_action"] == "search"
+    assert body["needs_clarification"] is False
 
 
-def test_dialogue_v2_clarification_has_visible_message():
+def test_dialogue_v2_capabilities_has_visible_message():
     from app.main import app
 
     client = TestClient(app)
     response = client.post("/assistant/dialogue/v2", json={
         "dialogue_action": "search",
+        "intent": "capabilities",
         "hard_filters": {},
         "context_state": {"session_id": "s1"},
     })
     assert response.status_code == 200
     body = response.json()
-    assert body["contract"]["needs_clarification"] is True
     assert len(body["messages"]) == 1
     assert body["messages"][0]["kind"] == "assistant"
-    assert "дату" in body["messages"][0]["text"]
+    assert "события" in body["messages"][0]["text"]
 
 
 def test_dialogue_endpoint_accepts_dated_search():

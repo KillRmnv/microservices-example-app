@@ -20,13 +20,31 @@ class Weather:
 
     @property
     def is_rainy(self) -> bool:
-        return (self.weathercode in RAIN_CODES
-                or (self.precipitation_probability or 0) >= 60)
+        probability = self.precipitation_probability
+        code = self.weathercode
+        heavy = {65, 67, 82, 95, 96, 99}
+        if probability is None:
+            return code in RAIN_CODES
+        if code in heavy:
+            return probability >= 30
+        return probability >= 55
+
+    @property
+    def is_light_rain(self) -> bool:
+        probability = self.precipitation_probability or 0
+        return (not self.is_rainy
+                and self.weathercode in RAIN_CODES
+                and 20 <= probability < 55)
 
     def advice(self, language: str | None = None) -> str:
         if not self.available:
             return i18n.t("weather_unavailable", language)
-        key = "weather_rain" if self.is_rainy else "weather_dry"
+        if self.is_rainy:
+            key = "weather_rain"
+        elif self.is_light_rain:
+            key = "weather_light_rain"
+        else:
+            key = "weather_dry"
         return i18n.t(
             key, language,
             date=self.date,

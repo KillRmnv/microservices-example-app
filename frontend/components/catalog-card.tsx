@@ -2,17 +2,17 @@
 
 import Link from 'next/link'
 import { CalendarDays, MapPin, Star } from 'lucide-react'
-import { FALLBACK_EVENT_IMAGE, categoryLabel, eventImage, eventPlace, eventPrice, isBookable } from '@/lib/catalog'
+import { categoryLabel, eventImage, eventPlace, eventPrice, isBookable } from '@/lib/catalog'
 import { formatDateTime } from '@/lib/format'
 import type { CatalogEvent, CatalogVenue } from '@/lib/types'
+import { EventImage } from '@/components/event-image'
 
 export function CatalogEventCard({ event }: { event: CatalogEvent }) {
   return (
     <article className="story-card" data-testid="event-card">
-      <div className="card-image">
-        <img src={eventImage(event)} alt={event.title} loading="lazy" onError={(e) => { e.currentTarget.src = FALLBACK_EVENT_IMAGE }} />
+      <EventImage className="card-image" src={eventImage(event)} alt={event.title}>
         {isBookable(event) && <span className="card-badge">БИЛЕТЫ</span>}
-      </div>
+      </EventImage>
       <div className="kicker">{categoryLabel(event.category).toUpperCase()}</div>
       <h3><Link href={`/events/detail?id=${encodeURIComponent(event.id)}`}>{event.title}</Link></h3>
       <p className="meta-line"><CalendarDays size={13} /> {formatDateTime(event.start_at ?? undefined)}</p>
