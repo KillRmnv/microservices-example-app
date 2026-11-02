@@ -81,8 +81,9 @@ export interface QueryResponse {
 }
 
 /** Reasoning plan stage: explicit evening itinerary, may take minutes. */
-export function requestPlan(contract: StateContract): Promise<DialogResponse> {
-  return postJson<DialogResponse>('/assistant/plan', { contract })
+export function requestPlan(contract: StateContract,
+                            contexts: StateContract[] = []): Promise<DialogResponse> {
+  return postJson<DialogResponse>('/assistant/plan', { contract, contexts })
 }
 
 export function createHold(input: {

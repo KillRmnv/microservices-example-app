@@ -12,4 +12,5 @@ router = APIRouter(prefix="/assistant", tags=["dialogue"])
 
 @router.post("/plan", response_model=DialogResponse)
 async def build_plan(request: PlanRequest) -> DialogResponse:
-    return await get_components().plan.build_plan(request.contract)
+    return await get_components().plan.build_plan(request.contract,
+                                                  request.contexts)

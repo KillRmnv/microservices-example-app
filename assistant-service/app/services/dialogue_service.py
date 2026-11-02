@@ -288,6 +288,8 @@ class DialogueService:
         title = hit.payload.get("title") or i18n.t("card_untitled", language)
         booking_id = self._booking_event_id(hit)
         source = str(hit.payload.get("source") or "")
+        start_at = str(hit.payload.get("start_at") or "")
+        end_at = str(hit.payload.get("end_at") or start_at)
         if availability is None:
             return ResultCard(
                 event_id=str(booking_id) if booking_id is not None else hit.id,
@@ -297,6 +299,8 @@ class DialogueService:
                 price=i18n.format_price(None, None,
                                         self._settings.default_currency, language),
                 source=source,
+                start_at=start_at,
+                end_at=end_at,
             )
         status = STATUS_KEYS.get(availability.status, availability.status)
         return ResultCard(
@@ -307,4 +311,6 @@ class DialogueService:
             price=i18n.format_price(availability.min_price, None,
                                     self._settings.default_currency, language),
             source=source,
+            start_at=start_at,
+            end_at=end_at,
         )

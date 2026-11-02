@@ -23,12 +23,23 @@ PROMPT = """Ты — составитель плана досуга. Снача�
 (совместимость по времени, бюджет, погода), затем верни ТОЛЬКО JSON:
 {{"summary": "одно предложение", "steps": [
   {{"candidate": 1, "time": "19:00", "title": "...", "detail": "место · цена", "source": "..."}}]}}
-Правила: 2–4 шага; candidate — номер кандидата из списка; время — из данных
-кандидатов, не выдумывай; порядок хронологический; уложись в бюджет {budget};
-город {city}; погода: {weather}. Не называй план вечерним, если в контракте
-время не вечернее; это план на указанный период."""
+Правила: 2–4 шага; candidate — номер кандидата из списка. Окно плана:
+{window_start} — {window_end}; все шаги должны быть внутри него. Кандидаты
+собраны из всей беседы: [event] — событие, [venue] — место. Если среди
+кандидатов есть событие из предыдущей темы, обязательно включи хотя бы одно
+событие в план, а места добавь вокруг него. Если у события end_at позже
+start_at, оно идёт несколько дней: дата плана внутри периода значит, что
+событие доступно, не исключай его из-за даты начала. Время одиночного
+события бери из start_at; для многодневного не используй start_at как время
+визита — поставь время внутри окна и отметь "сеанс уточняется". Если времени
+нет — пиши "уточняется", не выдумывай.
+Для места без времени можно предложить время внутри окна. Название заведения
+не превращай в активность: "Гуляем в ГУМе" — это кафе, а не прогулка.
+Порядок хронологический; уложись в бюджет {budget}; город {city};
+погода: {weather}. Не называй план вечерним, если в контракте время не
+вечернее; это план на указанный период."""
 
-MAX_CANDIDATES = 8
+MAX_CANDIDATES = 10
 
 
 def _extract_json(raw: str) -> dict:
@@ -124,11 +135,105 @@ class PlanService:
                     "bookable": bool(card.kind == "event"
                                      and card.event_id.isdigit()),
                     "title": step["title"] or card.title,
+                    "source": card.source or step.get("source") or "assistant",
                 })
             step.pop("candidate", None)
         return plan
 
-    async def build_plan(self, contract: StateContract) -> DialogResponse:
+    @staticmethod
+    def _contract_key(contract: StateContract) -> tuple:
+        hard = contract.hard_filters
+        dt = hard.datetime
+        return (
+            contract.intent,
+            tuple(hard.category),
+            tuple(hard.themes),
+            contract.semantic_payload.vector_query,
+            dt.start if dt else None,
+            dt.any if dt else False,
+            hard.location.city,
+            hard.party_size,
+        )
+
+    @staticmethod
+    def _dedupe_cards(cards: list) -> list:
+        seen: set[tuple] = set()
+        unique = []
+        for card in cards:
+            key = (card.kind, card.detail_id or f"{card.title}|{card.source}")
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(card)
+        return unique
+
+    @staticmethod
+    def _balanced(cards: list, limit: int) -> list:
+        """Keep events and places represented when both are in the chat."""
+        events = [card for card in cards if card.kind == "event"]
+        venues = [card for card in cards if card.kind == "venue"]
+        mixed: list = []
+        while len(mixed) < limit and (events or venues):
+            if events:
+                mixed.append(events.pop(0))
+            if len(mixed) < limit and venues:
+                mixed.append(venues.pop(0))
+        return mixed
+
+    @staticmethod
+    def _event_step(card) -> dict:
+        time = "уточняется"
+        if len(card.start_at) >= 16 and "T" in card.start_at:
+            time = card.start_at[11:16]
+        detail = " · ".join(part for part in (card.meta, card.price) if part)
+        return {"time": time, "title": card.title, "detail": detail,
+                "source": card.source or "assistant"}
+
+    @staticmethod
+    def _period(card) -> str:
+        start = card.start_at or "время не указано"
+        if card.end_at and card.end_at != card.start_at:
+            return f"{start} — {card.end_at}"
+        return start
+
+    @staticmethod
+    def _is_spanning(card, plan_day: str | None) -> bool:
+        if not plan_day or not card.start_at or not card.end_at:
+            return False
+        start_day = card.start_at[:10]
+        end_day = card.end_at[:10]
+        return bool(end_day > start_day and start_day < plan_day <= end_day)
+
+    @staticmethod
+    def _sort_plan(plan: list[dict]) -> list[dict]:
+        def key(step: dict) -> tuple[int, int]:
+            value = str(step.get("time") or "")
+            if len(value) >= 5 and value[2] == ":":
+                try:
+                    return int(value[:2]), int(value[3:5])
+                except ValueError:
+                    pass
+            return 99, 99
+        return sorted(plan, key=key)
+
+    async def _cards_for(self, contract: StateContract) -> tuple:
+        clean = sanitize(contract)
+        language = clean.semantic_payload.language or self._settings.default_language
+        ruled = self._dialogue.apply_rules(clean, language)
+        if ruled.needs_clarification:
+            return ruled, None
+        response = await self._dialogue.search_turn(ruled)
+        cards = [
+            card
+            for message in response.messages
+            if message.kind == "results"
+            for card in (message.results or [])
+        ]
+        return ruled, (response, cards)
+
+    async def build_plan(self, contract: StateContract,
+                         contexts: list[StateContract] | None = None
+                         ) -> DialogResponse:
         clean = sanitize(contract)
         language = clean.semantic_payload.language or self._settings.default_language
         ruled = self._dialogue.apply_rules(clean, language)
@@ -139,35 +244,98 @@ class PlanService:
             return DialogResponse(contract=ruled,
                                   messages=[ChatMessage(kind="assistant",
                                                         text=text)])
-        response = await self._dialogue.search_turn(ruled)
-        results = [message for message in response.messages
-                   if message.kind == "results" and message.results]
-        if not results:
-            return response
-        cards = results[0].results or []
+        # "Потом покушать" replaces the topic. The plan still needs the
+        # earlier animal/concert stop, so search every contract from the chat.
+        queue: list[StateContract] = []
+        seen: set[tuple] = set()
+        for ctx in [contract, *(contexts or [])]:
+            key = self._contract_key(ctx)
+            if key in seen:
+                continue
+            seen.add(key)
+            queue.append(ctx)
+        responses = []
+        cards: list = []
+        primary = None
+        for ctx in queue:
+            ctx_ruled, found = await self._cards_for(ctx)
+            if found is None:
+                continue
+            response, ctx_cards = found
+            responses.append(response)
+            if primary is None:
+                primary = response
+            cards.extend(ctx_cards)
+        cards = self._dedupe_cards(cards)
+        if not cards:
+            if primary is not None:
+                return primary
+            return DialogResponse(
+                contract=ruled,
+                messages=[ChatMessage(
+                    kind="assistant",
+                    text="По этим условиям ничего не нашлось — смягчите фильтры "
+                         "или уточните дату.")],
+            )
+        response = primary or responses[0]
         weather = next((message.text for message in response.messages
                         if message.kind == "weather"), "нет данных")
         budget = (ruled.hard_filters.budget.max_price_per_person
                   if ruled.hard_filters.budget else None)
+        date_filter = ruled.hard_filters.datetime
+        if date_filter is not None and not date_filter.any:
+            window_start = date_filter.start or "не задано"
+            window_end = date_filter.end or date_filter.start or "не задано"
+        else:
+            window_start = window_end = "не задано"
+        plan_day = (window_start[:10]
+                    if len(window_start) >= 10 and window_start[4] == "-"
+                    else None)
+        window_time = (window_start[11:16]
+                       if len(window_start) >= 16 and "T" in window_start
+                       else None)
+        selected = self._balanced(cards, MAX_CANDIDATES)
         candidates = "\n".join(
-            f"{index + 1}. {card.title} | {card.meta} | {card.price}"
-            for index, card in enumerate(cards[:MAX_CANDIDATES]))
+            f"{index + 1}. [{card.kind}] {card.title} | {card.meta} | {card.price}"
+            f" | {self._period(card)}"
+            for index, card in enumerate(selected))
         system = PROMPT.format(
             budget=(f"до {budget}" if budget else "без ограничений"),
             city=ruled.hard_filters.location.city or self._settings.default_city,
-            weather=weather)
+            weather=weather,
+            window_start=window_start,
+            window_end=window_end)
         summary = "Готовый план досуга — проверьте шаги и подтвердите."
         try:
             plan, summary = await self._model_plan(system, candidates)
         except Exception as exc:  # noqa: BLE001 — deterministic fallback
             log.warning("plan stage fell back to cards: %s", exc)
-            plan = self._fallback_steps(cards)
+            plan = self._fallback_steps(selected)
             summary = ("Модель не ответила — вот лучшие варианты из поиска. "
                        "Время и наличие уточните на странице события.")
         if not plan:
             raise UpstreamError("LLM вернула план без шагов")
-        plan = self._attach_cards(plan, cards)
-        log.info("plan stage: %d candidates -> %d steps", len(cards), len(plan))
+        plan = self._attach_cards(plan, selected)
+        events = [card for card in selected if card.kind == "event"]
+        if (len(queue) > 1 and events
+                and not any(step.get("kind") == "event" for step in plan)):
+            # The model followed only the latest "покушать" request; keep the
+            # earlier event as the anchor of the evening.
+            extra = self._attach_cards([self._event_step(events[0])], selected)
+            plan = [*plan, *extra][:4]
+        by_detail = {card.detail_id: card for card in selected}
+        for step in plan:
+            card = by_detail.get(step.get("detail_id") or "")
+            if card is not None and self._is_spanning(card, plan_day):
+                step["time"] = window_time or "уточняется"
+                suffix = "сеанс уточняется"
+                if suffix not in step.get("detail", ""):
+                    detail = " · ".join(part for part in
+                                        (step.get("detail"), suffix) if part)
+                    step["detail"] = detail
+        plan = self._sort_plan(plan)
+        log.info("plan stage: %d contexts -> %d candidates -> %d steps",
+                 len(queue), len(selected), len(plan))
         message = ChatMessage(kind="plan", text=summary, plan=plan)
         return DialogResponse(contract=response.contract,
                               messages=[*response.messages, message])

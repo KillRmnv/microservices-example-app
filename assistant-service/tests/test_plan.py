@@ -123,3 +123,113 @@ async def test_plan_stage_without_results_returns_search_response():
                           Settings())
     response = await service.build_plan(contract)
     assert [message.kind for message in response.messages] == ["assistant"]
+
+
+class ContextDialogue:
+    """Returns different cards for the animal and restaurant contracts."""
+
+    def apply_rules(self, contract, language=None):
+        return contract
+
+    async def search_turn(self, contract):
+        if "animals" in contract.hard_filters.themes:
+            cards = [ResultCard(
+                event_id="10", detail_id="ev-10", kind="event",
+                title="Дельфинарий", meta="наличие уточняйте у источника",
+                price="55 руб.", start_at="2026-11-03T18:00:00+03:00")]
+        else:
+            cards = [ResultCard(
+                event_id="20", detail_id="v-20", kind="venue",
+                title="Benedict Bistro", meta="Бистро · Минск",
+                price="", start_at="")]
+        return DialogResponse(contract=contract, messages=[
+            ChatMessage(kind="filters", text="Условия зафиксированы."),
+            ChatMessage(kind="results", text="Нашлось:", results=cards),
+        ])
+
+    def record_run(self, contract, duration_ms):
+        pass
+
+
+@pytest.mark.asyncio
+async def test_plan_combines_earlier_topic_with_current_food_request():
+    animal = StateContract.model_validate({
+        "intent": "find_events",
+        "hard_filters": {
+            "datetime": {"start": "2026-11-03T18:00:00+03:00",
+                         "end": "2026-11-03T23:59:00+03:00"},
+            "location": {"city": "Минск"},
+            "themes": ["animals"],
+            "party_size": 2,
+        },
+        "semantic_payload": {"vector_query": "животные, дельфинарий"},
+    })
+    food = StateContract.model_validate({
+        "intent": "find_venue_restaurant",
+        "hard_filters": {
+            "datetime": {"start": "2026-11-03T18:00:00+03:00",
+                         "end": "2026-11-03T23:59:00+03:00"},
+            "location": {"city": "Минск"},
+            "themes": ["food"],
+            "party_size": 2,
+        },
+        "semantic_payload": {"vector_query": "поужинать"},
+    })
+    provider = FakeProvider(json.dumps({
+        "summary": "Животные и ужин.",
+        "steps": [
+            {"candidate": 1, "title": "Дельфинарий", "time": "18:00"},
+            {"candidate": 2, "title": "Benedict Bistro", "time": "20:00"},
+        ],
+    }, ensure_ascii=False))
+    service = PlanService(provider, ContextDialogue(), Settings())
+    response = await service.build_plan(food, [animal])
+
+    plan = response.messages[-1]
+    assert [step.title for step in plan.plan] == ["Дельфинарий", "Benedict Bistro"]
+    assert [step.kind for step in plan.plan] == ["event", "venue"]
+    system = provider.calls[0]["system"]
+    assert "Дельфинарий" in provider.calls[0]["user"]
+    assert "Benedict Bistro" in provider.calls[0]["user"]
+    assert "2026-11-03T18:00:00+03:00" in provider.calls[0]["user"]
+    assert "2026-11-03T18:00:00+03:00" in system  # window
+    assert "2026-11-03T23:59:00+03:00" in system
+
+
+@pytest.mark.asyncio
+async def test_plan_deduplicates_repeated_contexts():
+    contract = search_response().contract
+    provider = FakeProvider(plan_json())
+    service = PlanService(provider, StubDialogue(search_response()), Settings())
+    response = await service.build_plan(contract, [contract, contract])
+    assert [message.kind for message in response.messages][-1] == "plan"
+    # Three identical cards would otherwise produce duplicate candidates.
+    assert provider.calls[0]["user"].count("Джаз вечером") == 1
+
+
+@pytest.mark.asyncio
+async def test_plan_injects_event_when_model_follows_only_latest_request():
+    animal = StateContract.model_validate({
+        "intent": "find_events",
+        "hard_filters": {"themes": ["animals"], "party_size": 2,
+                         "location": {"city": "Минск"}},
+        "semantic_payload": {"vector_query": "животные"},
+    })
+    food = StateContract.model_validate({
+        "intent": "find_venue_restaurant",
+        "hard_filters": {"themes": ["food"], "party_size": 2,
+                         "location": {"city": "Минск"}},
+        "semantic_payload": {"vector_query": "ужин"},
+    })
+    provider = FakeProvider(json.dumps({
+        "summary": "Ужин.",
+        "steps": [{"candidate": 2, "title": "Benedict Bistro",
+                   "time": "20:00"}],
+    }, ensure_ascii=False))
+    service = PlanService(provider, ContextDialogue(), Settings())
+    response = await service.build_plan(food, [animal])
+
+    plan = response.messages[-1]
+    assert [step.kind for step in plan.plan] == ["event", "venue"]
+    assert plan.plan[0].title == "Дельфинарий"
+    assert plan.plan[0].time == "18:00"

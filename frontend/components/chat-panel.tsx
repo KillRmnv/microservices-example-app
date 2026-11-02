@@ -379,6 +379,9 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
       pushError('Сначала опишите, что ищете, — тогда соберу план вечера.', activeChat.id)
       return
     }
+    const contexts = activeChat.messages
+      .filter((message) => message.kind === 'filters' && message.filters)
+      .map((message) => message.filters as StateContract)
     addUserMessage(activeChat.id, 'Собери план вечера')
     setBusy(true)
     const startedAt = Date.now()
@@ -387,7 +390,7 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
     }, 1000)
     setPlanThinking(0)
     try {
-      const response = await requestPlan(contract)
+      const response = await requestPlan(contract, contexts)
       const incoming = response.messages.length
         ? response.messages.map((message: DialogMessage, index: number) => ({
             id: nextId() + index,

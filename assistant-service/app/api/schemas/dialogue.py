@@ -20,6 +20,8 @@ class ResultCard(BaseModel):
     meta: str
     price: str
     source: str = ""
+    start_at: str = ""
+    end_at: str = ""
 
 
 class PlanStep(BaseModel):
