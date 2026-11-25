@@ -74,3 +74,13 @@ def test_redact_url_keeps_safe_params():
 
 def test_mask_email():
     assert mask_email("user@example.com") == "u***@example.com"
+
+
+def test_redact_text_scrubs_inline_credentials():
+    from app.core.logging import redact_text
+    cleaned = redact_text(
+        "mail user@example.com password=hunter2 Authorization: Bearer abc.def")
+    assert "user@example.com" not in cleaned
+    assert "hunter2" not in cleaned
+    assert "abc.def" not in cleaned
+    assert "u***@example.com" in cleaned

@@ -43,7 +43,8 @@ def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(RequestValidationError)
     async def validation_error_handler(request: Request,
                                        exc: RequestValidationError) -> object:
-        log.info("validation error on %s: %s", request.url.path, exc.errors())
+        log.info("validation error on %s: %s", request.url.path,
+                 _validation_errors(exc))
         return problem_response(
             request, status=422, code="validation_error",
             detail="Request validation failed",
