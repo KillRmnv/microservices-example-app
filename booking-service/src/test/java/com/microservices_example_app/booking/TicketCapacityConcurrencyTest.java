@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.dao.ConcurrencyFailureException;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -130,6 +131,9 @@ class TicketCapacityConcurrencyTest {
                                 unexpected.add(exc);
                             }
                         }
+                    } catch (ConcurrencyFailureException exc) {
+                        // A lock/transaction conflict means the create was rejected.
+                        rejected.incrementAndGet();
                     } catch (Throwable exc) {
                         synchronized (unexpected) {
                             unexpected.add(exc);
