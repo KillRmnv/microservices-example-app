@@ -21,7 +21,24 @@ PAYLOAD_INDEXES = {
     "category": "keyword",
     "rubric": "keyword",
     "price_min": "float",
+    # BM25 full-text index (Qdrant 1.20+). `search_text` carries the same
+    # string that produced the embedding, so dense and lexical halves agree.
+    "search_text": "text",
 }
+
+
+def _bm25_text_index(models):
+    """Russian-aware BM25 text index params for `search_text`."""
+    return models.TextIndexParams(
+        type=models.TextIndexType.TEXT,
+        tokenizer=models.TokenizerType.WORD,
+        lowercase=True,
+        stemmer=models.SnowballParams(
+            type=models.Snowball.SNOWBALL,
+            language=models.SnowballLanguage.RUSSIAN),
+        stopwords=models.StopwordsSet(languages=[models.Language.RUSSIAN]),
+        scoring=True,
+    )
 
 
 @dataclass
@@ -98,14 +115,21 @@ class QdrantStore(VectorStore):
     async def _ensure_payload_indexes(self) -> None:
         models = self._models
         schema = {"keyword": models.PayloadSchemaType.KEYWORD,
-                  "float": models.PayloadSchemaType.FLOAT}
+                  "float": models.PayloadSchemaType.FLOAT,
+                  "text": _bm25_text_index(models)}
         for field_name, kind in PAYLOAD_INDEXES.items():
             try:
                 await self._client.create_payload_index(
                     self._collection, field_name=field_name,
                     field_schema=schema[kind])
-            except Exception as exc:  # noqa: BLE001 — already exists
-                log.debug("payload index %s skipped: %s", field_name, exc)
+            except Exception as exc:  # noqa: BLE001 — index may already exist
+                if kind == "text":
+                    # A missing BM25 index silently degrades search to dense +
+                    # sparse, so surface it instead of hiding it at debug.
+                    log.warning("BM25 text index %s.%s unavailable: %s",
+                                self._collection, field_name, exc)
+                else:
+                    log.debug("payload index %s skipped: %s", field_name, exc)
 
     async def ensure(self, dim: int) -> None:
         try:
@@ -126,6 +150,10 @@ class QdrantStore(VectorStore):
         log.warning("collection %s has %d dense-only points and no sparse "
                     "config; hybrid search stays unavailable until "
                     "POST /embed/reindex-hybrid", self._collection, count)
+        # Legacy dense-only collections still serve dense search; create the
+        # payload indexes (incl. BM25 text) so a later hybrid reindex or a
+        # text query over existing points has them ready.
+        await self._ensure_payload_indexes()
 
     def _point_vector(self, point: VectorPoint):
         models = self._models

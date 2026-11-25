@@ -1,8 +1,9 @@
 """Vector search: Qdrant Hybrid in prod, brute-force in-memory for tests.
 
-Hybrid = one dense query + one sparse query fused server-side with RRF.
-Exact-match filters (city/category/rubric) are pushed into Qdrant; price
-stays a Python post-filter because unknown prices must pass the filter.
+Hybrid = one dense query + one sparse query (+ optionally a BM25 full-text
+query) fused server-side with RRF. Exact-match filters (city/category/rubric)
+are pushed into Qdrant; price stays a Python post-filter because unknown
+prices must pass the filter.
 """
 from __future__ import annotations
 
@@ -12,9 +13,12 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 
 from ..models.search import PayloadDateRange
-from ..sparse import SPARSE_VECTOR_NAME, SparseVector, sparse_dot
+from ..sparse import SPARSE_VECTOR_NAME, SparseVector, sparse_dot, tokenize
 
 log = logging.getLogger(__name__)
+
+# Full-text payload index created by the collector (BM25, scoring=True).
+TEXT_INDEX_NAME = "search_text"
 
 
 @dataclass
@@ -29,8 +33,9 @@ class VectorStore(ABC):
     async def hybrid_search(self, dense: list[float] | None,
                             sparse: SparseVector | None, limit: int,
                             must: dict | None = None,
-                            must_not: dict | None = None) -> list[ScoredHit]:
-        """Fused dense+sparse search. Either side may be None (degraded)."""
+                            must_not: dict | None = None,
+                            text_query: str | None = None) -> list[ScoredHit]:
+        """Fused dense+sparse(+BM25) search. Any side may be None."""
         raise NotImplementedError
 
 
@@ -63,8 +68,9 @@ class QdrantStore(VectorStore):
     async def hybrid_search(self, dense: list[float] | None,
                             sparse: SparseVector | None, limit: int,
                             must: dict | None = None,
-                            must_not: dict | None = None) -> list[ScoredHit]:
-        if dense is None and sparse is None:
+                            must_not: dict | None = None,
+                            text_query: str | None = None) -> list[ScoredHit]:
+        if dense is None and sparse is None and not text_query:
             return []
         models = self._models
         must_conditions = _qdrant_conditions(models, must)
@@ -74,34 +80,36 @@ class QdrantStore(VectorStore):
             query_filter = models.Filter(
                 must=must_conditions or None,
                 must_not=must_not_conditions or None)
-        if dense is not None and sparse is not None:
+        prefetches = []
+        if dense is not None:
+            prefetches.append(models.Prefetch(
+                query=dense, limit=limit, filter=query_filter,
+                score_threshold=self._dense_min_score))
+        if sparse is not None:
+            prefetches.append(models.Prefetch(
+                query=models.SparseVector(indices=sparse.indices,
+                                          values=sparse.values),
+                using=SPARSE_VECTOR_NAME, limit=limit, filter=query_filter))
+        if text_query:
+            prefetches.append(models.Prefetch(
+                query=models.TextQuery(text=text_query),
+                using=TEXT_INDEX_NAME, limit=limit, filter=query_filter))
+        if not prefetches:
+            return []
+        if len(prefetches) == 1:
+            only = prefetches[0]
+            log.info("hybrid degraded to a single prefetch for %s",
+                     self._collection)
+            hits = await self._client.query_points(
+                self._collection, query=only.query, using=only.using,
+                limit=limit, query_filter=query_filter, with_payload=True,
+                score_threshold=only.score_threshold)
+        else:
             hits = await self._client.query_points(
                 self._collection,
                 query=models.FusionQuery(fusion=models.Fusion.RRF),
-                prefetch=[
-                    models.Prefetch(query=dense, limit=limit,
-                                    score_threshold=self._dense_min_score),
-                    models.Prefetch(
-                        query=models.SparseVector(indices=sparse.indices,
-                                                  values=sparse.values),
-                        using=SPARSE_VECTOR_NAME, limit=limit),
-                ],
+                prefetch=prefetches,
                 query_filter=query_filter, limit=limit, with_payload=True)
-        elif dense is not None:
-            log.warning("hybrid degraded to dense-only for %s", self._collection)
-            hits = await self._client.query_points(
-                self._collection, query=dense, limit=limit,
-                query_filter=query_filter, with_payload=True,
-                score_threshold=self._dense_min_score)
-        else:
-            assert sparse is not None
-            log.warning("hybrid degraded to sparse-only for %s", self._collection)
-            hits = await self._client.query_points(
-                self._collection,
-                query=models.SparseVector(indices=sparse.indices,
-                                          values=sparse.values),
-                using=SPARSE_VECTOR_NAME, limit=limit,
-                query_filter=query_filter, with_payload=True)
         return [ScoredHit(id=str(point.id), score=point.score,
                            payload=dict(point.payload or {}))
                 for point in hits.points]
@@ -117,7 +125,8 @@ class InMemoryStore(VectorStore):
     async def hybrid_search(self, dense: list[float] | None,
                             sparse: SparseVector | None, limit: int,
                             must: dict | None = None,
-                            must_not: dict | None = None) -> list[ScoredHit]:
+                            must_not: dict | None = None,
+                            text_query: str | None = None) -> list[ScoredHit]:
         filtered = [(pid, vec, payload) for pid, vec, payload in self._points
                     if (not must or _matches_must(payload, must))
                     and (not must_not or not _matches_any(payload, must_not))]
@@ -136,12 +145,28 @@ class InMemoryStore(VectorStore):
             rankings.append([pid for pid, _, _ in scored
                              if sparse_dot(sparse, self._sparse.get(
                                  pid, SparseVector())) > 0])
+        query_terms = set(tokenize(text_query or ""))
+        if query_terms:
+            # Stand-in for the BM25 text index: term overlap over `search_text`.
+            scored = sorted(
+                ((pid, _term_overlap(query_terms, payload))
+                 for pid, _, payload in filtered),
+                key=lambda item: item[1], reverse=True)
+            rankings.append([pid for pid, score in scored if score > 0])
         if not rankings:
             return []
         payloads = {pid: payload for pid, _, payload in filtered}
         fused = _rrf(rankings)
         return [ScoredHit(id=pid, score=score, payload=dict(payloads.get(pid, {})))
                 for pid, score in fused[:limit]]
+
+
+def _term_overlap(query_terms: set[str], payload: dict) -> float:
+    """Cheap BM25 stand-in: count of query terms present in the payload text."""
+    text = (payload.get("search_text") or payload.get("title")
+            or payload.get("name") or "")
+    document = set(tokenize(str(text)))
+    return float(len(query_terms & document))
 
 
 def _field_matches(value, expected) -> bool:

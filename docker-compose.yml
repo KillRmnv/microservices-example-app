@@ -232,6 +232,9 @@ services:
       ASSISTANT_LLM_MAX_TOKENS: 2048
       ASSISTANT_LLM_PLAN_MAX_TOKENS: 3072
       ASSISTANT_LLM_TIMEOUT_S: ${ASSISTANT_LLM_TIMEOUT_S:-120}
+      # bm25 = dense + sparse + full-text BM25 (needs the `search_text`
+      # index); sparse/lexical are the fallbacks while the re-embed runs.
+      ASSISTANT_HYBRID_MODE: ${ASSISTANT_HYBRID_MODE:-bm25}
 
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -248,12 +251,15 @@ services:
       - "${ASSISTANT_PORT:-8084}:8080"
 
   qdrant:
-    image: qdrant/qdrant:v1.12.4
+    # 1.18 dropped RocksDB: 1.12 storage cannot be mounted by 1.20. The fresh
+    # volume `qdrant_data_v120` is populated by a re-embed; `qdrant_data` is
+    # kept untouched as the rollback path (restore tar + v1.12.4).
+    image: qdrant/qdrant:v1.20.2
     ports:
       - "6333:6333"
       - "6334:6334"
     volumes:
-      - qdrant_data:/qdrant/storage
+      - qdrant_data_v120:/qdrant/storage
 
   # Opt-in local embeddings (profile `llm`). Mounts the host models dir;
   # services reach it as http://llama-embed:8088 (override LLAMA_EMBED_URL).
@@ -306,3 +312,4 @@ volumes:
   prometheus_data:
   grafana_data:
   qdrant_data:
+  qdrant_data_v120:

@@ -100,6 +100,9 @@ class Settings(BaseSettings):
     sweep_interval_s: int = 300
 
     search_candidate_multiplier: int = 2
+    # bm25 (dense+sparse+full-text, compose default) | sparse | lexical.
+    # Code default stays `sparse` so unit tests never need the text index.
+    hybrid_mode: str = "sparse"
     # Dense hits below this cosine score are noise ("jazz" -> random pop).
     search_dense_min_score: float = 0.45
     # Places are sparse and semantically broad; keep a lower relevance floor.

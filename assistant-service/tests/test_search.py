@@ -79,9 +79,11 @@ def hybrid_store(*items):
     )
 
 
-def service(store, collector=None, embedder=None) -> SearchService:
+def service(store, collector=None, embedder=None, *,
+            hybrid_mode: str = "sparse") -> SearchService:
     return SearchService(embedder or FakeEmbedder(), store,
-                         collector or FakeCollector([]))
+                         collector or FakeCollector([]),
+                         hybrid_mode=hybrid_mode)
 
 
 @pytest.mark.asyncio
@@ -210,9 +212,9 @@ class RecordingStore(InMemoryStore):
         self.calls: list[dict] = []
 
     async def hybrid_search(self, dense, sparse, limit, must=None,
-                            must_not=None):
+                            must_not=None, text_query=None):
         self.calls.append({"limit": limit, "must": must,
-                           "must_not": must_not})
+                           "must_not": must_not, "text_query": text_query})
         return []
 
 
@@ -389,3 +391,88 @@ async def test_date_filter_respects_evening_time_window():
         date_from=datetime(2026, 11, 27, 18, 0, tzinfo=timezone.utc),
         date_to=datetime(2026, 11, 27, 23, 59, tzinfo=timezone.utc)))
     assert [hit.id for hit in hits] == ["evening"]
+
+
+# --- BM25 / hybrid_mode -------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_default_mode_is_sparse_and_sends_no_text_query():
+    store = RecordingStore()
+    await service(store, FakeCollector([])).events(
+        SearchPlan(vector_query="джаз", limit=2))
+    assert store.calls[0]["text_query"] is None
+
+
+@pytest.mark.asyncio
+async def test_bm25_mode_passes_text_query_to_the_store():
+    store = RecordingStore()
+    await service(store, FakeCollector([]), hybrid_mode="bm25").events(
+        SearchPlan(vector_query="джазовый вечер", limit=2))
+    assert store.calls[0]["text_query"] == "джазовый вечер"
+
+
+@pytest.mark.asyncio
+async def test_inmemory_text_scoring_ranks_term_overlap():
+    """BM25 stand-in: payload search_text overlap decides the text ranking."""
+    store = InMemoryStore([
+        ("e1", [0.0, 1.0, 0.0],
+         {"title": "Джазовый вечер", "search_text": "джазовый вечер музыка"}),
+        ("e2", [0.0, 1.0, 0.0],
+         {"title": "Рок концерт", "search_text": "рок концерт"}),
+    ])
+    hits = await store.hybrid_search(None, None, 5, text_query="джазовый")
+    assert [hit.id for hit in hits] == ["e1"]
+
+
+@pytest.mark.asyncio
+async def test_bm25_only_query_without_dense_or_sparse():
+    store = InMemoryStore([
+        ("e1", [0.0, 0.0, 0.0], {"search_text": "джазовый вечер"}),
+        ("e2", [0.0, 0.0, 0.0], {"search_text": "рок концерт"}),
+    ])
+    hits = await store.hybrid_search(None, None, 5, text_query="джазовый")
+    assert [hit.id for hit in hits] == ["e1"]
+
+
+@pytest.mark.asyncio
+async def test_bm25_failure_retries_dense_and_sparse():
+    class TextBrokenStore(InMemoryStore):
+        def __init__(self) -> None:
+            super().__init__([
+                ("e1", [1.0, 0.0, 0.0], {"title": "Джаз", "search_text": "джаз"}),
+            ], {"e1": encode_sparse("джаз")})
+            self.calls: list[dict] = []
+
+        async def hybrid_search(self, dense, sparse, limit, must=None,
+                                must_not=None, text_query=None):
+            self.calls.append({"text_query": text_query})
+            if text_query is not None:
+                raise RuntimeError("missing search_text index")
+            return await super().hybrid_search(dense, sparse, limit, must,
+                                               must_not)
+
+    store = TextBrokenStore()
+    hits = await service(store, ExplodingCollector(), hybrid_mode="bm25").events(
+        SearchPlan(vector_query="джаз", limit=2))
+    assert [hit.id for hit in hits] == ["e1"]
+    assert [call["text_query"] for call in store.calls] == ["джаз", None]
+
+
+@pytest.mark.asyncio
+async def test_lexical_mode_skips_the_vector_store():
+    class ExplodingStore(InMemoryStore):
+        async def hybrid_search(self, *args, **kwargs):
+            raise AssertionError("store must not be called in lexical mode")
+
+    collector = FakeCollector([{"id": "e9", "title": "Только лексика"}])
+    hits = await service(ExplodingStore(), collector,
+                         hybrid_mode="lexical").events(
+        SearchPlan(vector_query="джаз", limit=3))
+    assert [hit.id for hit in hits] == ["e9"]
+    assert hits[0].origins == ["lexical"]
+
+
+def test_unknown_hybrid_mode_is_rejected():
+    with pytest.raises(ValueError):
+        SearchService(FakeEmbedder(), InMemoryStore(), FakeCollector([]),
+                      hybrid_mode="bm42")

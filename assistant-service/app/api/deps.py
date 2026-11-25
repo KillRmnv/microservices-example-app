@@ -53,6 +53,7 @@ def _search_service(config: Settings, *, venues: bool) -> SearchService:
         CollectorClient(config.collector_base_url),
         candidate_multiplier=config.search_candidate_multiplier,
         query_timeout_s=config.query_embedding_timeout_s,
+        hybrid_mode=config.hybrid_mode,
     )
 
 
