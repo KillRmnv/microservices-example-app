@@ -23,7 +23,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 
@@ -49,8 +51,14 @@ public class SeatableTicketService {
         Event event = eventRepository.findById(requestDto.getEventId())
                 .orElseThrow(() -> new NotFoundException("Event not found"));
 
-        Seat seat = seatRepository.findById(requestDto.getSeatId())
+        Seat seat = seatRepository.findByIdForUpdate(requestDto.getSeatId())
                 .orElseThrow(() -> new NotFoundException("Seat not found"));
+
+        if (seatableTicketRepository.existsByEventIdAndSeatIdAndActiveTrue(
+                event.getId(), seat.getId())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Seat is already booked for this event");
+        }
 
         Long currentUserId = jwtRequestUserExtractor.extractUserId();
         String email = jwtRequestUserExtractor.extractEmail();
@@ -239,7 +247,7 @@ public class SeatableTicketService {
             throw new IllegalArgumentException("SeatableTicket id must be positive");
         }
 
-        SeatableTicket ticket = seatableTicketRepository.findById(id)
+        SeatableTicket ticket = seatableTicketRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new NotFoundException("Seatable ticket not found"));
 
         Long currentUserId = jwtRequestUserExtractor.extractUserId();

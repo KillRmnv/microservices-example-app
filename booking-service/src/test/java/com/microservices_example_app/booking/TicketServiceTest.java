@@ -87,7 +87,7 @@ class TicketServiceTest {
                 .userId(77L)
                 .build();
 
-        when(eventRepository.findById(10L)).thenReturn(Optional.of(event));
+        when(eventRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(event));
         when(jwtRequestUserExtractor.extractUserId()).thenReturn(77L);
         when(jwtRequestUserExtractor.extractEmail()).thenReturn("test@mail.com");
         when(jwtRequestUserExtractor.extractUsername()).thenReturn("alex");
@@ -115,7 +115,7 @@ class TicketServiceTest {
         TicketCreateRequestDto request = new TicketCreateRequestDto();
         request.setEventId(10L);
 
-        when(eventRepository.findById(10L)).thenReturn(Optional.empty());
+        when(eventRepository.findByIdForUpdate(10L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> ticketService.create(request))
                 .isInstanceOf(NotFoundException.class)
@@ -401,7 +401,7 @@ class TicketServiceTest {
         request.setActive(false);
         Event event = Event.builder().id(10L).title("Rock Concert").startsAt(LocalDateTime.now().plusDays(1)).endsAt(LocalDateTime.now().plusDays(1).plusHours(2)).admissionMode(EventAdmissionMode.GENERAL).build();
         Ticket savedTicket = Ticket.builder().id(100L).event(event).zone(Zone.VIP).price(BigDecimal.valueOf(150)).active(false).userId(77L).build();
-        when(eventRepository.findById(10L)).thenReturn(Optional.of(event));
+        when(eventRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(event));
         when(jwtRequestUserExtractor.extractUserId()).thenReturn(77L);
         when(jwtRequestUserExtractor.extractEmail()).thenReturn("test@mail.com");
         when(jwtRequestUserExtractor.extractUsername()).thenReturn("alex");
@@ -419,7 +419,7 @@ class TicketServiceTest {
         request.setActive(null);
         Event event = Event.builder().id(10L).title("Rock Concert").startsAt(LocalDateTime.now().plusDays(1)).endsAt(LocalDateTime.now().plusDays(1).plusHours(2)).admissionMode(EventAdmissionMode.GENERAL).build();
         Ticket savedTicket = Ticket.builder().id(100L).event(event).zone(Zone.VIP).price(BigDecimal.valueOf(150)).active(false).userId(77L).build();
-        when(eventRepository.findById(10L)).thenReturn(Optional.of(event));
+        when(eventRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(event));
         when(jwtRequestUserExtractor.extractUserId()).thenReturn(77L);
         when(jwtRequestUserExtractor.extractEmail()).thenReturn("test@mail.com");
         when(jwtRequestUserExtractor.extractUsername()).thenReturn("alex");

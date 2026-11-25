@@ -3,6 +3,10 @@ package com.microservices_example_app.booking.repository;
 import com.microservices_example_app.booking.model.Seat;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+import jakarta.persistence.LockModeType;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -27,4 +31,8 @@ public interface SeatRepository extends JpaRepository<Seat, Long>, JpaSpecificat
             String row,
             String number
     );
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select s from Seat s where s.id = :id")
+    Optional<Seat> findByIdForUpdate(@Param("id") Long id);
 }

@@ -6,6 +6,7 @@ import com.microservices_example_app.booking.event.SuccessfulBookingEvent;
 import com.microservices_example_app.booking.event.SuccessfulTicketRefundEvent;
 import com.microservices_example_app.booking.exceptions.NotFoundException;
 import com.microservices_example_app.booking.model.Event;
+import com.microservices_example_app.booking.model.EventAdmissionMode;
 import com.microservices_example_app.booking.model.Ticket;
 import com.microservices_example_app.booking.producers.NotificationKafkaBookingProducer;
 import com.microservices_example_app.booking.producers.NotificationKafkaUserProducer;
@@ -21,7 +22,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 
@@ -42,8 +45,18 @@ public class TicketService {
     public TicketResponseDto create(TicketCreateRequestDto requestDto) {
         log.info("Creating ticket for event id: {}", requestDto.getEventId());
 
-        Event event = eventRepository.findById(requestDto.getEventId())
+        Event event = eventRepository.findByIdForUpdate(requestDto.getEventId())
                 .orElseThrow(() -> new NotFoundException("Event not found"));
+
+        if (event.getAdmissionMode() == EventAdmissionMode.GENERAL
+                && event.getVenue() != null
+                && event.getVenue().getCapacity() != null) {
+            long active = ticketRepository.countByEventIdAndActiveTrue(event.getId());
+            if (active >= event.getVenue().getCapacity()) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        "Venue capacity is exhausted for this event");
+            }
+        }
 
         Long currentUserId = jwtRequestUserExtractor.extractUserId();
         String email = jwtRequestUserExtractor.extractEmail();

@@ -27,4 +27,6 @@ public interface TicketRepository extends JpaRepository<Ticket, Long>, JpaSpecif
     List<Ticket> findByEventIdInAndUserIdIsNotNullOrderByIdDesc(List<Long> eventIds);
 
     List<Ticket> findByEventIdIn(List<Long> list);
+
+    long countByEventIdAndActiveTrue(Long eventId);
 }
