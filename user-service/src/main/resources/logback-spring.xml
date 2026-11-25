@@ -6,7 +6,7 @@
 
     <appender name="JSON_CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
         <encoder class="net.logstash.logback.encoder.LogstashEncoder">
-            <customFields>{"service":"user-service"}</customFields>
+            <customFields>{"service":"user-service","env":"${APP_ENV:-local}","version":"${APP_VERSION:-dev}"}</customFields>
             <!-- Defense in depth: mask sensitive JSON fields even if code logs them by accident -->
             <jsonGeneratorDecorator class="net.logstash.logback.decorate.MaskingJsonGeneratorDecorator">
                 <defaultMask>****</defaultMask>
@@ -24,8 +24,27 @@
                     <path>apiKey</path>
                     <path>api_key</path>
                     <path>dsn</path>
+                    <path>email</path>
+                    <path>username</path>
+                    <path>userName</path>
+                    <path>resetUrl</path>
+                    <path>reset_url</path>
+                    <path>recipient</path>
+                    <path>phone</path>
                 </pathMask>
+                <valueMask>
+                    <value>(?i)[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}</value>
+                    <value>(?i)(bearer\s+)[A-Za-z0-9._~+/=-]+</value>
+                    <value>(?i)((?:password|passwd|pwd|secret|token|api[_-]?key|authorization|reset[_-]?token)\s*[=:]\s*)[^\s,;&amp;"']+</value>
+                </valueMask>
             </jsonGeneratorDecorator>
+            <includeMdc>true</includeMdc>
+            <timeZone>UTC</timeZone>
+            <fieldNames>
+                <timestamp>timestamp</timestamp>
+                <version>[ignore]</version>
+                <levelValue>[ignore]</levelValue>
+            </fieldNames>
         </encoder>
     </appender>
 

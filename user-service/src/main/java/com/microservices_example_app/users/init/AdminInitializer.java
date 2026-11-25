@@ -5,6 +5,7 @@ import com.microservices_example_app.users.model.User;
 import com.microservices_example_app.users.repository.RoleRepository;
 import com.microservices_example_app.users.repository.UserRepository;
 import com.microservices_example_app.users.service.PasswordService;
+import com.microservices_example_app.users.util.SensitiveMask;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -50,6 +51,6 @@ public class AdminInitializer implements CommandLineRunner {
                 .build();
 
         userRepository.save(rootAdmin);
-        log.info("Root admin created successfully: {}", rootAdminEmail);
+        log.info("Root admin created successfully: {}", SensitiveMask.maskEmail(rootAdminEmail));
     }
 }

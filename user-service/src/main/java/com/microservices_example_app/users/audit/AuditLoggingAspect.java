@@ -3,6 +3,7 @@ package com.microservices_example_app.users.audit;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import com.microservices_example_app.users.util.SensitiveMask;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
@@ -41,7 +42,7 @@ public class AuditLoggingAspect {
             log.info("AUDIT-OK: user={} operation={}.{} completed", userId, className, method);
             return result;
         } catch (Throwable ex) {
-            log.warn("AUDIT-FAIL: user={} operation={}.{} failed: {}", userId, className, method, ex.getMessage());
+            log.warn("AUDIT-FAIL: user={} operation={}.{} failed: {}", userId, className, method, SensitiveMask.maskEmailsInText(ex.getMessage()));
             throw ex;
         }
     }

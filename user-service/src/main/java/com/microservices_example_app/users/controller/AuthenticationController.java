@@ -7,13 +7,11 @@ import com.microservices_example_app.users.service.UserService;
 import com.microservices_example_app.users.util.SensitiveMask;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.Email;
 import lombok.AllArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
 
@@ -32,8 +30,8 @@ public class AuthenticationController {
 
     @Operation(summary = "Request a password-reset email")
     @PostMapping("/forget-password")
-    public ResponseEntity<Void> forgetPassword(@Parameter(description = "Account email address") @RequestParam @Email String email){
-         userService.restorePassword(email);
+    public ResponseEntity<Void> forgetPassword(@Valid @RequestBody EmailRequestDto request){
+         userService.restorePassword(request.getEmail());
         return ResponseEntity.ok().build();
     }
 
@@ -77,8 +75,8 @@ public class AuthenticationController {
     }
 
     @Operation(summary = "Check whether a password-reset token is still valid")
-    @GetMapping("/validate-reset-token")
-    public boolean validateResetToken(@Parameter(description = "One-time reset token") @RequestParam String token) {
-        return userService.validateResetToken(token);
+    @PostMapping("/validate-reset-token")
+    public boolean validateResetToken(@Valid @RequestBody ResetTokenRequestDto request) {
+        return userService.validateResetToken(request.getToken());
     }
 }
