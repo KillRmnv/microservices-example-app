@@ -167,6 +167,21 @@ async def test_price_filter_reads_qdrant_payload():
 
 
 @pytest.mark.asyncio
+async def test_budget_overfetches_before_price_postfilter():
+    """A cheap hit ranked below the top window must still be reachable."""
+    store = hybrid_store(
+        *[(f"p{i}", [1.0, 0.0, 0.0],
+           {"title": f"Дорого {i}", "price_min": 500.0}, "")
+          for i in range(5)],
+        ("cheap", [0.0, 1.0, 0.0],
+         {"title": "Дешево", "price_min": 20.0}, ""),
+    )
+    hits = await service(store, ExplodingCollector()).events(
+        SearchPlan(vector_query="концерт", limit=2, max_price_per_person=100.0))
+    assert [hit.id for hit in hits] == ["cheap"]
+
+
+@pytest.mark.asyncio
 async def test_unknown_price_passes_price_filter():
     store = hybrid_store(
         ("mystery", [1.0, 0.0, 0.0], {"title": "Без цены"}, "без цены"),

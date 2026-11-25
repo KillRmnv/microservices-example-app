@@ -444,7 +444,8 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
     const chat = chats.find((item) => item.id === chatId)
     const contract = chat?.contract
     const sessionId = contract?.context_state.session_id ?? `web_${Date.now()}`
-    const partySize = contract?.hard_filters.party_size ?? 2
+    // 0 means "any party size" in the contract; a hold needs a concrete count.
+    const partySize = contract?.hard_filters.party_size || 2
     setBusy(true)
     try {
       const tickets = await api.getTickets(Number(result.event_id))

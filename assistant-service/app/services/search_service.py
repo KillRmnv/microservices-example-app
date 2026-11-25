@@ -116,9 +116,10 @@ class SearchService:
         candidates = plan.limit * self._candidate_multiplier
         must = pipeline.qdrant_must()
         must_not = pipeline.must_not()
-        if must_not or plan.exclude_tags:
-            # Tag exclusion is a Python post-filter over free text: fetch a
-            # wider window or the survivors may not fill `limit`.
+        if (must_not or plan.exclude_tags
+                or plan.max_price_per_person is not None):
+            # Tag exclusion and price are Python post-filters: fetch a wider
+            # window or the survivors may not fill `limit`.
             candidates = plan.limit * max(self._candidate_multiplier, 3)
         if self._hybrid_mode == "lexical":
             # Operator escape hatch: Postgres tsvector only, no Qdrant.

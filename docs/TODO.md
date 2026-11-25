@@ -25,6 +25,11 @@ refactor. Each item explains why it is deferred and what "done" looks like.
       "Done" means a benchmarked adapter behind the existing `SearchService`
       interface, not a rewrite of routers/services.
 
+- [ ] **Qdrant integration test in CI.** BM25 `TextQuery`, RRF fusion, filters
+      on prefetches and `must_not` are covered by `InMemoryStore` only. Add a
+      Qdrant service to CI (or a compose smoke job) so a Qdrant-side regression
+      in the `search_text` index or fusion path is caught before deploy.
+
 ## Booking holds
 
 - [ ] **`booking` intent still falls through to event search.** The `booking`
@@ -42,6 +47,12 @@ refactor. Each item explains why it is deferred and what "done" looks like.
       `assistant-service/app/services/hold_service.py`.
       "Done" means: authenticating the user, creating/expiring the hold in
       booking-service inside one transaction, and returning a real hold id.
+- [ ] **Hold ownership and party-count pagination.** Holds are keyed by a
+      client-supplied `session_id` and are not scoped to the JWT subject; the
+      gateway gate is the only check, so a reachable caller could reuse/confirm
+      another session's hold. `check_availability` also reads page 1 with
+      `size=500`, so zones/counts beyond it are invisible. Scope holds by the
+      authenticated subject and paginate/aggregate tickets when stage 3b lands.
 
 ## Security / configuration
 

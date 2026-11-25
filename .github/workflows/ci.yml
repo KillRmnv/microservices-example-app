@@ -141,6 +141,10 @@ jobs:
         run: pnpm exec tsc --noEmit
         working-directory: frontend
 
+      - name: Dialogue parser tests
+        run: pnpm test
+        working-directory: frontend
+
       - name: Production build (static export)
         run: pnpm build
         working-directory: frontend

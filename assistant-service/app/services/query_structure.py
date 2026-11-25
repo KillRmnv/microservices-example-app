@@ -28,6 +28,9 @@ MAX_USER_QUERY_CHARS = 500
 def _clean(query: str) -> str:
     """Flatten the user request into bounded, directive-free data."""
     text = _CONTROL_CHARS.sub(" ", str(query or ""))
+    # The wrapper is a trust boundary: a literal closing tag in the query
+    # must not be able to break out of it.
+    text = text.replace("<", " ").replace(">", " ")
     text = re.sub(r"\s+", " ", text).strip()
     return text[:MAX_USER_QUERY_CHARS]
 
