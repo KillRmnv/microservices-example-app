@@ -345,6 +345,31 @@ async def test_hybrid_search_venues():
     assert all(hit.origins == [HYBRID_ORIGIN] for hit in hits)
 
 
+@pytest.mark.asyncio
+async def test_venue_rubric_miss_retries_without_the_rubric():
+    """Live 2GIS has no "Бары" rubric; the text match must still answer."""
+    store = hybrid_store(
+        ("v1", [1.0, 0.0, 0.0],
+         {"name": "Бар «Культура»", "search_text": "бар коктейли",
+          "rubric": "Кафе", "city": "Минск"}, "бар коктейли"),
+    )
+    hits = await service(store, FakeCollector([])).venues(
+        SearchPlan(vector_query="бар", city="Минск", rubric="Бары", limit=3))
+    assert [hit.id for hit in hits] == ["v1"]
+
+
+@pytest.mark.asyncio
+async def test_venue_rubric_none_does_not_retry():
+    store = hybrid_store(
+        ("v1", [1.0, 0.0, 0.0],
+         {"name": "Бар «Культура»", "rubric": "Кафе", "city": "Минск"},
+         "бар коктейли"),
+    )
+    hits = await service(store, FakeCollector([])).venues(
+        SearchPlan(vector_query="бар", city="Минск", limit=3))
+    assert [hit.id for hit in hits] == ["v1"]
+
+
 class SlowEmbedder:
     dim = 3
 

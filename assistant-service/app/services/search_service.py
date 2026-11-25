@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import replace
 
 from ..clients.collector import CollectorClient
 from ..clients.embeddings import EmbeddingProvider
@@ -88,6 +89,19 @@ class SearchService:
         return await self._search(plan, pipeline, venues=False)
 
     async def venues(self, plan: SearchPlan) -> list[FusedHit]:
+        """Venue search; a rubric that matches nothing falls back to none.
+
+        Live 2GIS rubrics are sparse and intent rubrics ("Бары", "Рестораны")
+        often do not exist in the data, yet the dense+BM25 text match is still
+        good. One retry without the rubric filter, never a loop.
+        """
+        hits = await self._venue_search(plan)
+        if hits or not plan.rubric:
+            return hits
+        log.info("no venues for rubric %r, retrying without it", plan.rubric)
+        return await self._venue_search(replace(plan, rubric=None))
+
+    async def _venue_search(self, plan: SearchPlan) -> list[FusedHit]:
         pipeline = FilterPipeline()
         if plan.city:
             pipeline.add(CityFilter(plan.city))
