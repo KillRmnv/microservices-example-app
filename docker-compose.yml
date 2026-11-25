@@ -69,6 +69,7 @@ services:
 
   postgres:
     image: postgres:16
+    command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf"]
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
@@ -76,9 +77,36 @@ services:
       - "5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
       - ./init-postgres.sql:/docker-entrypoint-initdb.d/init-postgres.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    environment:
+      DATABASE_URLS: "postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/user_service,postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/booking_service,postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/collector_db,postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/assistant_db"
+      AUTH_TYPE: plain
+      POOL_MODE: transaction
+      LISTEN_PORT: 6432
+      MAX_CLIENT_CONN: 300
+      DEFAULT_POOL_SIZE: 20
+      MIN_POOL_SIZE: 2
+      RESERVE_POOL_SIZE: 5
+      RESERVE_POOL_TIMEOUT: 3
+      SERVER_IDLE_TIMEOUT: 60
+      SERVER_LIFETIME: 3600
+      QUERY_WAIT_TIMEOUT: 5
+      MAX_PREPARED_STATEMENTS: 100
+      IGNORE_STARTUP_PARAMETERS: extra_float_digits
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 6432 -U postgres"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -92,6 +120,8 @@ services:
       - ./user-service/.env
     depends_on:
       postgres:
+        condition: service_healthy
+      pgbouncer:
         condition: service_healthy
       kafka:
         condition: service_healthy
@@ -107,6 +137,8 @@ services:
       - ./booking-service/.env
     depends_on:
       postgres:
+        condition: service_healthy
+      pgbouncer:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -145,7 +177,7 @@ services:
       notification-service-go:
         condition: service_started
     ports:
-      - "${GATEWAY_PORT:-8080}:${GATEWAY_PORT:-8080}"
+      - "${GATEWAY_PORT:-8080}:8080"
 
   frontend:
     build:
@@ -167,12 +199,16 @@ services:
       - ./.env
       - ./collector-service/.env
     environment:
+      APP_ENV: ${APP_ENV:-local}
+      APP_VERSION: ${APP_VERSION:-dev}
       COLLECTOR_KAFKA_BOOTSTRAP_SERVERS: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
       COLLECTOR_BOOKING_CATALOG_ENABLED: "true"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
       postgres:
+        condition: service_healthy
+      pgbouncer:
         condition: service_healthy
       kafka:
         condition: service_healthy
@@ -189,6 +225,8 @@ services:
       - ./.env
       - ./assistant-service/.env
     environment:
+      APP_ENV: ${APP_ENV:-local}
+      APP_VERSION: ${APP_VERSION:-dev}
       ASSISTANT_LLM_STAGES: ${ASSISTANT_LLM_STAGES:-structure:openrouter,plan:openrouter}
       ASSISTANT_LLM_DISABLE_THINKING: "false"
       ASSISTANT_LLM_MAX_TOKENS: 2048
@@ -199,6 +237,8 @@ services:
       - "host.docker.internal:host-gateway"
     depends_on:
       postgres:
+        condition: service_healthy
+      pgbouncer:
         condition: service_healthy
       qdrant:
         condition: service_started
@@ -237,7 +277,7 @@ services:
   prometheus:
     image: prom/prometheus:latest
     ports:
-      - "9090:9090"
+      - "${PROMETHEUS_PORT:-9090}:9090"
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
       - prometheus_data:/prometheus

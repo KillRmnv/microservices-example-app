@@ -1,0 +1,91 @@
+@startuml
+title Ассистент: обработка запроса и построение плана
+
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+skinparam shadowing false
+
+actor "Пользователь" as USER
+participant "Frontend\n(Next.js)" as UI
+participant "API Gateway" as GW
+participant "Assistant Service" as AS
+participant "LLM\n(OpenRouter)" as LLM
+participant "Qdrant" as QD
+participant "Embeddings\n(llama-embed)" as EMB
+participant "Collector Service" as COL
+participant "Weather API" as WEA
+participant "Booking Service" as BOOK
+database "PostgreSQL\n(assistant_db)" as PG
+queue "Redis" as REDIS
+
+== Обычный диалог ==
+
+USER -> UI: вопрос о досуге
+UI -> GW: POST /assistant/query
+GW -> AS: текст запроса
+AS -> LLM: определить intent и фильтры
+LLM --> AS: контракт диалога
+
+alt не хватает обязательных параметров
+    AS --> UI: уточняющий вопрос
+    USER -> UI: ответ
+    UI -> GW: POST /assistant/query + контекст
+    GW -> AS: ответ пользователя
+    AS -> LLM: заполнить недостающие слоты
+    LLM --> AS: обновлённый контракт
+end
+
+UI -> GW: POST /assistant/dialogue/v2
+GW -> AS: контракт
+AS -> AS: нормализация, правила, выбор сценария
+
+alt параметров всё ещё не хватает
+    AS --> UI: уточнение
+else можно искать
+    AS -> EMB: эмбеддинг смыслового запроса
+    EMB --> AS: dense-вектор
+    AS -> QD: гибридный поиск (dense + sparse) с фильтрами
+    QD --> AS: события и места
+
+    opt Qdrant недоступен или пуст
+        AS -> COL: лексический поиск
+        COL --> AS: кандидаты
+    end
+
+    opt указана дата
+        AS -> REDIS: прогноз из кеша
+        alt прогноза нет
+            AS -> WEA: запрос прогноза
+            WEA --> AS: погода
+            AS -> REDIS: сохранить прогноз
+        end
+    end
+
+    opt событие связано с booking-service
+        AS -> BOOK: проверить наличие и цены
+        BOOK --> AS: наличие
+    end
+
+    AS -> PG: записать метрику диалога
+    AS --> UI: фильтры, погода и карточки результатов
+end
+
+== Сборка плана ==
+
+opt пользователь просит план
+    UI -> GW: POST /assistant/plan\n(контракт + история чата)
+    GW -> AS: контекст диалога
+    AS -> AS: найти кандидатов по всем темам чата
+    AS -> LLM: составить маршрут из реальных кандидатов
+    LLM --> AS: шаги плана
+    AS --> UI: план с временем и ссылками
+
+    opt пользователь подтверждает план
+        UI -> GW: POST /assistant/holds
+        GW -> AS: события плана
+        AS -> PG: создать брони PENDING (10 минут)
+        AS --> UI: номера броней
+    end
+end
+
+@enduml
