@@ -5,7 +5,7 @@ skinparam ranksep 110
 skinparam classAttributeIconSize 0
 skinparam packageStyle rectangle
 
-title assistant-service — dialogue, hybrid search, holds
+title assistant-service — dialogue, hybrid search (BM25), holds
 
 package "api (controllers + DTO)" as api {
   class DialogueRouter {
@@ -46,9 +46,12 @@ package "services (use cases)" as services {
     -EmbeddingProvider embedder
     -VectorStore store
     -CollectorClient collector
+    -str hybrid_mode
     +events(plan)
     +venues(plan)
-    -_finish(fused, rows, pipeline, limit)
+    +_search(plan, pipeline, venues)
+    -_lexical_fallback(plan, pipeline, candidates, venues)
+    -_finish_fallback(fused, pipeline, plan, venues)
   }
   class WeatherService {
     -OpenMeteoClient client
@@ -78,6 +81,7 @@ package "filters (specification pattern)" as filters {
   class RubricFilter
   class MaxPriceFilter
   class ExcludeCategoriesFilter
+  class ExcludeTagsFilter
   class FilterPipeline {
     +add(spec)
     +qdrant_must()
@@ -102,6 +106,7 @@ package "clients (external I/O)" as clients {
   class OpenAICompatProvider
   class MockProvider
   class FallbackProvider
+  class BreakerProvider
 }
 
 package "repositories" as repos {
@@ -142,6 +147,7 @@ Filter <|.. CategoryFilter
 Filter <|.. RubricFilter
 Filter <|.. MaxPriceFilter
 Filter <|.. ExcludeCategoriesFilter
+Filter <|.. ExcludeTagsFilter
 WeatherCache <|.. RedisWeatherCache
 WeatherCache <|.. NullWeatherCache
 VectorStore <|.. QdrantStore
@@ -160,11 +166,32 @@ note right of FilterPipeline
   no new branch in SearchService.
 end note
 
+note right of SearchService
+  Hybrid mode: bm25 (dense+sparse+BM25
+  prefetch over the `search_text` index,
+  compose default) | sparse | lexical.
+  BM25 failure → dense+sparse →
+  collector lexical fallback.
+end note
+
 note bottom of LlamaCppProvider
   Registry: provider_for(stage) reads
   ASSISTANT_LLM_STAGES; unknown names
   fail fast. FallbackProvider is
   appended when ASSISTANT_LLM_FALLBACK_ENABLED.
+  BreakerProvider opens after
+  ASSISTANT_LLM_BREAKER_FAILURES and
+  raises LLMUnavailable (HTTP 502) for
+  ASSISTANT_LLM_BREAKER_COOLDOWN_S.
 end note
 
+note bottom of HoldService
+  Gateway-secured: the frontend sends
+  Authorization: Bearer; anonymous clicks
+  get a login prompt. Boot sweep expires
+  stale PENDING rows; party > zone count
+  → 409 not_enough_seats.
+end note
+
+' This .puml is the source of truth; PNGs are generated artifacts.
 @enduml
