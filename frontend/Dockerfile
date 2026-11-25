@@ -16,6 +16,10 @@ RUN pnpm build
 
 FROM nginx:1.27-alpine
 
+# The stock http-level access_log would duplicate every request in the old
+# combined format (including query strings). Use only the JSON server log.
+RUN sed -i '/access_log/d' /etc/nginx/nginx.conf
+
 COPY ./frontend/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=builder /app/out /usr/share/nginx/html
 

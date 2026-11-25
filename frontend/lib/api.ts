@@ -121,8 +121,8 @@ export const api = {
   register: (email: string, password: string, username: string, role: Role | string = 'CUSTOMER') =>
     api.post('/users/auth/register', { email, password, username, role, isSystem: false }),
   forgetPassword: (email: string) =>
-    request<void>(`/users/auth/forget-password?email=${encodeURIComponent(email)}`, { method: 'POST' }),
-  validateResetToken: (token: string) => api.get<boolean>(`/users/auth/validate-reset-token?token=${encodeURIComponent(token)}`),
+    api.post<void>('/users/auth/forget-password', { email }),
+  validateResetToken: (token: string) => api.post<boolean>('/users/auth/validate-reset-token', { token }),
   resetPassword: (token: string, newPassword: string) =>
     api.post<void>('/users/auth/reset-password', { token, newPassword }),
 
