@@ -13,7 +13,7 @@ from ..clients.cache import WeatherCache, build_weather_cache
 from ..clients.collector import CollectorClient
 from ..clients.embeddings import LlamaServerEmbedding
 from ..clients.vector import QdrantStore
-from ..clients.llm.registry import provider_for
+from ..clients.llm.registry import BreakerProvider, provider_for
 from ..clients.weather import OpenMeteoClient
 from ..core.config import Settings, settings
 from ..services.dialogue_service import DialogueService
@@ -56,6 +56,14 @@ def _search_service(config: Settings, *, venues: bool) -> SearchService:
     )
 
 
+def _structure_provider(config: Settings, *, thinking: bool) -> BreakerProvider:
+    """Structure lane: fail fast when the model is down instead of stalling."""
+    return BreakerProvider(
+        provider_for("structure", config, thinking=thinking),
+        failure_threshold=config.llm_breaker_failures,
+        cooldown_s=config.llm_breaker_cooldown_s)
+
+
 def build_components(config: Settings | None = None) -> Components:
     config = config or settings
     booking = BookingClient(config.booking_base_url)
@@ -80,10 +88,9 @@ def build_components(config: Settings | None = None) -> Components:
         search_events=search_events,
         search_venues=search_venues,
         structure=QueryStructureService(
-            provider_for("structure", config, thinking=False), config,
+            _structure_provider(config, thinking=False), config,
             max_tokens=config.llm_structure_max_tokens,
-            reasoning_provider=provider_for("structure", config,
-                                            thinking=True)),
+            reasoning_provider=_structure_provider(config, thinking=True)),
         plan=PlanService(provider_for("plan", config), dialogue, config,
                          fallback_provider=provider_for("plan", config,
                                                         thinking=False)),

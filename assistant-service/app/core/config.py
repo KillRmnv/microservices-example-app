@@ -80,6 +80,11 @@ class Settings(BaseSettings):
     llm_max_tokens: int = 2048
     # Fast structure lane: no-think extraction, small budget, seconds.
     llm_structure_max_tokens: int = 512
+    # The structure stage must never stall a chat turn: cap every provider
+    # call, and stop hammering a dead model after a few failures.
+    llm_structure_timeout_s: float = 20.0
+    llm_breaker_failures: int = 3
+    llm_breaker_cooldown_s: float = 60.0
     # Plan stage: reasoning can eat the whole budget before the JSON answer.
     llm_plan_max_tokens: int = 3072
     # Complexity heuristic: reasoning kicks in on long/multi-constraint

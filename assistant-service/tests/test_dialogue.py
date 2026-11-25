@@ -166,6 +166,41 @@ async def test_search_plan_covers_the_whole_requested_day():
     assert plan.date_to.isoformat().startswith("2026-10-25T00:00:00")
 
 
+def test_search_plan_passes_negative_tags():
+    service = make_service(InMemoryStore(), FakeCollector([]))
+    contract = make_contract(
+        negative_filters={"exclude_categories": ["sport"],
+                          "exclude_tags": ["кальян"]})
+    plan = service._search_plan(contract)
+    assert plan.exclude_categories == ["sport"]
+    assert plan.exclude_tags == ["кальян"]
+
+
+@pytest.mark.asyncio
+async def test_search_turn_excludes_negative_tags():
+    store = InMemoryStore(
+        [
+            ("hookah", [1.0, 0.0, 0.0],
+             {"title": "Вечеринка с кальяном", "city": "Минск",
+              "price_min": 25.0, "category": "concert",
+              "search_text": "вечеринка кальян музыка",
+              "start_at": "2026-10-24T19:00:00+00:00"}),
+            ("jazz", [1.0, 0.0, 0.0],
+             {"title": "Джазовый вечер", "city": "Минск",
+              "price_min": 25.0, "category": "concert",
+              "search_text": "джазовый вечер",
+              "start_at": "2026-10-24T19:00:00+00:00"}),
+        ],
+        {"hookah": encode_sparse("вечеринка кальян"),
+         "jazz": encode_sparse("джазовый вечер")},
+    )
+    service = make_service(store, FakeCollector([]))
+    contract = make_contract(negative_filters={"exclude_tags": ["кальян"]})
+    response = await service.search_turn(contract)
+    ids = {card.event_id for card in response.messages[-1].results}
+    assert ids == {"jazz"}
+
+
 @pytest.mark.asyncio
 async def test_search_turn_budget_filters_expensive():
     contract = make_contract()
@@ -249,6 +284,45 @@ async def test_venue_intent_searches_places_without_asking_for_date():
     assert card.title == "Пивной бар «Кран»"
     assert card.detail_id == "11111111-1111-4111-8111-111111111111"
     assert "Бары" in card.meta
+
+
+def test_venue_plan_carries_negative_tags():
+    service = make_service(InMemoryStore(), FakeCollector([]))
+    contract = StateContract.model_validate({
+        "intent": "find_venue_bar",
+        "hard_filters": {},
+        "negative_filters": {"exclude_tags": ["кальян"]},
+    })
+    assert service._venue_plan(contract).exclude_tags == ["кальян"]
+
+
+@pytest.mark.asyncio
+async def test_venue_turn_excludes_negative_tags():
+    store = InMemoryStore(
+        [
+            ("hookah", [1.0, 0.0, 0.0],
+             {"name": "Кальян-бар «Дым»", "rubric": "Бары",
+              "address": "ул. Немига, 5", "city": "Минск",
+              "search_text": "бар кальян дым"}),
+            ("clean", [1.0, 0.0, 0.0],
+             {"name": "Пивной бар «Кран»", "rubric": "Бары",
+              "address": "ул. Октябрьская, 16", "city": "Минск",
+              "search_text": "пивной бар кран"}),
+        ],
+        {"hookah": encode_sparse("бар кальян"),
+         "clean": encode_sparse("пивной бар")},
+    )
+    service = make_service(store, FakeCollector([]))
+    contract = StateContract.model_validate({
+        "intent": "find_venue_bar",
+        "hard_filters": {"location": {"city": "Минск"}},
+        "semantic_payload": {"vector_query": "бар без кальяна"},
+        "negative_filters": {"exclude_tags": ["кальян"]},
+        "context_state": {"session_id": "v2"},
+    })
+    response = await service.search_turn(contract)
+    ids = {card.event_id for card in response.messages[-1].results}
+    assert ids == {"clean"}
 
 
 @pytest.mark.asyncio

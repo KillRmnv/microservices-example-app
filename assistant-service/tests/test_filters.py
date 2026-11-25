@@ -2,6 +2,8 @@ from app.filters import (
     CategoryFilter,
     CityFilter,
     DateRangeFilter,
+    ExcludeCategoriesFilter,
+    ExcludeTagsFilter,
     FilterPipeline,
     MaxPriceFilter,
 )
@@ -75,3 +77,44 @@ def test_date_range_filter_with_end_keeps_the_upper_bound():
                                  start_at="2026-10-31T18:00:00+00:00"))
     assert not spec.matches(make_hit("january",
                                      start_at="2027-01-24T18:00:00+00:00"))
+
+
+def test_exclude_categories_pushes_must_not_to_the_backend():
+    spec = ExcludeCategoriesFilter(["sport", "kids"])
+    assert spec.qdrant_must_not() == {"category": ["sport", "kids"]}
+    pipeline = FilterPipeline([spec])
+    assert pipeline.must_not() == {"category": ["sport", "kids"]}
+    # The post-filter is case-insensitive and still runs in Python.
+    assert not pipeline.matches(make_hit("s", category="Sport"))
+    assert pipeline.matches(make_hit("c", category="concert"))
+
+
+def test_exclude_tags_post_filters_free_text():
+    pipeline = FilterPipeline([ExcludeTagsFilter(["кальян"])])
+    assert not pipeline.matches(
+        make_hit("a", search_text="вечеринка с кальяном"))
+    assert not pipeline.matches(make_hit("b", title="Кальянная вечеринка"))
+    assert not pipeline.matches(make_hit("c", venue="Кальян-бар"))
+    assert pipeline.matches(make_hit("d", title="Джазовый вечер"))
+
+
+def test_exclude_tags_normalises_underscores():
+    pipeline = FilterPipeline([ExcludeTagsFilter(["loud_music"])])
+    assert not pipeline.matches(make_hit("a", description="Loud Music night"))
+    assert pipeline.matches(make_hit("b", description="тихий вечер"))
+
+
+def test_exclude_tags_matches_russian_inflections():
+    # "кальяна" is longer than the stem, so its prefix matches "кальян"...
+    assert not FilterPipeline([ExcludeTagsFilter(["кальяна"])]).matches(
+        make_hit("a", search_text="кальян и напитки"))
+    # ...and the short tag still matches the inflected haystack.
+    assert not FilterPipeline([ExcludeTagsFilter(["кальян"])]).matches(
+        make_hit("b", search_text="подача кальяна"))
+
+
+def test_exclude_tags_is_post_filter_only():
+    spec = ExcludeTagsFilter(["кальян"])
+    assert spec.qdrant_must() == {}
+    assert spec.qdrant_must_not() == {}
+    assert spec.lexical_params() == {}

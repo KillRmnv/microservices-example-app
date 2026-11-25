@@ -21,6 +21,12 @@ class FilterPipeline:
             merged.update(specification.qdrant_must())
         return merged
 
+    def must_not(self) -> dict[str, Any]:
+        merged: dict[str, Any] = {}
+        for specification in self._filters:
+            merged.update(specification.qdrant_must_not())
+        return merged
+
     def lexical_params(self) -> dict[str, Any]:
         merged: dict[str, Any] = {}
         for specification in self._filters:

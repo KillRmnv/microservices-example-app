@@ -5,6 +5,7 @@ from .specs import (
     CityFilter,
     DateRangeFilter,
     ExcludeCategoriesFilter,
+    ExcludeTagsFilter,
     MaxPriceFilter,
     RubricFilter,
 )
@@ -14,6 +15,7 @@ __all__ = [
     "CityFilter",
     "DateRangeFilter",
     "ExcludeCategoriesFilter",
+    "ExcludeTagsFilter",
     "Filter",
     "FilterPipeline",
     "MaxPriceFilter",

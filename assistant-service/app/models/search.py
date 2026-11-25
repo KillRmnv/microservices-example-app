@@ -32,6 +32,7 @@ class SearchPlan:
     rubric: str | None = None
     max_price_per_person: float | None = None
     exclude_categories: list[str] = field(default_factory=list)
+    exclude_tags: list[str] = field(default_factory=list)
     date_from: datetime | None = None
     date_to: datetime | None = None
     # Long theme expansions are noisy in sparse search; use dense+threshold.

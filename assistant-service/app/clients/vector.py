@@ -28,9 +28,27 @@ class VectorStore(ABC):
     @abstractmethod
     async def hybrid_search(self, dense: list[float] | None,
                             sparse: SparseVector | None, limit: int,
-                            must: dict | None = None) -> list[ScoredHit]:
+                            must: dict | None = None,
+                            must_not: dict | None = None) -> list[ScoredHit]:
         """Fused dense+sparse search. Either side may be None (degraded)."""
         raise NotImplementedError
+
+
+def _qdrant_conditions(models, spec: dict | None) -> list:
+    """Payload dict -> Qdrant field conditions (dates as ranges)."""
+    conditions = []
+    for key, value in (spec or {}).items():
+        if isinstance(value, PayloadDateRange):
+            conditions.append(models.FieldCondition(
+                key=key,
+                range=models.DatetimeRange(gte=value.gte, lt=value.lt)))
+        elif isinstance(value, (list, tuple, set)):
+            conditions.append(models.FieldCondition(
+                key=key, match=models.MatchAny(any=list(value))))
+        else:
+            conditions.append(models.FieldCondition(
+                key=key, match=models.MatchValue(value=value)))
+    return conditions
 
 
 class QdrantStore(VectorStore):
@@ -44,25 +62,18 @@ class QdrantStore(VectorStore):
 
     async def hybrid_search(self, dense: list[float] | None,
                             sparse: SparseVector | None, limit: int,
-                            must: dict | None = None) -> list[ScoredHit]:
+                            must: dict | None = None,
+                            must_not: dict | None = None) -> list[ScoredHit]:
         if dense is None and sparse is None:
             return []
         models = self._models
+        must_conditions = _qdrant_conditions(models, must)
+        must_not_conditions = _qdrant_conditions(models, must_not)
         query_filter = None
-        if must:
-            conditions = []
-            for key, value in must.items():
-                if isinstance(value, PayloadDateRange):
-                    conditions.append(models.FieldCondition(
-                        key=key,
-                        range=models.DatetimeRange(gte=value.gte, lt=value.lt)))
-                elif isinstance(value, (list, tuple, set)):
-                    conditions.append(models.FieldCondition(
-                        key=key, match=models.MatchAny(any=list(value))))
-                else:
-                    conditions.append(models.FieldCondition(
-                        key=key, match=models.MatchValue(value=value)))
-            query_filter = models.Filter(must=conditions)
+        if must_conditions or must_not_conditions:
+            query_filter = models.Filter(
+                must=must_conditions or None,
+                must_not=must_not_conditions or None)
         if dense is not None and sparse is not None:
             hits = await self._client.query_points(
                 self._collection,
@@ -105,9 +116,11 @@ class InMemoryStore(VectorStore):
 
     async def hybrid_search(self, dense: list[float] | None,
                             sparse: SparseVector | None, limit: int,
-                            must: dict | None = None) -> list[ScoredHit]:
+                            must: dict | None = None,
+                            must_not: dict | None = None) -> list[ScoredHit]:
         filtered = [(pid, vec, payload) for pid, vec, payload in self._points
-                    if not must or _matches_must(payload, must)]
+                    if (not must or _matches_must(payload, must))
+                    and (not must_not or not _matches_any(payload, must_not))]
         rankings: list[list[str]] = []
         if dense is not None:
             scored = sorted(filtered,
@@ -131,6 +144,14 @@ class InMemoryStore(VectorStore):
                 for pid, score in fused[:limit]]
 
 
+def _field_matches(value, expected) -> bool:
+    if isinstance(expected, PayloadDateRange):
+        return _in_range(value, expected)
+    if isinstance(expected, (list, tuple, set)):
+        return value in expected
+    return value == expected
+
+
 def _matches_must(payload: dict, must: dict) -> bool:
     for key, expected in must.items():
         value = payload.get(key)
@@ -138,15 +159,17 @@ def _matches_must(payload: dict, must: dict) -> bool:
             # Older points were embedded without end_at; a single-day event
             # ends when it starts.
             value = payload.get("start_at")
-        if isinstance(expected, PayloadDateRange):
-            if not _in_range(value, expected):
-                return False
-        elif isinstance(expected, (list, tuple, set)):
-            if value not in expected:
-                return False
-        elif value != expected:
+        if not _field_matches(value, expected):
             return False
     return True
+
+
+def _matches_any(payload: dict, must_not: dict) -> bool:
+    """True when any negative condition matches (Qdrant `must_not` is OR)."""
+    for key, expected in must_not.items():
+        if _field_matches(payload.get(key), expected):
+            return True
+    return False
 
 
 def _in_range(value, window: PayloadDateRange) -> bool:

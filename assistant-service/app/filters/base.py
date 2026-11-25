@@ -16,6 +16,9 @@ class Filter(ABC):
     def qdrant_must(self) -> dict[str, Any]:
         return {}
 
+    def qdrant_must_not(self) -> dict[str, Any]:
+        return {}
+
     def lexical_params(self) -> dict[str, Any]:
         return {}
 

@@ -6,6 +6,10 @@ from abc import ABC, abstractmethod
 import httpx
 
 
+class LLMUnavailable(RuntimeError):
+    """The model could not answer (timeout, transport error, open breaker)."""
+
+
 class LLMProvider(ABC):
     name: str
 

@@ -125,7 +125,8 @@ async def test_hybrid_survives_dense_outage_via_sparse():
 @pytest.mark.asyncio
 async def test_hybrid_falls_back_to_lexical():
     class BrokenStore(InMemoryStore):
-        async def hybrid_search(self, dense, sparse, limit, must=None):
+        async def hybrid_search(self, dense, sparse, limit, must=None,
+                                must_not=None):
             raise RuntimeError("qdrant down")
 
     collector = FakeCollector([{"id": "e9", "title": "Только лексика"}])
@@ -184,6 +185,60 @@ async def test_exclude_categories_filter():
     hits = await service(store, ExplodingCollector()).events(
         SearchPlan(vector_query="шоу", limit=5, exclude_categories=["sport"]))
     assert [hit.id for hit in hits] == ["a"]
+
+
+@pytest.mark.asyncio
+async def test_exclude_tags_drops_hits_by_search_text():
+    store = hybrid_store(
+        ("hookah", [1.0, 0.0, 0.0],
+         {"title": "Вечеринка", "search_text": "вечеринка кальян музыка"},
+         "вечеринка"),
+        ("jazz", [1.0, 0.0, 0.0],
+         {"title": "Джазовый вечер", "search_text": "джазовый вечер"},
+         "джазовый вечер"),
+    )
+    hits = await service(store, ExplodingCollector()).events(
+        SearchPlan(vector_query="вечер", limit=5, exclude_tags=["кальян"]))
+    assert [hit.id for hit in hits] == ["jazz"]
+
+
+class RecordingStore(InMemoryStore):
+    """Captures the backend call; returns nothing so the fallback runs."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.calls: list[dict] = []
+
+    async def hybrid_search(self, dense, sparse, limit, must=None,
+                            must_not=None):
+        self.calls.append({"limit": limit, "must": must,
+                           "must_not": must_not})
+        return []
+
+
+@pytest.mark.asyncio
+async def test_must_not_and_overfetch_reach_the_store():
+    store = RecordingStore()
+    collector = FakeCollector([{"id": "e9", "title": "Только лексика"}])
+    hits = await service(store, collector).events(
+        SearchPlan(vector_query="шоу", limit=4, exclude_categories=["sport"],
+                   exclude_tags=["кальян"]))
+    call = store.calls[0]
+    assert call["must_not"] == {"category": ["sport"]}
+    # Negative filters widen the window so post-filtering cannot starve it.
+    assert call["limit"] == 12
+    # The lexical fallback still applies the Python post-filters.
+    assert [hit.id for hit in hits] == ["e9"]
+
+
+@pytest.mark.asyncio
+async def test_no_negative_filters_keeps_the_normal_window():
+    store = RecordingStore()
+    await service(store, FakeCollector([])).events(
+        SearchPlan(vector_query="шоу", limit=4))
+    call = store.calls[0]
+    assert call["must_not"] is None
+    assert call["limit"] == 8
 
 
 @pytest.mark.asyncio
@@ -315,3 +370,22 @@ async def test_empty_vector_index_falls_back_to_lexical():
         SearchPlan(vector_query="x", limit=3))
     assert [hit.id for hit in hits] == ["e9"]
     assert hits[0].origins == ["lexical"]
+
+
+@pytest.mark.asyncio
+async def test_date_filter_respects_evening_time_window():
+    from datetime import datetime, timezone
+
+    store = hybrid_store(
+        ("morning", [1.0, 0.0, 0.0],
+         {"title": "Утренний концерт",
+          "start_at": "2026-11-27T10:00:00+00:00"}, "концерт"),
+        ("evening", [1.0, 0.0, 0.0],
+         {"title": "Вечерний концерт",
+          "start_at": "2026-11-27T19:00:00+00:00"}, "концерт"),
+    )
+    hits = await service(store, ExplodingCollector()).events(SearchPlan(
+        vector_query="концерт", limit=5,
+        date_from=datetime(2026, 11, 27, 18, 0, tzinfo=timezone.utc),
+        date_to=datetime(2026, 11, 27, 23, 59, tzinfo=timezone.utc)))
+    assert [hit.id for hit in hits] == ["evening"]

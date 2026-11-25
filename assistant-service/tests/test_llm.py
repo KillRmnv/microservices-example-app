@@ -1,6 +1,7 @@
 import httpx
 import pytest
 
+from app.api import deps
 from app.clients.llm import (
     FallbackProvider,
     LlamaCppProvider,
@@ -9,6 +10,8 @@ from app.clients.llm import (
     OpenRouterProvider,
     provider_for,
 )
+from app.clients.llm.base import LLMUnavailable
+from app.clients.llm.registry import BreakerProvider
 from app.core.config import Settings
 
 
@@ -162,3 +165,100 @@ async def test_mock_provider_returns_valid_fragment():
                                                   json_mode=True))
     assert fragment["dialogue_action"] == "ask_clarification"
     StateContract.model_validate(fragment)
+
+
+class CountingProvider:
+    """Test double that counts calls and can fail on demand."""
+
+    name = "counting"
+
+    def __init__(self, fail: bool = False):
+        self.fail = fail
+        self.calls = 0
+
+    async def complete(self, *, system, user, json_mode=False, max_tokens=512):
+        self.calls += 1
+        if self.fail:
+            raise RuntimeError("backend down")
+        return "ok"
+
+
+class FakeClock:
+    def __init__(self) -> None:
+        self.now = 0.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+@pytest.mark.asyncio
+async def test_breaker_opens_after_threshold_and_stops_calling_inner():
+    clock = FakeClock()
+    inner = CountingProvider(fail=True)
+    breaker = BreakerProvider(inner, failure_threshold=3, cooldown_s=60.0,
+                              clock=clock)
+    assert breaker.name == "breaker(counting)"
+
+    for _ in range(3):
+        with pytest.raises(RuntimeError):
+            await breaker.complete(system="s", user="u")
+    assert inner.calls == 3
+    assert breaker.open is True
+
+    with pytest.raises(LLMUnavailable, match="circuit open"):
+        await breaker.complete(system="s", user="u")
+    assert inner.calls == 3  # short-circuited, no network call
+
+
+@pytest.mark.asyncio
+async def test_breaker_closes_after_cooldown():
+    clock = FakeClock()
+    inner = CountingProvider(fail=True)
+    breaker = BreakerProvider(inner, failure_threshold=2, cooldown_s=10.0,
+                              clock=clock)
+    for _ in range(2):
+        with pytest.raises(RuntimeError):
+            await breaker.complete(system="s", user="u")
+
+    clock.now = 9.9
+    with pytest.raises(LLMUnavailable):
+        await breaker.complete(system="s", user="u")
+    assert inner.calls == 2
+
+    clock.now = 10.0
+    inner.fail = False
+    assert await breaker.complete(system="s", user="u") == "ok"
+    assert inner.calls == 3
+    assert breaker.open is False
+
+
+@pytest.mark.asyncio
+async def test_breaker_success_resets_failure_count():
+    clock = FakeClock()
+    inner = CountingProvider(fail=True)
+    breaker = BreakerProvider(inner, failure_threshold=3, cooldown_s=60.0,
+                              clock=clock)
+
+    for _ in range(2):
+        with pytest.raises(RuntimeError):
+            await breaker.complete(system="s", user="u")
+    inner.fail = False
+    assert await breaker.complete(system="s", user="u") == "ok"
+
+    inner.fail = True
+    for _ in range(2):  # two fresh failures are below the threshold
+        with pytest.raises(RuntimeError):
+            await breaker.complete(system="s", user="u")
+    assert breaker.open is False
+
+
+def test_deps_wraps_only_structure_stage_in_breaker():
+    settings = Settings(llm_stages="structure:mock,plan:mock")
+    fast = deps._structure_provider(settings, thinking=False)
+    assert isinstance(fast, BreakerProvider)
+    assert isinstance(fast._inner, MockProvider)
+    assert fast.name == "breaker(mock)"
+    assert isinstance(deps._structure_provider(settings, thinking=True),
+                      BreakerProvider)
+    # The plan stage keeps its own retry/fallback chain, unwrapped.
+    assert not isinstance(provider_for("plan", settings), BreakerProvider)

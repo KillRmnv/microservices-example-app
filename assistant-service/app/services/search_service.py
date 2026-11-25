@@ -18,6 +18,7 @@ from ..filters import (
     CityFilter,
     DateRangeFilter,
     ExcludeCategoriesFilter,
+    ExcludeTagsFilter,
     FilterPipeline,
     MaxPriceFilter,
     RubricFilter,
@@ -65,6 +66,8 @@ class SearchService:
             pipeline.add(CategoryFilter(plan.categories))
         if plan.exclude_categories:
             pipeline.add(ExcludeCategoriesFilter(plan.exclude_categories))
+        if plan.exclude_tags:
+            pipeline.add(ExcludeTagsFilter(plan.exclude_tags))
         if plan.date_from is not None:
             pipeline.add(DateRangeFilter(plan.date_from, plan.date_to))
         return await self._search(plan, pipeline, venues=False)
@@ -75,12 +78,19 @@ class SearchService:
             pipeline.add(CityFilter(plan.city))
         if plan.rubric:
             pipeline.add(RubricFilter(plan.rubric))
+        if plan.exclude_tags:
+            pipeline.add(ExcludeTagsFilter(plan.exclude_tags))
         return await self._search(plan, pipeline, venues=True)
 
     async def _search(self, plan: SearchPlan, pipeline: FilterPipeline,
                       *, venues: bool) -> list[FusedHit]:
         candidates = plan.limit * self._candidate_multiplier
         must = pipeline.qdrant_must()
+        must_not = pipeline.must_not()
+        if must_not or plan.exclude_tags:
+            # Tag exclusion is a Python post-filter over free text: fetch a
+            # wider window or the survivors may not fill `limit`.
+            candidates = plan.limit * max(self._candidate_multiplier, 3)
         dense, sparse = await self._encode_query(plan.vector_query)
         if plan.dense_only:
             sparse = None
@@ -88,7 +98,8 @@ class SearchService:
             if dense is None and sparse is None:
                 raise ValueError("empty query")
             hits = await self._store.hybrid_search(dense, sparse, candidates,
-                                                   must or None)
+                                                   must or None,
+                                                   must_not or None)
             fused = [FusedHit(id=hit.id, score=hit.score, origins=[HYBRID_ORIGIN],
                               payload=dict(hit.payload)) for hit in hits]
         except Exception as exc:  # noqa: BLE001 — lexical fallback

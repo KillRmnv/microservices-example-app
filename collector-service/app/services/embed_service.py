@@ -52,6 +52,9 @@ def _event_payload(row) -> dict:
         "price_max": float(row["price_max"]) if row["price_max"] is not None else None,
         "booking_event_id": (int(row["booking_event_id"])
                              if row["booking_event_id"] is not None else None),
+        # Same string as the dense embedding, so BM25 and dense rank the
+        # same text (title + venue + description, no category/rubric leaks).
+        "search_text": _event_text(row),
     }
 
 
@@ -62,6 +65,7 @@ def _venue_payload(row) -> dict:
         "city": row["city"],
         "rubric": row["rubric"] or "",
         "address": row["address"] or "",
+        "search_text": _venue_text(row),
     }
 
 

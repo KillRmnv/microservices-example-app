@@ -186,6 +186,7 @@ class DialogueService:
             city=(None if hard.location.any
                   else hard.location.city or self._settings.default_city),
             rubric=rubric,
+            exclude_tags=list(contract.negative_filters.exclude_tags),
             dense_only=True,
         )
 
@@ -238,6 +239,7 @@ class DialogueService:
                 budget.max_price_per_person
                 if budget and not budget.any else None),
             exclude_categories=list(contract.negative_filters.exclude_categories),
+            exclude_tags=list(contract.negative_filters.exclude_tags),
             date_from=date_from,
             date_to=date_to,
             dense_only=bool(hard.themes),
