@@ -11,11 +11,18 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 )
 
 const problemBase = "https://dosug.example/problems"
+
+var (
+	emailRE    = regexp.MustCompile(`(?i)([A-Za-z0-9._%+\-]+)@([A-Za-z0-9.\-]+\.[A-Za-z]{2,})`)
+	bearerRE   = regexp.MustCompile(`(?i)(bearer\s+)[A-Za-z0-9._~+/=-]+`)
+	secretKVRE = regexp.MustCompile(`(?i)((?:password|passwd|pwd|secret|token|api[_-]?key|authorization|reset[_-]?token)\s*[=:]\s*)[^\s,;&"']+`)
+)
 
 // Setup configures the default slog logger: JSON lines with the service name.
 // LOG_LEVEL overrides the level (default INFO), LOG_FORMAT=text selects text.
@@ -29,12 +36,50 @@ func Setup(service string) {
 	case "ERROR":
 		level = slog.LevelError
 	}
-	base := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level}))
+	base := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level:       level,
+		ReplaceAttr: replaceAttr,
+	}))
 	slog.SetDefault(base.With("service", service))
 	if strings.ToLower(os.Getenv("LOG_FORMAT")) == "text" {
 		slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout,
-			&slog.HandlerOptions{Level: level})).With("service", service))
+			&slog.HandlerOptions{Level: level, ReplaceAttr: replaceAttr})).With("service", service))
 	}
+}
+
+// RedactText masks emails and inline credentials in free-form log values.
+func RedactText(value string) string {
+	cleaned := bearerRE.ReplaceAllString(value, "${1}***")
+	cleaned = secretKVRE.ReplaceAllString(cleaned, "${1}***")
+	return emailRE.ReplaceAllStringFunc(cleaned, MaskEmail)
+}
+
+func maskName(value string) string {
+	if value == "" {
+		return value
+	}
+	return value[:1] + "***"
+}
+
+func replaceAttr(_ []string, a slog.Attr) slog.Attr {
+	switch a.Key {
+	case slog.TimeKey:
+		return slog.Time("timestamp", a.Value.Time())
+	case slog.MessageKey:
+		return slog.String("message", RedactText(a.Value.String()))
+	case slog.LevelKey:
+		return slog.String("level", strings.ToLower(a.Value.String()))
+	}
+	if a.Value.Kind() != slog.KindString {
+		return a
+	}
+	switch strings.ToLower(a.Key) {
+	case "email":
+		return slog.String(a.Key, MaskEmail(a.Value.String()))
+	case "username", "user_name":
+		return slog.String(a.Key, maskName(a.Value.String()))
+	}
+	return slog.String(a.Key, RedactText(a.Value.String()))
 }
 
 type ctxKey struct{}

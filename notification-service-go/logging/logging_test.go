@@ -2,10 +2,12 @@ package logging
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestMaskEmail(t *testing.T) {
@@ -76,5 +78,33 @@ func TestRedactsNothingSensitiveByAccident(t *testing.T) {
 	// Instance is the path only — net/http strips the query already.
 	if strings.Contains(body.Instance, "SECRET") {
 		t.Fatalf("instance leaks query: %q", body.Instance)
+	}
+}
+
+func TestRedactText(t *testing.T) {
+	got := RedactText("mail user@example.com password=hunter2 Authorization: Bearer abc.def")
+	for _, leak := range []string{"user@example.com", "hunter2", "abc.def"} {
+		if strings.Contains(got, leak) {
+			t.Fatalf("leaked %q in %q", leak, got)
+		}
+	}
+	if !strings.Contains(got, "u***@example.com") {
+		t.Fatalf("email mask missing: %q", got)
+	}
+}
+
+func TestReplaceAttrNormalizesMachineFields(t *testing.T) {
+	ts := time.Date(2026, 11, 25, 12, 0, 0, 0, time.UTC)
+	got := replaceAttr(nil, slog.Time(slog.TimeKey, ts))
+	if got.Key != "timestamp" || !got.Value.Time().Equal(ts) {
+		t.Fatalf("time attr %+v", got)
+	}
+	got = replaceAttr(nil, slog.String(slog.MessageKey, "mail a@b.com"))
+	if got.Key != "message" || strings.Contains(got.Value.String(), "a@b.com") {
+		t.Fatalf("message attr %+v", got)
+	}
+	got = replaceAttr(nil, slog.String(slog.LevelKey, "INFO"))
+	if got.Value.String() != "info" {
+		t.Fatalf("level attr %+v", got)
 	}
 }
