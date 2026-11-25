@@ -21,6 +21,11 @@ class ValidationError(DomainError):
     code = "validation_error"
 
 
+class ConflictError(DomainError):
+    status_code = 409
+    code = "conflict"
+
+
 class UpstreamError(DomainError):
     status_code = 502
     code = "upstream_error"

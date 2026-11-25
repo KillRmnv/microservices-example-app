@@ -5,8 +5,8 @@ import logging
 import time
 
 from ..core import db
-from ..errors import UnknownSource, UpstreamError
-from ..http import PoliteClient
+from ..errors import DomainError, UnknownSource, UpstreamError
+from ..clients.http import PoliteClient
 from ..repositories import queries, runs
 from ..sources.afisha_me import AfishaMeAdapter
 from ..sources.base import CollectContext, RunStats, SourceAdapter
@@ -64,6 +64,11 @@ class CollectService:
             stats = await adapter.collect(
                 CollectContext(http=self._http, db_url=self._db_url,
                                max_urls=limit))
+        except DomainError as exc:
+            self.record_run(source, "error", stats, str(exc),
+                            time.monotonic() - started,
+                            error_code=exc.code)
+            raise
         except Exception as exc:  # noqa: BLE001 — recorded, then surfaced
             self.record_run(source, "error", stats, str(exc),
                             time.monotonic() - started)

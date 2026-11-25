@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from app.parse import clean_text, extract_json_ld_events, extract_microdata_event
+from app.parsing.html import clean_text, extract_json_ld_events, extract_microdata_event
 
 FIXTURES = Path(__file__).parent / "fixtures"
 

@@ -3,7 +3,7 @@ import asyncio
 import httpx
 import pytest
 
-from app.http import PoliteClient
+from app.clients.http import PoliteClient
 
 
 def make_client(**kwargs) -> PoliteClient:

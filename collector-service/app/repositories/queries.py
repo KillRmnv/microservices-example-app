@@ -25,6 +25,9 @@ _NORM = "regexp_replace(lower({}), '[^a-zа-я0-9]+', '', 'g')"
 _EVENT_NORM = _NORM.format("coalesce(e.venue_name, '')")
 _VENUE_NORM = _NORM.format("coalesce(v.name, '')")
 
+_VENUE_JOIN = "LEFT JOIN collected_venues v ON v.id = e.venue_id"
+# Single-row detail lookup keeps the legacy name fallback: one LATERAL loop
+# is cheap, while list/search queries use the direct venue_id join.
 _VENUE_LATERAL = f"""
     LEFT JOIN LATERAL (
         SELECT v.id, v.latitude, v.longitude, v.name
@@ -84,7 +87,7 @@ def list_events(conn, *, city=None, category=None, source=None,
     rows = conn.execute(
         f"""SELECT {CARD_COLUMNS}
             FROM collected_events e
-            {_VENUE_LATERAL}
+            {_VENUE_JOIN}
             {where}
             ORDER BY {order}
             LIMIT %s OFFSET %s""",
@@ -112,7 +115,7 @@ def search_events(conn, q: str, city: str | None, category: str | None,
                    ts_rank_cd(e.search_vector,
                               plainto_tsquery('russian', %s)) AS rank
             FROM collected_events e
-            {_VENUE_LATERAL}
+            {_VENUE_JOIN}
             WHERE e.search_vector @@ plainto_tsquery('russian', %s)
             AND (%s::TEXT IS NULL OR e.city = %s)
             AND (%s::TEXT[] IS NULL OR e.category = ANY(%s::TEXT[]))
@@ -160,10 +163,27 @@ def venue_events(conn, venue_id: str, limit: int = 20) -> list[dict]:
     rows = conn.execute(
         f"""SELECT {CARD_COLUMNS}
             FROM collected_events e
-            {_VENUE_LATERAL}
-            WHERE v.id = %s
+            {_VENUE_JOIN}
+            WHERE e.venue_id = %s
             ORDER BY e.start_at NULLS LAST, e.title
             LIMIT %s""", (venue_id, limit)).fetchall()
+    if rows:
+        return [dict(row) for row in rows]
+    # Legacy rows collected before venue linking: fall back to a name match.
+    # pg_trgm index on venue_name keeps this from scanning the whole table.
+    venue = conn.execute(
+        "SELECT name FROM collected_venues WHERE id = %s",
+        (venue_id,)).fetchone()
+    if venue is None or not venue["name"]:
+        return []
+    rows = conn.execute(
+        f"""SELECT {CARD_COLUMNS}
+            FROM collected_events e
+            {_VENUE_JOIN}
+            WHERE e.venue_id IS NULL
+              AND e.venue_name ILIKE %s
+            ORDER BY e.start_at NULLS LAST, e.title
+            LIMIT %s""", (f"%{venue['name']}%", limit)).fetchall()
     return [dict(row) for row in rows]
 
 
@@ -238,11 +258,11 @@ def all_venues_for_reindex(conn) -> list:
 def link_event_venues(conn) -> int:
     """Backfill summary.venue_id for events whose venue name contains a 2GIS name."""
     cur = conn.execute(
-        f"""WITH ev AS (
+        f"""WITH ev AS MATERIALIZED (
                 SELECT e.id, e.city, {_EVENT_NORM} AS n
                 FROM collected_events e
                 WHERE e.venue_id IS NULL AND e.venue_name IS NOT NULL
-            ), v AS (
+            ), v AS MATERIALIZED (
                 SELECT v.id, v.city, {_VENUE_NORM} AS n
                 FROM collected_venues v
             ), best AS (

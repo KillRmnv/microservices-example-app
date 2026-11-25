@@ -2,7 +2,7 @@
 ``/{source}`` catch-all, otherwise ``/collect/health`` is parsed as a source."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 
 from ..deps import get_collect_service, get_ops_service
 from ..schemas import (
@@ -11,6 +11,7 @@ from ..schemas import (
     ProbeRequest,
     ProbeResponse,
 )
+from ...scheduler import cleanup_job
 from ...services.collect_service import CollectService
 from ...services.ops_service import OpsService
 
@@ -40,6 +41,11 @@ async def alert_check(
     service: OpsService = Depends(get_ops_service),
 ) -> dict:
     return await service.alert_check()
+
+
+@router.post("/collect/cleanup")
+async def cleanup_expired(request: Request) -> dict:
+    return await cleanup_job(request.app)
 
 
 @router.post("/collect/{source}", response_model=CollectResponse)

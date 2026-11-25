@@ -11,15 +11,16 @@ from .clients.kafka import BookingCatalogConsumer
 from .core import db
 from .core.config import settings
 from .core.logging import RequestIdMiddleware, setup_logging
-from .embeddings import LlamaServerEmbedding
+from .clients.embeddings import LlamaServerEmbedding
 from .errors.handlers import register_exception_handlers
-from .http import PoliteClient
+from .clients.http import PoliteClient
 from .repositories import queries
 from .scheduler import start_scheduler, stop_scheduler
+from .services.catalog_service import CatalogService
 from .services.collect_service import CollectService
 from .services.embed_service import EmbedService
 from .services.ops_service import OpsService
-from .vector import QdrantStore
+from .clients.vector import QdrantStore
 
 log = logging.getLogger(__name__)
 
@@ -27,7 +28,7 @@ log = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     db_url = settings.require_database_url()
-    applied = db.run_migrations(db_url)
+    applied = db.run_migrations(settings.require_migration_database_url())
     if applied:
         log.info("applied migrations: %s", applied)
     with db.get_conn(db_url) as conn:
@@ -49,7 +50,9 @@ async def lifespan(app: FastAPI):
                                 settings.qdrant_collection_venues)
     await vector_venues.ensure(settings.qdrant_vector_size)
     app.state.db_url = db_url
+    app.state.lock_db_url = settings.require_lock_database_url()
     app.state.http = http
+    app.state.catalog = CatalogService(db_url)
     app.state.collect = CollectService(http, db_url)
     app.state.embed = EmbedService(db_url, embedder, vector, vector_venues,
                                    settings)
@@ -63,6 +66,7 @@ async def lifespan(app: FastAPI):
         stop_scheduler(app)
         await catalog_consumer.stop()
         await http.aclose()
+        db.close_pools()
 
 
 def create_app() -> FastAPI:

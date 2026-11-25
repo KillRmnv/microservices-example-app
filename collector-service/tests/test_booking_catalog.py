@@ -8,7 +8,7 @@ from app.clients.kafka import BookingCatalogConsumer
 from app.core.config import Settings
 from app.models.catalog import CatalogEvent
 from app.repositories import store
-from app.vector import MemoryStore, VectorPoint
+from app.clients.vector import MemoryStore, VectorPoint
 
 from conftest import pg_url
 

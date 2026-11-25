@@ -3,7 +3,7 @@
 The expected indices below pin the exact encoding. The identical test lives
 in collector-service: both copies must produce byte-identical vectors.
 """
-from app.sparse import (
+from app.core.sparse import (
     SPEC_VERSION,
     VOCAB_MOD,
     SparseVector,

@@ -9,6 +9,10 @@ class Settings(BaseSettings):
     port: int = 8085
 
     database_url: str = ""
+    # Direct Postgres URLs for session-scoped work: PgBouncer transaction mode
+    # must not carry advisory locks or multi-statement migrations.
+    migration_database_url: str = ""
+    lock_database_url: str = ""
 
     # Domain defaults (also used by normalization when a source omits them).
     default_city: str = "Минск"
@@ -42,6 +46,13 @@ class Settings(BaseSettings):
     scheduler_enabled: bool = True
     schedules: str = ("ticketpro:21600,relax:86400,afisha_me:86400,"
                       "telegram:1200")
+    # Retention: hard-delete past events and undated stale posts, plus their
+    # Qdrant points. Booking rows are owned by Kafka and never purged here.
+    cleanup_enabled: bool = True
+    cleanup_interval_s: int = 86400
+    event_retention_days: int = 30
+    stale_event_days: int = 45
+    cleanup_batch: int = 500
 
     # Booking catalog stream (Kafka). Empty bootstrap disables the consumer.
     booking_catalog_enabled: bool = False
@@ -95,6 +106,12 @@ class Settings(BaseSettings):
             raise RuntimeError(
                 "COLLECTOR_DATABASE_URL is not set; refusing to start without a database")
         return self.database_url
+
+    def require_migration_database_url(self) -> str:
+        return self.migration_database_url.strip() or self.require_database_url()
+
+    def require_lock_database_url(self) -> str:
+        return self.lock_database_url.strip() or self.require_database_url()
 
     def min_interval_for(self, source: str) -> float:
         for chunk in self.source_intervals.split(","):

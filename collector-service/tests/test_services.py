@@ -6,11 +6,11 @@ import pytest
 
 from app.core.config import Settings
 from app.errors import UnknownSource, UpstreamError
-from app.http import PoliteClient
+from app.clients.http import PoliteClient
 from app.services.collect_service import CollectService
 from app.services.embed_service import EmbedService
 from app.services.ops_service import OpsService
-from app.vector import MemoryStore
+from app.clients.vector import MemoryStore
 from conftest import pg_url
 
 
@@ -110,7 +110,7 @@ def test_embed_events_stores_sparse_and_price_payload(database_url, conn):
 
 
 def test_reindex_hybrid_patches_legacy_points(database_url, conn):
-    from app.vector import VectorPoint
+    from app.clients.vector import VectorPoint
 
     conn.execute(
         """INSERT INTO collected_events

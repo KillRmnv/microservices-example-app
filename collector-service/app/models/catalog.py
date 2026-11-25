@@ -6,7 +6,9 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from ..text import clean_text
+from ..core.text import clean_text
+
+CATEGORIES = {"concert", "theatre", "exhibition", "film", "sport", "kids", "other"}
 
 
 @dataclass

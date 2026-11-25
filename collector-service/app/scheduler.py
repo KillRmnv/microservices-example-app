@@ -19,7 +19,9 @@ from .core.config import settings
 from .services.collect_service import CollectService
 from .services.embed_service import EmbedService
 from .services.ops_service import OpsService
+from .services.retention_service import RetentionService
 from .sources.base import RunStats
+from .clients.vector import QdrantStore
 
 log = logging.getLogger(__name__)
 
@@ -45,7 +47,7 @@ async def run_source_job(app: FastAPI, source: str) -> None:
     collect: CollectService = app.state.collect
     embed: EmbedService = app.state.embed
     ops: OpsService = app.state.ops
-    with advisory_lock(app.state.db_url, f"collect:{source}") as locked:
+    with advisory_lock(app.state.lock_db_url, f"collect:{source}") as locked:
         if not locked:
             log.warning("collect %s skipped: previous run still holds the lock",
                         source)
@@ -69,7 +71,7 @@ async def run_source_job(app: FastAPI, source: str) -> None:
 async def embed_catchup_job(app: FastAPI) -> None:
     """Embed rows that arrived outside a collect run (booking catalog)."""
     embed: EmbedService = app.state.embed
-    with advisory_lock(app.state.db_url, "embed:catchup") as locked:
+    with advisory_lock(app.state.lock_db_url, "embed:catchup") as locked:
         if not locked:
             return
         try:
@@ -78,6 +80,36 @@ async def embed_catchup_job(app: FastAPI) -> None:
                 log.info("periodic embed catch-up: %d", embedded)
         except Exception as exc:  # noqa: BLE001
             log.warning("periodic embed catch-up failed: %s", exc)
+
+
+async def cleanup_job(app: FastAPI) -> dict:
+    """Daily retention pass: Postgres rows first, then their Qdrant points."""
+    if not settings.cleanup_enabled:
+        return {"removed": 0, "vector_failed": 0}
+    with advisory_lock(app.state.db_url, "cleanup:events") as locked:
+        if not locked:
+            log.warning("cleanup skipped: previous run still holds the lock")
+            return {"removed": 0, "vector_failed": 0, "skipped": True}
+        service = RetentionService(app.state.db_url, settings)
+        vector = QdrantStore(settings.qdrant_url, settings.qdrant_collection)
+        removed = 0
+        vector_failed = 0
+        try:
+            while True:
+                ids = service.purge()
+                if not ids:
+                    break
+                removed += len(ids)
+                try:
+                    await vector.delete(ids)
+                except Exception as exc:  # noqa: BLE001 — retry next run
+                    vector_failed += len(ids)
+                    log.warning("cleanup Qdrant delete failed: %s", exc)
+                if len(ids) < settings.cleanup_batch:
+                    break
+        except Exception as exc:  # noqa: BLE001 — never kill the scheduler
+            log.warning("cleanup failed: %s", exc)
+        return {"removed": removed, "vector_failed": vector_failed}
 
 
 def start_scheduler(app: FastAPI) -> None:
@@ -100,6 +132,15 @@ def start_scheduler(app: FastAPI) -> None:
             next_run_time=None,
         )
         log.info("embed catch-up every %ss", settings.embed_catchup_interval_s)
+    if settings.cleanup_enabled and settings.cleanup_interval_s > 0:
+        scheduler.add_job(
+            cleanup_job,
+            IntervalTrigger(seconds=settings.cleanup_interval_s),
+            args=[app], id="cleanup-events", max_instances=1, coalesce=True,
+            next_run_time=None,
+        )
+        log.info("event cleanup every %ss (retention %sd)",
+                 settings.cleanup_interval_s, settings.event_retention_days)
     scheduler.start()
     app.state.scheduler = scheduler
 

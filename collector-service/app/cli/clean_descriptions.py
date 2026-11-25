@@ -2,8 +2,8 @@
 
 Run from ``collector-service/``:
 
-    python -m app.clean_descriptions              # apply
-    python -m app.clean_descriptions --dry-run    # report only
+    python -m app.cli.clean_descriptions              # apply
+    python -m app.cli.clean_descriptions --dry-run    # report only
 
 Uses the regular ``COLLECTOR_DATABASE_URL`` config.  Rows are processed in
 keyset batches ordered by ``id``; an UPDATE only fires when the cleaned text
@@ -15,9 +15,9 @@ from __future__ import annotations
 import argparse
 import logging
 
-from .core import db
-from .core.config import settings
-from .text import clean_text
+from ..core import db
+from ..core.config import settings
+from ..core.text import clean_text
 
 log = logging.getLogger(__name__)
 

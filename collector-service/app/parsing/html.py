@@ -48,6 +48,48 @@ def extract_json_ld_events(html: str) -> list[dict]:
     return events
 
 
+NEXT_PUSH_RE = re.compile(
+    r'self\.__next_f\.push\(\[1,"(.*?)"\]\)', re.S)
+_NEXT_EVENTS_KEY = '"eventsPage":'
+
+
+def _decode_next_chunks(html: str) -> str:
+    parts = []
+    for raw in NEXT_PUSH_RE.findall(html):
+        try:
+            parts.append(json.loads(f'"{raw}"'))
+        except json.JSONDecodeError:
+            continue
+    return "\n".join(parts)
+
+
+def extract_next_events(html: str) -> list[dict]:
+    """Ticketpro's Next.js RSC payload: eventsPage.items with real fields."""
+    text = _decode_next_chunks(html)
+    if not text:
+        return []
+    decoder = json.JSONDecoder()
+    events: list[dict] = []
+    cursor = 0
+    while True:
+        pos = text.find(_NEXT_EVENTS_KEY, cursor)
+        if pos < 0:
+            break
+        brace = text.find("{", pos)
+        if brace < 0:
+            break
+        try:
+            data, consumed = decoder.raw_decode(text[brace:])
+        except json.JSONDecodeError:
+            cursor = pos + len(_NEXT_EVENTS_KEY)
+            continue
+        if isinstance(data, dict):
+            events.extend(item for item in data.get("items", [])
+                          if isinstance(item, dict))
+        cursor = brace + consumed
+    return events
+
+
 def extract_microdata_event(html: str) -> dict | None:
     """Afisha.me card shape: name / time[datetime] / .b-shedule-place / tags."""
     tree = LexborHTMLParser(html)

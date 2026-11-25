@@ -1,14 +1,15 @@
 from datetime import datetime, timezone
 
-from app.normalize import (
+from app.parsing.normalize import (
     RawEvent,
     is_target_city,
     normalize_jsonld,
+    normalize_next_event,
     parse_age,
     parse_datetime,
     parse_price,
 )
-from app.parse import extract_json_ld_events
+from app.parsing.html import extract_json_ld_events
 from app.repositories.store import fullness, merge_decision
 from pathlib import Path
 
@@ -51,7 +52,7 @@ def test_is_target_city():
 
 
 def test_ticketpro_normalize_and_city_filter():
-    from app.parse import extract_json_ld_events
+    from app.parsing.html import extract_json_ld_events
     html = (Path(__file__).parent / "fixtures" / "ticketpro_listing.html").read_text()
     cards = extract_json_ld_events(html)
     minsk = normalize_jsonld("ticketpro", "id1", "http://x/1", "concert", cards[0], NOW)
@@ -91,3 +92,34 @@ def test_fullness_counts():
     assert fullness(RawEvent(source="s", source_id="i", source_url="u", title="t")) == 0
     assert fullness(RawEvent(source="s", source_id="i", source_url="u", title="t",
                              description="d", price_min=10.0)) == 2
+
+
+def test_ticketpro_next_event_builds_encoded_cover_url():
+    event = normalize_next_event(
+        "ticketpro", "49667", "https://ticketpro.by/x", "sport",
+        {
+            "title": "Динамо-Минск",
+            "startTime": "2026-12-02T19:00:00",
+            "venue": {"city": {"name": "Минск"}, "title": "Минск-Арена"},
+            "coverS3Key": "event/620х900 (10)_image_1.png",
+        },
+        NOW,
+    )
+    assert event is not None
+    assert event.image_url == (
+        "https://cdn.ticketpro.by/event/620%D1%85900%20%2810%29_image_1.png")
+
+
+def test_jsonld_image_object_and_relative_url():
+    event = normalize_jsonld(
+        "ticketpro", "id9", "https://ticketpro.by/event/x", "concert",
+        {
+            "name": "Концерт",
+            "url": "https://ticketpro.by/event/x",
+            "location": {"address": {"addressLocality": "Минск"}},
+            "image": {"@type": "ImageObject", "url": "/media/poster.png"},
+        },
+        NOW,
+    )
+    assert event is not None
+    assert event.image_url == "https://ticketpro.by/media/poster.png"

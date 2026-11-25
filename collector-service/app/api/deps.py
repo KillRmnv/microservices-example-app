@@ -4,9 +4,14 @@ from __future__ import annotations
 
 from fastapi import Request
 
+from ..services.catalog_service import CatalogService
 from ..services.collect_service import CollectService
 from ..services.embed_service import EmbedService
 from ..services.ops_service import OpsService
+
+
+def get_catalog_service(request: Request) -> CatalogService:
+    return request.app.state.catalog
 
 
 def get_collect_service(request: Request) -> CollectService:

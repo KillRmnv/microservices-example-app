@@ -24,10 +24,11 @@ def test_domain_error_is_problem_json():
     assert response.status_code == 400
     assert response.headers["Content-Type"] == "application/problem+json"
     body = response.json()
-    assert body["type"] == "https://dosug.example/problems/validation_error"
+    assert body["type"] == (
+        "https://dosug.example/problems/reindex_confirmation_required")
     assert body["title"] == "Bad Request"
     assert body["status"] == 400
-    assert body["code"] == "validation_error"
+    assert body["code"] == "reindex_confirmation_required"
     assert body["instance"] == "/embed/reindex-hybrid"
     assert body["trace_id"] == "req-123"
     assert response.headers["X-Request-ID"] == "req-123"
@@ -72,3 +73,28 @@ def test_redact_url_scrubs_api_key():
 def test_mask_email():
     assert mask_email("user@example.com") == "u***@example.com"
     assert mask_email("no-email here") == "no-email here"
+
+
+def test_redact_text_scrubs_inline_credentials():
+    from app.core.logging import redact_text
+    cleaned = redact_text(
+        "mail user@example.com password=hunter2 Authorization: Bearer abc.def")
+    assert "user@example.com" not in cleaned
+    assert "hunter2" not in cleaned
+    assert "abc.def" not in cleaned
+    assert "u***@example.com" in cleaned
+
+
+def test_catalog_not_found_is_problem_json(database_url):
+    from app.main import create_app
+    from app.services.catalog_service import CatalogService
+
+    app = create_app()
+    app.state.catalog = CatalogService(database_url)
+    client = TestClient(app, raise_server_exceptions=False)
+    response = client.get("/events/not-a-uuid")
+    assert response.status_code == 404
+    body = response.json()
+    assert body["code"] == "event_not_found"
+    assert body["type"] == "https://dosug.example/problems/event_not_found"
+    assert response.headers["Content-Type"] == "application/problem+json"

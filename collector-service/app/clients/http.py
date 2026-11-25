@@ -13,7 +13,7 @@ from urllib.parse import urlparse
 
 import httpx
 
-from .core.logging import redact_url
+from ..core.logging import redact_url
 
 log = logging.getLogger(__name__)
 

@@ -9,10 +9,10 @@ import logging
 
 from ..core import db
 from ..core.config import Settings
-from ..embeddings import EmbeddingProvider, embeddable_text
+from ..clients.embeddings import EmbeddingProvider, embeddable_text
 from ..repositories import queries
-from ..sparse import encode_sparse
-from ..vector import VectorPoint, VectorStore
+from ..core.sparse import encode_sparse
+from ..clients.vector import VectorPoint, VectorStore
 
 log = logging.getLogger(__name__)
 
@@ -87,7 +87,18 @@ class EmbedService:
     async def _embed_batch(self, rows, store: VectorStore, texts: list[str],
                            payload_of, marker) -> int:
         """Embed one batch, upsert, mark; returns embedded count (0 on error)."""
-        vectors = await self._embedder.embed(texts)
+        try:
+            vectors = await self._embedder.embed(texts)
+        except Exception as exc:  # noqa: BLE001 — split oversized batches
+            if len(texts) > 1:
+                middle = len(texts) // 2
+                left = await self._embed_batch(
+                    rows[:middle], store, texts[:middle], payload_of, marker)
+                right = await self._embed_batch(
+                    rows[middle:], store, texts[middle:], payload_of, marker)
+                return left + right
+            log.warning("embed text failed: %s", exc)
+            return 0
         try:
             await store.upsert(_to_points(rows, vectors, texts, payload_of))
         except Exception as exc:  # noqa: BLE001 — keep stored batches

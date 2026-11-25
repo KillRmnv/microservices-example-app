@@ -11,8 +11,9 @@ import re
 from datetime import datetime, timezone
 
 from ..core import db
-from ..normalize import RawEvent, normalize_jsonld
-from ..parse import extract_json_ld_events
+from ..errors.domain import SourceFetchError
+from ..parsing.normalize import RawEvent, normalize_jsonld
+from ..parsing.html import extract_json_ld_events
 from ..repositories.store import upsert_events
 from .base import CollectContext, RunStats, SourceAdapter
 
@@ -47,7 +48,7 @@ class RelaxAdapter(SourceAdapter):
         response = await ctx.http.get(self.name, SITEMAP)
         stats.fetched += 1
         if response.status_code != 200:
-            raise RuntimeError(f"sitemap -> HTTP {response.status_code}")
+            raise SourceFetchError(f"sitemap -> HTTP {response.status_code}")
         try:
             xml = gzip.decompress(response.content).decode("utf-8", errors="replace")
         except OSError:

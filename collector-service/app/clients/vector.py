@@ -12,7 +12,7 @@ import math
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 
-from .sparse import SPARSE_VECTOR_NAME, SparseVector
+from ..core.sparse import SPARSE_VECTOR_NAME, SparseVector
 
 log = logging.getLogger(__name__)
 

@@ -10,8 +10,9 @@ import re
 from datetime import datetime, timezone
 
 from ..core import db
-from ..normalize import RawEvent, parse_age, parse_datetime, parse_price
-from ..parse import clean_text, extract_microdata_event
+from ..errors.domain import SourceFetchError
+from ..parsing.normalize import RawEvent, parse_age, parse_datetime, parse_price
+from ..parsing.html import clean_text, extract_microdata_event
 from ..repositories.store import upsert_events
 from .base import CollectContext, RunStats, SourceAdapter
 
@@ -39,7 +40,7 @@ class AfishaMeAdapter(SourceAdapter):
                 response = await ctx.http.get(self.name, sitemap)
                 stats.fetched += 1
                 if response.status_code != 200:
-                    raise RuntimeError(f"sitemap {sitemap} -> HTTP {response.status_code}")
+                    raise SourceFetchError(f"sitemap {sitemap} -> HTTP {response.status_code}")
                 urls = LOC_RE.findall(response.text)
                 if ctx.max_urls is not None:
                     urls = urls[:max(0, ctx.max_urls - done)]

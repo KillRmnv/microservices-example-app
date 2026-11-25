@@ -9,8 +9,9 @@ import logging
 from datetime import datetime, timezone
 
 from ..core import db
-from ..normalize import RawEvent, normalize_jsonld
-from ..parse import extract_json_ld_events
+from ..errors.domain import SourceFetchError
+from ..parsing.normalize import RawEvent, normalize_jsonld, normalize_next_event
+from ..parsing.html import extract_json_ld_events, extract_next_events
 from ..repositories.store import upsert_events
 from .base import CollectContext, RunStats, SourceAdapter
 
@@ -46,7 +47,7 @@ class TicketproAdapter(SourceAdapter):
                     conn.rollback()
                     log.warning("ticketpro listing %s failed: %s", path, exc)
         if stats.fetched == 0:
-            raise RuntimeError("all ticketpro listings failed")
+            raise SourceFetchError("all ticketpro listings failed")
         return stats
 
     async def _collect_listing(self, ctx, conn, stats, now, path, category) -> None:
@@ -56,10 +57,36 @@ class TicketproAdapter(SourceAdapter):
             response = await ctx.http.get(self.name, url)
             stats.fetched += 1
             if response.status_code != 200:
-                raise RuntimeError(f"{url} -> HTTP {response.status_code}")
+                raise SourceFetchError(f"{url} -> HTTP {response.status_code}")
             cards = extract_json_ld_events(response.text)
             if not cards:
-                break  # past the last page
+                items = extract_next_events(response.text)
+                if items:
+                    events: list[RawEvent] = []
+                    for item in items:
+                        slug = item.get("slug") or ""
+                        source_id = str(item.get("externalId")
+                                        or item.get("id") or slug)
+                        event = normalize_next_event(
+                            self.name,
+                            source_id=source_id,
+                            source_url=f"{BASE}/ru/event/{slug}" if slug else url,
+                            category=category,
+                            data=item,
+                            now_utc=now,
+                        )
+                        if event is None:
+                            continue
+                        stats.parsed += 1
+                        events.append(event)
+                    merged = upsert_events(conn, events)
+                    stats.rows_inserted += merged.rows_inserted
+                    stats.rows_updated += merged.rows_updated
+                    stats.duplicates += merged.duplicates
+                    conn.commit()
+                    log.info("ticketpro %s page %d: %d next cards",
+                             path, page, len(items))
+                break
             events: list[RawEvent] = []
             for card in cards:
                 if card.get("@type") != "Event":

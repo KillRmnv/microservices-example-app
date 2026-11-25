@@ -7,11 +7,13 @@ from __future__ import annotations
 
 import logging
 
+import psycopg
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .base import DomainError
+from .domain import DatabaseUnavailable
 from .problem import problem_response
 
 log = logging.getLogger(__name__)
@@ -43,7 +45,8 @@ def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(RequestValidationError)
     async def validation_error_handler(request: Request,
                                        exc: RequestValidationError) -> object:
-        log.info("validation error on %s: %s", request.url.path, exc.errors())
+        log.info("validation error on %s: %s", request.url.path,
+                 _validation_errors(exc))
         return problem_response(
             request, status=422, code="validation_error",
             detail="Request validation failed",
@@ -61,6 +64,16 @@ def register_exception_handlers(app: FastAPI) -> None:
             log.info("http error on %s: %s", request.url.path, detail)
         return problem_response(request, status=status,
                                 code=f"http_{status}", detail=detail)
+
+    @app.exception_handler(psycopg.Error)
+    async def database_error_handler(request: Request, exc: psycopg.Error) -> object:
+        log.error("database error on %s", request.url.path, exc_info=True)
+        if isinstance(exc, (psycopg.OperationalError, psycopg.InterfaceError)):
+            return problem_response(request, status=503,
+                                    code=DatabaseUnavailable.code,
+                                    detail="Database is temporarily unavailable")
+        return problem_response(request, status=500, code="internal_error",
+                                detail="Internal server error")
 
     @app.exception_handler(Exception)
     async def unexpected_error_handler(request: Request, exc: Exception) -> object:

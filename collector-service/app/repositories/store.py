@@ -12,6 +12,7 @@ import psycopg
 
 from ..models.catalog import CatalogEvent, RawEvent, VenueRow
 from ..core.config import settings
+from ..models.dedup import compare as dedup_compare
 from ..sources.base import RunStats
 
 log = logging.getLogger(__name__)
@@ -157,6 +158,10 @@ def upsert_events(conn, events: list[RawEvent]) -> RunStats:
 
 
 def _upsert_one(conn, lookups: Lookups, event: RawEvent, stats: RunStats) -> None:
+    # Serialize candidate lookup + insert. A single key avoids lock-order
+    # deadlocks when batches contain different dates, and also protects
+    # undated rows from racing the exact dedup_key unique index.
+    conn.execute("SELECT pg_advisory_xact_lock(hashtext('dedup:events'))")
     _link_venue(conn, lookups, event)
     own = conn.execute(
         "SELECT id FROM collected_events WHERE source = %s AND source_id = %s",
@@ -170,11 +175,14 @@ def _upsert_one(conn, lookups: Lookups, event: RawEvent, stats: RunStats) -> Non
         stats.rows_updated += 1
         return
     twin = conn.execute(
-        f"""SELECT id, source, {", ".join(_TWIN_FIELDS)}
+        f"""SELECT id, source, venue_id, category, title,
+                   {", ".join(_TWIN_FIELDS)}
             FROM collected_events WHERE dedup_key = %s
             ORDER BY fetched_at LIMIT 1""",
         (event.dedup_key,),
     ).fetchone()
+    if twin is None:
+        twin = _fuzzy_twin(conn, event)
     if twin is None:
         row = conn.execute(UPSERT_SQL, _row(event, lookups)).fetchone()
         _attach_source(conn, lookups, row["id"], event.source,
@@ -182,6 +190,39 @@ def _upsert_one(conn, lookups: Lookups, event: RawEvent, stats: RunStats) -> Non
         if row["inserted"]:
             stats.rows_inserted += 1
         return
+    _merge_twin(conn, lookups, event, twin, stats)
+
+
+def _fuzzy_twin(conn, event: RawEvent):
+    """Nearest same-city candidate around the event date, if confident."""
+    city = event.city or settings.default_city
+    start = event.start_at
+    rows = conn.execute(
+        f"""SELECT id, source, venue_id, category, title,
+                   {", ".join(_TWIN_FIELDS)}
+            FROM collected_events
+            WHERE city = %s AND source <> 'booking'
+              AND (%s::TIMESTAMPTZ IS NULL
+                   OR start_at IS NULL
+                   OR start_at BETWEEN %s::TIMESTAMPTZ - INTERVAL '2 days'
+                                    AND %s::TIMESTAMPTZ + INTERVAL '2 days')
+            ORDER BY fetched_at DESC
+            LIMIT 250""",
+        (city, start, start, start),
+    ).fetchall()
+    best = None
+    best_score = 0.0
+    for row in rows:
+        decision = dedup_compare(event, row)
+        if decision.merge and decision.score > best_score:
+            best, best_score = row, decision.score
+    if best is not None:
+        log.info("fuzzy duplicate %s/%s -> %s (score %.3f)",
+                 event.source, event.source_id, best["id"], best_score)
+    return best
+
+
+def _merge_twin(conn, lookups: Lookups, event: RawEvent, twin, stats: RunStats) -> None:
     # Same logical event from another source: attach URL, keep fuller record.
     stats.duplicates += 1
     _attach_source(conn, lookups, twin["id"], event.source,

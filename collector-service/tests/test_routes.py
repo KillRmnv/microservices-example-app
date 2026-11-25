@@ -2,7 +2,7 @@
 from fastapi.testclient import TestClient
 
 from app.core.config import Settings
-from app.http import PoliteClient
+from app.clients.http import PoliteClient
 from app.main import create_app
 from app.services.collect_service import CollectService
 from app.services.ops_service import OpsService
@@ -41,7 +41,7 @@ def test_fixed_paths_are_not_swallowed_by_path_params(database_url):
 
     denied = client.post("/embed/reindex-hybrid")
     assert denied.status_code == 400
-    assert denied.json()["code"] == "validation_error"
+    assert denied.json()["code"] == "reindex_confirmation_required"
 
     reindexed = client.post("/embed/reindex-hybrid?confirm=true")
     assert reindexed.status_code == 200

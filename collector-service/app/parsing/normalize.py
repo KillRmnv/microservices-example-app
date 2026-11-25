@@ -9,14 +9,13 @@ from __future__ import annotations
 import logging
 import re
 from datetime import datetime
+from urllib.parse import quote, urljoin
 from zoneinfo import ZoneInfo
 
-from .core.config import settings
-from .models.catalog import RawEvent, VenueRow  # re-exported for adapters
+from ..core.config import settings
+from ..models.catalog import CATEGORIES, RawEvent, VenueRow  # re-exported for adapters
 
 log = logging.getLogger(__name__)
-
-CATEGORIES = {"concert", "theatre", "exhibition", "film", "sport", "kids", "other"}
 
 PRICE_RE = re.compile(r"(\d[\d\s]*(?:[.,]\d+)?)")
 AGE_RE = re.compile(r"(\d+)\s*\+")
@@ -26,6 +25,18 @@ NON_PRICE = re.compile(r"уточняйте|договорная|бесплат�
 # concatenated digits), not a price. Keeps NUMERIC(12,2) safe.
 MAX_PRICE = 1_000_000.0
 MAX_AGE = 21
+TICKETPRO_CDN = "https://cdn.ticketpro.by"
+
+
+def _ticketpro_image(data: dict) -> str | None:
+    key = data.get("coverS3Key") or data.get("roundCoverS3Key")
+    if not isinstance(key, str) or not key.strip():
+        return None
+    key = key.strip()
+    if key.startswith(("http://", "https://")):
+        return key
+    # S3 keys contain spaces and Cyrillic; the CDN expects them encoded.
+    return f"{TICKETPRO_CDN}/{quote(key.lstrip('/'), safe='/')}"
 
 
 def parse_datetime(value: str | None) -> datetime | None:
@@ -94,10 +105,18 @@ def is_target_city(location, city: str | None = None) -> bool:
 
 def _first_image(image) -> str | None:
     if isinstance(image, str):
-        return image
-    if isinstance(image, list) and image:
-        first = image[0]
-        return first if isinstance(first, str) else None
+        return image.strip() or None
+    if isinstance(image, dict):
+        for key in ("url", "contentUrl", "@id"):
+            value = image.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return None
+    if isinstance(image, list):
+        for item in image:
+            found = _first_image(item)
+            if found:
+                return found
     return None
 
 
@@ -105,6 +124,53 @@ def _offers(offers) -> dict:
     if isinstance(offers, list):
         offers = offers[0] if offers else {}
     return offers if isinstance(offers, dict) else {}
+
+
+def normalize_next_event(source: str, source_id: str, source_url: str,
+                         category: str, data: dict,
+                         now_utc: datetime) -> RawEvent | None:
+    """Ticketpro Next.js event card (eventsPage.items) -> RawEvent."""
+    venue = data.get("venue") or {}
+    city = ((venue.get("city") or {}).get("name") or "")
+    if (city or "").casefold() != settings.default_city.casefold():
+        return None
+    start_at = parse_datetime(data.get("startTime"))
+    end_at = parse_datetime(data.get("endTime"))
+    if end_at is not None and end_at < now_utc and (
+            start_at is None or start_at < now_utc):
+        return None
+    title = (data.get("title") or "").strip()
+    if not title:
+        return None
+    price_min = data.get("minPrice")
+    price_max = data.get("maxPrice")
+    try:
+        price_min = float(price_min) if price_min is not None else None
+    except (TypeError, ValueError):
+        price_min = None
+    try:
+        price_max = float(price_max) if price_max is not None else None
+    except (TypeError, ValueError):
+        price_max = None
+    return RawEvent(
+        source=source,
+        source_id=source_id,
+        source_url=source_url,
+        title=title,
+        description=None,
+        category=category if category in CATEGORIES else "other",
+        start_at=start_at,
+        end_at=end_at,
+        venue_name=(venue.get("title") or None),
+        address=(venue.get("addressLine") or None),
+        city=settings.default_city,
+        price_min=price_min,
+        price_max=price_max,
+        currency=settings.default_currency,
+        age_limit=parse_age(str(data.get("ageRange", "") or "")),
+        image_url=_ticketpro_image(data),
+        raw=data,
+    )
 
 
 def normalize_jsonld(source: str, source_id: str, source_url: str, category: str,
@@ -132,6 +198,9 @@ def normalize_jsonld(source: str, source_id: str, source_url: str, category: str
     title = (data.get("name") or "").strip()
     if not title:
         return None
+    image_url = _first_image(data.get("image"))
+    if image_url and image_url.startswith("/"):
+        image_url = urljoin(data.get("url") or source_url, image_url)
     return RawEvent(
         source=source,
         source_id=source_id,
@@ -149,7 +218,7 @@ def normalize_jsonld(source: str, source_id: str, source_url: str, category: str
         currency=str(offers.get("priceCurrency") or settings.default_currency),
         age_limit=parse_age(str(data.get("typicalAgeRange", "") or "")),
         ticket_url=offers.get("url") if isinstance(offers.get("url"), str) else None,
-        image_url=_first_image(data.get("image")),
+        image_url=image_url,
         organizer=(data.get("organizer") or {}).get("name")
         if isinstance(data.get("organizer"), dict) else None,
         raw=data,

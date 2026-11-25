@@ -9,7 +9,7 @@ from app.sources.telegram import (
     first_meaningful_line,
     split_sections,
 )
-from app.text_ru import parse_ru_datetime
+from app.parsing.text_ru import parse_ru_datetime
 from conftest import pg_url
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -71,7 +71,7 @@ def test_telegram_normalize():
 
 
 def test_telegram_collect_paginates(conn):
-    from app.http import PoliteClient
+    from app.clients.http import PoliteClient
     from app.sources.base import CollectContext
 
     page1 = (FIXTURES / "telegram_preview.html").read_text()
@@ -94,3 +94,37 @@ def test_telegram_collect_paginates(conn):
     assert any("before=1101" in url for url in seen)  # min(1108, 1102) - 1
     rows = conn.execute("SELECT source_id FROM collected_events").fetchall()
     assert {row["source_id"] for row in rows} == {"minsk_kuda/1108", "minsk_kuda/1102"}
+
+
+def test_telegram_extracts_photo_background():
+    html = """
+    <div class="tgme_widget_message_wrap">
+      <div class="tgme_widget_message" data-post="minsk_kuda/2000">
+        <a class="tgme_widget_message_photo_wrap"
+           style="background-image:url('https://cdn4.telesco.pe/file/poster.jpg')"></a>
+        <div class="tgme_widget_message_text">Джазовый вечер\n⏰ 25 октября, в 20:00</div>
+        <time datetime="2026-10-20T12:00:00+00:00"></time>
+        <a class="tgme_widget_message_date" href="https://t.me/minsk_kuda/2000"></a>
+      </div>
+    </div>
+    """
+    messages = extract_messages(html)
+    assert messages[0]["image"] == "https://cdn4.telesco.pe/file/poster.jpg"
+    event = TelegramAdapter(channels=["minsk_kuda"]).normalize(
+        "minsk_kuda", messages[0], NOW)
+    assert event is not None
+    assert event.image_url == "https://cdn4.telesco.pe/file/poster.jpg"
+
+
+def test_telegram_extracts_video_thumb_when_no_photo():
+    html = """
+    <div class="tgme_widget_message_wrap">
+      <div class="tgme_widget_message" data-post="minsk_kuda/2001">
+        <i class="tgme_widget_message_video_thumb"
+           style="background-image:url('https://cdn4.telesco.pe/file/thumb.jpg')"></i>
+        <div class="tgme_widget_message_text">Событие</div>
+      </div>
+    </div>
+    """
+    assert extract_messages(html)[0]["image"] == (
+        "https://cdn4.telesco.pe/file/thumb.jpg")

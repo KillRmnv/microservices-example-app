@@ -1,7 +1,7 @@
 """Unit tests for emoji / Telegram-decoration cleanup (no database needed)."""
 from __future__ import annotations
 
-from app.text import clean_text, strip_emoji
+from app.core.text import clean_text, strip_emoji
 
 
 def test_strip_emoji_removes_pictographs_and_dingbats():

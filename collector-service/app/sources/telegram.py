@@ -10,16 +10,18 @@ from __future__ import annotations
 import logging
 import re
 from datetime import datetime, timezone
+from html import unescape
 
 from selectolax.lexbor import LexborHTMLParser
 
 from ..core import db
 from ..core.config import settings
-from ..normalize import RawEvent, parse_price
+from ..errors.domain import SourceFetchError
+from ..parsing.normalize import RawEvent, parse_price
 from ..repositories.store import upsert_events
-from ..text import clean_text
+from ..core.text import clean_text
 from .base import CollectContext, RunStats, SourceAdapter
-from ..text_ru import parse_ru_datetime
+from ..parsing.text_ru import parse_ru_datetime
 
 log = logging.getLogger(__name__)
 
@@ -74,7 +76,7 @@ class TelegramAdapter(SourceAdapter):
                     conn.rollback()
                     log.warning("telegram channel %s failed: %s", channel, exc)
         if stats.fetched == 0:
-            raise RuntimeError("all telegram channels failed")
+            raise SourceFetchError("all telegram channels failed")
         return stats
 
     async def _collect_channel(self, ctx, conn, stats, now, channel, max_pages) -> None:
@@ -84,7 +86,7 @@ class TelegramAdapter(SourceAdapter):
             response = await ctx.http.get(self.name, url)
             stats.fetched += 1
             if response.status_code != 200:
-                raise RuntimeError(f"{url} -> HTTP {response.status_code}")
+                raise SourceFetchError(f"{url} -> HTTP {response.status_code}")
             messages = extract_messages(response.text)
             if not messages:
                 break
@@ -133,7 +135,9 @@ class TelegramAdapter(SourceAdapter):
             city=settings.default_city,
             price_min=price_min,
             price_max=price_max,
-            raw={"channel": channel, "message_id": message["id"]},
+            image_url=message.get("image"),
+            raw={"channel": channel, "message_id": message["id"],
+                 "image": message.get("image")},
         )
 
 
@@ -154,8 +158,17 @@ def split_sections(text: str) -> dict:
     return sections
 
 
+def _background_image(node) -> str | None:
+    if node is None:
+        return None
+    style = node.attributes.get("style") or ""
+    match = re.search(r"background-image\s*:\s*url\(\s*['\"]?([^'\")]+)",
+                      style, re.IGNORECASE)
+    return unescape(match.group(1).strip()) if match else None
+
+
 def extract_messages(html: str) -> list[dict]:
-    """Preview messages newest-first: id, utc post time, text, url."""
+    """Preview messages newest-first: id, utc post time, text, image, url."""
     tree = LexborHTMLParser(html)
     messages = []
     for wrap in tree.css("div.tgme_widget_message_wrap"):
@@ -172,10 +185,16 @@ def extract_messages(html: str) -> list[dict]:
         text_node = wrap.css_first(".tgme_widget_message_text")
         text = text_node.text(separator="\n", strip=True) if text_node else ""
         link = wrap.css_first("a.tgme_widget_message_date")
+        image = _background_image(
+            wrap.css_first("a.tgme_widget_message_photo_wrap"))
+        if image is None:
+            image = _background_image(
+                wrap.css_first(".tgme_widget_message_video_thumb"))
         messages.append({
             "id": message_id,
             "posted_at": posted_at,
             "text": text,
+            "image": image,
             "url": link.attributes.get("href") if link else None,
         })
     return messages

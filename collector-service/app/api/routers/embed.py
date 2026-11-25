@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends
 
 from ..deps import get_collect_service, get_embed_service
 from ..schemas import EmbedResponse, ReindexResponse
-from ...errors import UnknownSource, ValidationError
+from ...errors import ReindexConfirmationRequired, UnknownSource
 from ...services.collect_service import CollectService
 from ...services.embed_service import EmbedService
 
@@ -37,7 +37,7 @@ async def reindex_hybrid(confirm: bool = False,
     Dense vectors are preserved; only sparse/payload are merged.
     """
     if not confirm:
-        raise ValidationError("reindex-hybrid requires ?confirm=true")
+        raise ReindexConfirmationRequired("reindex-hybrid requires ?confirm=true")
     started = time.monotonic()
     result = await service.reindex_hybrid()
     result["duration_s"] = round(time.monotonic() - started, 1)

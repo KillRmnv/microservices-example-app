@@ -9,7 +9,7 @@ import re
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from .core.config import settings
+from ..core.config import settings
 
 MONTHS = {
     "января": 1, "февраля": 2, "марта": 3, "апреля": 4,

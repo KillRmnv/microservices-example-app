@@ -3,8 +3,9 @@ import asyncio
 import httpx
 import pytest
 
-from app.normalize import VenueRow
-from app.quota import QuotaExhausted, try_consume, used
+from app.parsing.normalize import VenueRow
+from app.errors import QuotaExhausted
+from app.repositories.quota import try_consume, used
 from app.sources.twogis_places import TwogisPlacesAdapter, normalize_point
 from app.repositories.store import upsert_venues
 from conftest import pg_url
@@ -77,7 +78,7 @@ def test_upsert_venues_idempotent(conn):
 def test_twogis_collect_two_pages_then_quota(conn):
     import json as jsonlib
 
-    from app.http import PoliteClient
+    from app.clients.http import PoliteClient
     from app.sources.base import CollectContext
 
     items = jsonlib.loads((FIXTURES / "twogis_items.json").read_text())["result"]["items"]
@@ -126,7 +127,7 @@ def test_twogis_collect_two_pages_then_quota(conn):
 
 def test_twogis_collect_stops_on_quota(conn):
 
-    from app.http import PoliteClient
+    from app.clients.http import PoliteClient
     from app.sources.base import CollectContext
     import app.core.config as config_module
 
@@ -158,7 +159,7 @@ def test_twogis_collect_stops_on_quota(conn):
 
 def test_twogis_items_request_has_no_locale_by_default(conn):
     """Regression: locale=ru_RU made 2GIS return an empty items list."""
-    from app.http import PoliteClient
+    from app.clients.http import PoliteClient
     from app.sources.base import CollectContext
     import app.core.config as config_module
     import json as jsonlib

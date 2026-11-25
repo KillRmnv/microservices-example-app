@@ -47,7 +47,7 @@ def embeddable_text(title: str, venue: str | None, description: str | None) -> s
     """What goes into the vector: atmosphere-relevant text, not filters."""
     parts = [title]
     if venue:
-        parts.append(venue)
+        parts.append(venue[:200])
     if description:
-        parts.append(description[:1000])
+        parts.append(description[:600])
     return "\n".join(parts)

@@ -12,9 +12,9 @@ import logging
 from ..core import db
 from ..core.config import Settings
 from ..models.catalog import CatalogEvent
-from ..normalize import parse_datetime
+from ..parsing.normalize import parse_datetime
 from ..repositories import store
-from ..vector import VectorStore
+from .vector import VectorStore
 
 log = logging.getLogger(__name__)
 

@@ -10,8 +10,10 @@ import logging
 
 from ..core import db
 from ..core.config import settings
-from ..normalize import VenueRow
-from ..quota import QuotaExhausted, current_month, try_consume
+from ..errors.domain import (QuotaExhausted, SourceConfigError,
+                             SourceFetchError, SourceParseError)
+from ..parsing.normalize import VenueRow
+from ..repositories.quota import current_month, try_consume
 from ..repositories.store import upsert_venues
 from .base import CollectContext, RunStats, SourceAdapter
 
@@ -24,7 +26,7 @@ def bbox() -> tuple[float, float, float, float]:
     """Configured (south, north, west, east) sanity box for catalog coords."""
     values = [float(part) for part in settings.twogis_bbox.split(",")]
     if len(values) != 4:
-        raise ValueError("COLLECTOR_TWOGIS_BBOX must be 'south,north,west,east'")
+        raise SourceConfigError("COLLECTOR_TWOGIS_BBOX must be 'south,north,west,east'")
     return values[0], values[1], values[2], values[3]
 
 
@@ -98,18 +100,19 @@ class TwogisPlacesAdapter(SourceAdapter):
         if response.status_code == 404:
             return {}
         if response.status_code != 200:
-            raise RuntimeError(f"{path} -> HTTP {response.status_code}: "
-                               f"{response.text[:200]}")
+            raise SourceFetchError(f"{path} -> HTTP {response.status_code}: "
+                                   f"{response.text[:200]}")
         try:
             data = response.json()
         except Exception as exc:
-            raise RuntimeError(f"{path} -> invalid JSON: {exc}: {response.text[:200]}") from exc
+            raise SourceParseError(
+                f"{path} -> invalid JSON: {exc}: {response.text[:200]}") from exc
         meta = data.get("meta") or {}
         code = str(meta.get("code", ""))
         if code in ("404", "204"):
             return {}
         if code != "200":
-            raise RuntimeError(f"{path} -> API code {meta}")
+            raise SourceFetchError(f"{path} -> API code {meta}")
         result = data.get("result") or {}
         return result
 
@@ -134,7 +137,8 @@ class TwogisPlacesAdapter(SourceAdapter):
                                  {"q": settings.twogis_region or settings.default_city}, stats)
         items = result.get("items", [])
         if not items or "id" not in items[0]:
-            raise RuntimeError(f"region not found for {settings.twogis_region or settings.default_city!r}")
+            raise SourceConfigError(
+                f"region not found for {settings.twogis_region or settings.default_city!r}")
         region_id = str(items[0]["id"])
         self._kv_set(conn, "twogis:region_id", region_id)
         return region_id
@@ -211,7 +215,7 @@ class TwogisPlacesAdapter(SourceAdapter):
 
     async def collect(self, ctx: CollectContext) -> RunStats:
         if not settings.twogis_api_key:
-            raise RuntimeError("COLLECTOR_TWOGIS_API_KEY is not set")
+            raise SourceConfigError("COLLECTOR_TWOGIS_API_KEY is not set")
         stats = RunStats()
         rubrics = self._rubrics or [
             name.strip() for name in settings.twogis_rubrics.split(",") if name.strip()]
@@ -231,7 +235,7 @@ class TwogisPlacesAdapter(SourceAdapter):
                     conn.rollback()
                     log.warning("2GIS rubric %r failed: %s", name, exc)
         if stats.fetched == 0:
-            raise RuntimeError("2GIS collect fetched nothing (key/quota?)")
+            raise SourceFetchError("2GIS collect fetched nothing (key/quota?)")
         return stats
 
     async def _collect_rubric(self, ctx, conn, stats, region_id: str,

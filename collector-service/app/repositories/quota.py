@@ -1,19 +1,11 @@
 """Monthly API quota guard (2GIS demo key: 1000 req/month).
 
-Every billable request consumes one unit BEFORE firing; when
-used >= cap - reserve the run stops with QuotaExhausted instead of
-burning the key into errors.
+Every billable request consumes one unit BEFORE firing; the caller raises
+``QuotaExhausted`` when the returned bool is False.
 """
 from __future__ import annotations
 
-import logging
 from datetime import datetime, timezone
-
-log = logging.getLogger(__name__)
-
-
-class QuotaExhausted(RuntimeError):
-    pass
 
 
 def current_month(now=None) -> str:
@@ -30,21 +22,18 @@ def used(conn, provider: str, month: str) -> int:
 
 
 def try_consume(conn, provider: str, month: str, cap: int, reserve: int) -> bool:
-    """Consume one unit; False (no consume) when at cap - reserve."""
+    """Consume one unit atomically; False (no consume) at cap - reserve."""
     conn.execute(
         """INSERT INTO api_quota (provider, month, used) VALUES (%s, %s, 0)
            ON CONFLICT (provider, month) DO NOTHING""",
         (provider, month),
     )
+    # Single conditional UPDATE: concurrent consumers cannot both pass the
+    # cap check after reading the same stale counter.
     row = conn.execute(
-        "SELECT used FROM api_quota WHERE provider = %s AND month = %s",
-        (provider, month),
+        """UPDATE api_quota SET used = used + 1
+           WHERE provider = %s AND month = %s AND used < %s
+           RETURNING used""",
+        (provider, month, cap - reserve),
     ).fetchone()
-    current = int(row["used"])
-    if current >= cap - reserve:
-        return False
-    conn.execute(
-        "UPDATE api_quota SET used = used + 1 WHERE provider = %s AND month = %s",
-        (provider, month),
-    )
-    return True
+    return row is not None

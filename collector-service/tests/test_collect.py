@@ -11,7 +11,7 @@ import psycopg
 import pytest
 
 from app.core import db
-from app.http import PoliteClient
+from app.clients.http import PoliteClient
 from app.sources.afisha_me import AfishaMeAdapter
 from app.sources.base import CollectContext
 from app.sources.relax import RelaxAdapter
@@ -115,7 +115,7 @@ def test_afisha_me_collects_cards(conn):
 def test_cross_source_merge_keeps_fuller_record(conn):
     from datetime import datetime, timezone
 
-    from app.normalize import RawEvent
+    from app.parsing.normalize import RawEvent
     from app.repositories.store import upsert_events
 
     start = datetime(2026, 12, 5, 16, 0, tzinfo=timezone.utc)
