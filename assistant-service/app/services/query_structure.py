@@ -12,13 +12,11 @@ from ..clients.llm.base import LLMProvider
 from ..core.config import Settings
 from ..errors import UpstreamError
 from ..models import intent as intents
+from ..models.vocabulary import EVENT_CATEGORY_SET as KNOWN_CATEGORIES
 from .query_complexity import classify
+from .rules import required_slots
 
 log = logging.getLogger(__name__)
-
-KNOWN_CATEGORIES = {
-    "concert", "theatre", "exhibition", "film", "sport", "kids", "other",
-}
 
 PROMPT = """Ты — классификатор и парсер запросов к городской афише и справочнику мест. Думай кратко, затем верни ТОЛЬКО JSON:
 {{
@@ -251,26 +249,6 @@ def _set_any_slot(hard: dict, slot: str) -> None:
         hard["party_size"] = 0
 
 
-def _missing_slots(contract: StateContract) -> list[str]:
-    """Recompute open slots so old persisted chats still get slot parsing."""
-    hard = contract.hard_filters
-    slots: list[str] = []
-    if intents.spec(contract.intent).scope in ("events", "both"):
-        date_filter = hard.datetime
-        if date_filter is None or (not date_filter.any
-                                   and not date_filter.start):
-            slots.append("datetime")
-    if not hard.location.any and not hard.location.city:
-        slots.append("city")
-    budget = hard.budget
-    if budget is None or (not budget.any
-                          and budget.max_price_per_person is None):
-        slots.append("budget")
-    if hard.party_size is None:
-        slots.append("party")
-    return slots
-
-
 def _fallback_clarification(text: str, previous: StateContract,
                             slots: list[str], settings: Settings) -> StateContract:
     """Last-resort slot fill when the model cannot produce valid JSON."""
@@ -417,9 +395,10 @@ class QueryStructureService:
         # it must never replace the topic with the wording of the answer.
         if (previous is not None and previous.needs_clarification
                 and (previous.clarification_slots
-                     or _missing_slots(previous))):
+                     or required_slots(previous, self._settings))):
             slots = [slot for slot in
-                     (previous.clarification_slots or _missing_slots(previous))
+                     (previous.clarification_slots
+                      or required_slots(previous, self._settings))
                      if slot in SLOT_LABELS]
             if slots:
                 system = CLARIFICATION_PROMPT.format(
@@ -480,8 +459,10 @@ class QueryStructureService:
             if not vector:
                 vector = _clean_vector_query(query, self._settings.default_city)
             contract.semantic_payload.vector_query = vector
-        log.info("structure stage: %s -> categories=%s datetime=%s reasoning=%s",
-                 query[:80], contract.hard_filters.category,
-                 contract.hard_filters.datetime.start if contract.hard_filters.datetime else None,
-                 reasoning_used)
+        log.info(
+            "structure stage: len=%d -> categories=%s datetime=%s reasoning=%s",
+            len(query), contract.hard_filters.category,
+            contract.hard_filters.datetime.start if contract.hard_filters.datetime else None,
+            reasoning_used)
+        log.debug("structure query: %s", query[:200])
         return sanitize(contract), reasoning_used, complexity.complex

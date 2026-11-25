@@ -18,6 +18,9 @@ class Settings(BaseSettings):
 
     # No default: credentials must come from the environment.
     database_url: str = ""
+    # Direct Postgres URL for migrations (PgBouncer transaction mode is not
+    # safe for the session advisory lock used by the migration runner).
+    migration_database_url: str = ""
 
     collector_base_url: str = "http://collector-service:8080"
     booking_base_url: str = "http://booking-service:8082"
@@ -32,6 +35,9 @@ class Settings(BaseSettings):
     default_party_size: int = 2
     # Semantic query used for broad "что-нибудь" requests without a topic.
     default_search_query: str = "события"
+    # Same for places: a venue search with no topic/rubric must not embed the
+    # city name (it is an exact filter, not a theme).
+    default_venue_query: str = "места"
 
     qdrant_url: str = "http://localhost:6333"
     qdrant_collection: str = "events"
@@ -116,6 +122,9 @@ class Settings(BaseSettings):
             raise RuntimeError(
                 "ASSISTANT_DATABASE_URL is not set; refusing to start without a database")
         return self.database_url
+
+    def require_migration_database_url(self) -> str:
+        return self.migration_database_url.strip() or self.require_database_url()
 
 
 def _normalize_backend(name: str) -> str:

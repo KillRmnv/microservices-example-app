@@ -122,3 +122,103 @@ def test_unknown_dialogue_action_returns_422():
     response = client.post("/assistant/dialogue", json={
         "dialogue_action": "drop_tables"})
     assert response.status_code == 422
+
+
+def test_sanitize_makes_evening_window_stable():
+    contract = StateContract.model_validate({
+        "hard_filters": {
+            "datetime": {
+                "start": "2026-11-27T17:00:00+03:00",
+                "raw_expression": "вечер пятницы",
+                "timezone": "Europe/Minsk",
+            }
+        },
+    })
+    clean = sanitize(contract)
+    assert clean.hard_filters.datetime.start == "2026-11-27T18:00:00+03:00"
+    assert clean.hard_filters.datetime.end == "2026-11-27T23:59:00+03:00"
+
+
+def test_sanitize_keeps_explicit_clock_inside_evening():
+    contract = StateContract.model_validate({
+        "hard_filters": {
+            "datetime": {
+                "start": "2026-11-27T20:00:00+03:00",
+                "raw_expression": "в пятницу вечером в 20:00",
+                "timezone": "Europe/Minsk",
+            }
+        },
+    })
+    clean = sanitize(contract)
+    assert clean.hard_filters.datetime.start == "2026-11-27T20:00:00+03:00"
+    assert clean.hard_filters.datetime.end == "2026-11-27T23:59:00+03:00"
+
+
+def test_sanitize_drops_unknown_categories():
+    contract = StateContract.model_validate({
+        "hard_filters": {"category": ["Restaurant", " concert ", "concert",
+                                      "restaurant"]},
+    })
+    clean = sanitize(contract)
+    assert clean.hard_filters.category == ["concert"]
+
+
+def test_sanitize_caps_themes_and_negative_filters():
+    contract = StateContract.model_validate({
+        "hard_filters": {
+            "themes": [" Jazz ", "jazz"] + [f"theme-{i}" for i in range(8)],
+            "amenities_required": [f" option-{i} " for i in range(15)],
+        },
+        "negative_filters": {
+            "exclude_categories": ["Sport", "sport", "Karaoke"],
+            "exclude_tags": [f"tag-{i}" for i in range(15)],
+            "exclude_districts": [" Центр ", "центр", "x" * 60],
+        },
+    })
+    clean = sanitize(contract)
+    themes = clean.hard_filters.themes
+    assert themes[0] == "jazz" and themes.count("jazz") == 1
+    assert len(themes) == 5 and all(len(theme) <= 40 for theme in themes)
+    amenities = clean.hard_filters.amenities_required
+    assert len(amenities) == 10
+    assert amenities[0] == "option-0"
+    negative = clean.negative_filters
+    assert negative.exclude_categories == ["sport", "karaoke"]
+    assert len(negative.exclude_tags) == 10
+    assert negative.exclude_districts == ["центр", "x" * 40]
+
+
+def test_sanitize_caps_vector_query_and_session_id():
+    contract = StateContract.model_validate({
+        "semantic_payload": {"vector_query": "  " + "джаз " * 100 + "  "},
+        "context_state": {"session_id": "  " + "s" * 200 + "  "},
+    })
+    clean = sanitize(contract)
+    assert len(clean.semantic_payload.vector_query) == 300
+    assert clean.semantic_payload.vector_query.startswith("джаз")
+    assert len(clean.context_state.session_id) == 128
+    assert sanitize(StateContract.model_validate(
+        {"context_state": {"session_id": "   "}})
+    ).context_state.session_id == "anonymous"
+
+
+def test_sanitize_clears_non_positive_or_any_budget():
+    contract = StateContract.model_validate({
+        "hard_filters": {"budget": {"max_price_per_person": 50, "any": True}},
+    })
+    assert sanitize(contract).hard_filters.budget.max_price_per_person is None
+    zero = StateContract.model_validate({
+        "hard_filters": {"budget": {"max_price_per_person": 0}},
+    })
+    assert sanitize(zero).hard_filters.budget.max_price_per_person is None
+    negative = StateContract.model_validate({
+        "hard_filters": {"budget": {"max_price_per_person": -5}},
+    })
+    assert sanitize(negative).hard_filters.budget.max_price_per_person is None
+
+
+def test_sanitize_does_not_fill_default_city():
+    clean = sanitize(StateContract.model_validate({
+        "hard_filters": {"category": ["concert"]},
+    }))
+    assert clean.hard_filters.location.city is None

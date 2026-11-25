@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import Callable
 from datetime import datetime, time as dt_time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
@@ -19,12 +20,13 @@ from ..api.schemas.dialogue import ChatMessage, DialogResponse, ResultCard
 from ..clients.booking import BookingClient
 from ..core import db, i18n
 from ..core.config import Settings, settings as default_settings
-from ..core.dates import parse_iso_date
+from ..core.dates import parse_iso_date, has_explicit_clock, time_window
 from ..core.geo import resolve_location
 from ..models.availability import AVAILABLE, FEW_LEFT, SOLD_OUT, UNKNOWN, Availability
 from ..models import intent as intents
 from ..models.search import FusedHit, SearchPlan
 from ..repositories import dialogue_runs
+from .rules import required_slots
 from .search_service import SearchService
 from .weather_service import WeatherService
 
@@ -42,13 +44,17 @@ STATUS_KEYS = {
 class DialogueService:
     def __init__(self, *, search: SearchService, search_venues: SearchService,
                  weather: WeatherService, booking: BookingClient, db_url: str,
-                 settings: Settings = default_settings) -> None:
+                 settings: Settings = default_settings,
+                 now: Callable[[], datetime] | None = None) -> None:
         self._search = search
         self._search_venues = search_venues
         self._weather = weather
         self._booking = booking
         self._db_url = db_url
         self._settings = settings
+        # Injectable clock: tests need a stable "today" for the future floor.
+        self._now = now or (
+            lambda: datetime.now(ZoneInfo(settings.default_timezone)))
 
     def apply_rules(self, contract: StateContract,
                     language: str | None = None) -> StateContract:
@@ -58,29 +64,15 @@ class DialogueService:
             contract.clarification_prompt = i18n.t("clarify_booking", language)
             return contract
         if contract.dialogue_action in SEARCH_ACTIONS and contract.clarify_missing:
-            spec = intents.spec(contract.intent)
-            hard = contract.hard_filters
-            missing: list[tuple[str, str]] = []
-            date_filter = hard.datetime
-            if spec.scope in ("events", "both") and (
-                    date_filter is None
-                    or (not date_filter.any and not date_filter.start)):
-                missing.append(("datetime", "дата"))
-            if not hard.location.any and not hard.location.city:
-                missing.append(("city", "город"))
-            budget = hard.budget
-            if budget is None or (not budget.any
-                                  and budget.max_price_per_person is None):
-                missing.append(("budget", "бюджет"))
-            if hard.party_size is None:
-                missing.append(("party", "количество человек"))
+            missing = required_slots(contract, self._settings)
             if missing:
                 contract.dialogue_action = "ask_clarification"
                 contract.needs_clarification = True
-                contract.clarification_slots = [key for key, _ in missing]
+                contract.clarification_slots = list(missing)
                 contract.clarification_prompt = i18n.t(
                     "clarify_missing", language,
-                    missing=", ".join(label for _, label in missing))
+                    missing=", ".join(i18n.t(f"slot_{slot}", language)
+                                      for slot in missing))
             else:
                 contract.clarification_slots = []
         return contract
@@ -125,6 +117,19 @@ class DialogueService:
         messages.append(ChatMessage(
             kind="results", text=i18n.t("search_results", language), results=cards))
         return DialogResponse(contract=contract, messages=messages)
+
+    async def weather_turn(self, contract: StateContract) -> DialogResponse:
+        """Weather-only turn: no search, no cards, just the forecast advice."""
+        language = i18n.resolve_locale(contract.semantic_payload.language)
+        hard = contract.hard_filters
+        day = None
+        if hard.datetime is not None and not hard.datetime.any:
+            day = parse_iso_date(hard.datetime.start)
+        if day is None:
+            # "Какая погода?" without a date means today.
+            day = self._now().date()
+        message = await self._weather_message(contract, day, language)
+        return DialogResponse(contract=contract, messages=[message])
 
     async def _venue_turn(self, contract: StateContract) -> DialogResponse:
         language = i18n.resolve_locale(contract.semantic_payload.language)
@@ -172,14 +177,15 @@ class DialogueService:
     def _venue_plan(self, contract: StateContract) -> SearchPlan:
         hard = contract.hard_filters
         spec = intents.spec(contract.intent)
-        vector = contract.semantic_payload.vector_query.strip()
-        if not vector and spec.rubrics:
-            vector = spec.rubrics[0]
+        rubric = spec.rubrics[0] if spec.rubrics else None
+        vector = (contract.semantic_payload.vector_query.strip()
+                  or rubric or self._settings.default_venue_query)
         return SearchPlan(
-            vector_query=vector or (
-                None if hard.location.any else hard.location.city) or "места",
+            vector_query=vector,
             limit=self._settings.max_results,
-            city=None if hard.location.any else (hard.location.city or None),
+            city=(None if hard.location.any
+                  else hard.location.city or self._settings.default_city),
+            rubric=rubric,
             dense_only=True,
         )
 
@@ -217,11 +223,16 @@ class DialogueService:
         budget = hard.budget
         vector_query = contract.semantic_payload.vector_query.strip()
         date_from, date_to = self._date_window(hard)
+        if date_from is None:
+            # No date (or "any date"): never offer events that already ended.
+            date_from = self._now()
+            date_to = None
         spec = intents.spec(contract.intent)
         return SearchPlan(
             vector_query=vector_query or self._fallback_query(hard),
             limit=self._settings.max_results,
-            city=None if hard.location.any else (hard.location.city or None),
+            city=(None if hard.location.any
+                  else hard.location.city or self._settings.default_city),
             categories=list(hard.category) or list(spec.categories),
             max_price_per_person=(
                 budget.max_price_per_person
@@ -233,7 +244,7 @@ class DialogueService:
         )
 
     def _date_window(self, hard) -> tuple[datetime | None, datetime | None]:
-        """Whole days from the contract date; a named date must filter search."""
+        """Respect the requested time-of-day, not just the calendar date."""
         date_filter = hard.datetime
         if date_filter is None or date_filter.any:
             return None, None
@@ -248,8 +259,40 @@ class DialogueService:
             tz = ZoneInfo(tz_name)
         except Exception:  # noqa: BLE001 — bad client timezone
             tz = timezone.utc
-        start = datetime.combine(start_day, dt_time.min, tzinfo=tz)
-        end = datetime.combine(end_day + timedelta(days=1), dt_time.min, tzinfo=tz)
+        raw = date_filter.raw_expression or ""
+        window = time_window(raw)
+        explicit = has_explicit_clock(raw)
+        # No time-of-day and no clock: the whole calendar day(s).
+        if window is None and not explicit:
+            start = datetime.combine(start_day, dt_time.min, tzinfo=tz)
+            end = datetime.combine(end_day + timedelta(days=1),
+                                   dt_time.min, tzinfo=tz)
+            return start, end
+
+        def parsed_time(value, fallback: dt_time) -> dt_time:
+            if not value:
+                return fallback
+            try:
+                parsed = datetime.fromisoformat(
+                    str(value).replace("Z", "+00:00"))
+                return parsed.timetz().replace(tzinfo=None)
+            except ValueError:
+                return fallback
+
+        if window is not None and not explicit:
+            start_time = dt_time(window[0], window[1])
+            end_time = dt_time(window[2], window[3])
+        else:
+            fallback_start = (dt_time(window[0], window[1])
+                              if window else dt_time.min)
+            fallback_end = (dt_time(window[2], window[3])
+                            if window else dt_time(23, 59))
+            start_time = parsed_time(date_filter.start, fallback_start)
+            end_time = parsed_time(date_filter.end, fallback_end)
+        start = datetime.combine(start_day, start_time, tzinfo=tz)
+        end = datetime.combine(end_day, end_time, tzinfo=tz)
+        if end <= start:
+            end += timedelta(days=1)
         return start, end
 
     def _fallback_query(self, hard) -> str:

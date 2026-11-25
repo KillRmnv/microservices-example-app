@@ -33,6 +33,10 @@ CATALOG: dict[str, dict[str, str]] = {
         "clarify_booking": (
             "Бронирование через ассистента появится позже. "
             "Пока оформите билет на странице события."),
+        "slot_datetime": "дата",
+        "slot_city": "город",
+        "slot_budget": "бюджет",
+        "slot_party": "количество человек",
         "weather_unavailable": "Прогноз недоступен.",
         "weather_rain": (
             "{date}: дождь вероятен ({probability}%), макс. {temp}°. "
@@ -76,6 +80,10 @@ CATALOG: dict[str, dict[str, str]] = {
         "clarify_booking": (
             "Booking through the assistant is not available yet. "
             "Please buy a ticket on the event page."),
+        "slot_datetime": "date",
+        "slot_city": "city",
+        "slot_budget": "budget",
+        "slot_party": "number of people",
         "weather_unavailable": "Forecast is unavailable.",
         "weather_rain": (
             "{date}: rain is likely ({probability}%), high {temp}°C. "

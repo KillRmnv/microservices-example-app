@@ -65,7 +65,7 @@ class SearchService:
             pipeline.add(CategoryFilter(plan.categories))
         if plan.exclude_categories:
             pipeline.add(ExcludeCategoriesFilter(plan.exclude_categories))
-        if plan.date_from is not None and plan.date_to is not None:
+        if plan.date_from is not None:
             pipeline.add(DateRangeFilter(plan.date_from, plan.date_to))
         return await self._search(plan, pipeline, venues=False)
 

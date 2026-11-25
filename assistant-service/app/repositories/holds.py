@@ -31,31 +31,51 @@ def find_pending(conn, session_id: str, event_id: int) -> Hold | None:
     row = conn.execute(
         f"""SELECT {_HOLD_COLUMNS} FROM booking_holds
             WHERE session_id = %s AND event_id = %s AND status = 'PENDING'
+              AND expires_at > now()
             ORDER BY created_at DESC LIMIT 1""",
         (session_id, event_id),
     ).fetchone()
     return _to_hold(row) if row else None
 
 
+def expire_stale(conn, session_id: str, event_id: int) -> int:
+    """Flip past-due PENDING rows for one session+event to EXPIRED.
+
+    Called right before inserting a replacement hold: the partial unique index
+    covers status='PENDING', so the stale row must leave that state first.
+    Deliberately does not commit — the caller's INSERT commits both together.
+    """
+    rows = conn.execute(
+        """UPDATE booking_holds SET status = %s
+           WHERE session_id = %s AND event_id = %s AND status = 'PENDING'
+             AND expires_at <= now()
+           RETURNING id""",
+        (EXPIRED, session_id, event_id),
+    ).fetchall()
+    return len(rows)
+
+
 def confirm(conn, hold_id: str) -> Hold | None:
-    """Confirm a live hold; expired ones flip to EXPIRED and return None."""
+    """Confirm a live hold; expired ones flip to EXPIRED and return None.
+
+    The conditional UPDATE is the race guard: two concurrent confirms can
+    both read PENDING, but only one can transition the row.
+    """
     row = conn.execute(
-        f"""SELECT {_HOLD_COLUMNS}, expires_at < now() AS past_due
-            FROM booking_holds WHERE id = %s""",
+        f"""UPDATE booking_holds
+            SET status = 'CONFIRMED', confirmed_at = now()
+            WHERE id = %s AND status = 'PENDING' AND expires_at > now()
+            RETURNING {_HOLD_COLUMNS}""",
         (hold_id,),
     ).fetchone()
-    if row is None or row["status"] != "PENDING":
-        return None
-    if row["past_due"]:
-        conn.execute("UPDATE booking_holds SET status = %s WHERE id = %s",
-                     (EXPIRED, hold_id))
+    if row is None:
+        conn.execute(
+            """UPDATE booking_holds SET status = %s
+               WHERE id = %s AND status = 'PENDING' AND expires_at <= now()""",
+            (EXPIRED, hold_id),
+        )
         conn.commit()
         return None
-    row = conn.execute(
-        f"""UPDATE booking_holds SET status = 'CONFIRMED', confirmed_at = now()
-            WHERE id = %s RETURNING {_HOLD_COLUMNS}""",
-        (hold_id,),
-    ).fetchone()
     conn.commit()
     return _to_hold(row)
 
@@ -63,7 +83,7 @@ def confirm(conn, hold_id: str) -> Hold | None:
 def expire(conn) -> int:
     rows = conn.execute(
         """UPDATE booking_holds SET status = %s
-           WHERE status = 'PENDING' AND expires_at < now()
+           WHERE status = 'PENDING' AND expires_at <= now()
            RETURNING id""",
         (EXPIRED,),
     ).fetchall()

@@ -42,6 +42,11 @@ async def dialogue_v2(contract: StateContract) -> DialogResponse:
         )
     if intents.spec(clean.intent).scope == "plan":
         return await components.plan.build_plan(clean)
+    if intents.spec(clean.intent).scope == "weather":
+        response = await components.dialogue.weather_turn(clean)
+        components.dialogue.record_run(
+            response.contract, components.dialogue.elapsed_ms(started))
+        return response
     ruled = components.dialogue.apply_rules(clean, language)
     if ruled.needs_clarification or ruled.dialogue_action not in ("search", "update_filters"):
         components.dialogue.record_run(ruled, components.dialogue.elapsed_ms(started))

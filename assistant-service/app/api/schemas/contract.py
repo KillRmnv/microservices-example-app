@@ -1,20 +1,33 @@
 """StateContract DTO: the dialogue state owned by the client.
 
-The server never trusts it blindly: unknown fields are dropped, enums are
-validated, numeric slots are clamped, and domain defaults (city, timezone,
-currency, language) are filled from configuration, not from hardcoded values.
+The server never trusts it blindly: unknown fields are dropped, enums and
+vocabularies are validated, free-form slots are clamped/truncated, and domain
+defaults (timezone, currency, language) come from configuration, not hardcoded
+values. The city is *not* filled here: the default is applied at search time.
 """
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from typing import Literal
+from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from ...core.config import settings
+from ...core.dates import has_explicit_clock, time_window
+from ...models.vocabulary import EVENT_CATEGORIES, EVENT_CATEGORY_SET
 
 PARTY_SIZE_MIN = 1
 PARTY_SIZE_MAX = 20
 ANONYMOUS_SESSION = "anonymous"
+
+MAX_CATEGORIES = len(EVENT_CATEGORIES)
+MAX_THEMES = 5
+MAX_NEGATIVE_FILTERS = 10
+MAX_AMENITIES = 10
+MAX_SLOT_TEXT = 40
+MAX_VECTOR_QUERY = 300
+MAX_SESSION_ID = 128
 
 
 class StrictModel(BaseModel):
@@ -95,6 +108,100 @@ class StateContract(StrictModel):
     context_state: ContextState = Field(default_factory=ContextState)
 
 
+def _parse_datetime(value) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _aware(value: datetime | None, tz_name: str) -> datetime | None:
+    if value is None or value.tzinfo is not None:
+        return value
+    try:
+        return value.replace(tzinfo=ZoneInfo(tz_name))
+    except Exception:  # noqa: BLE001 — bad client timezone
+        return value.replace(tzinfo=timezone.utc)
+
+
+def _normalize_time_of_day(dt: dict) -> None:
+    """Make "вечер пятницы" a stable 18:00–23:59 window.
+
+    The structure model is free-form and sometimes returns 17:00 for
+    "вечер"; the search then silently expanded it to the whole day anyway.
+    """
+    if not isinstance(dt, dict) or dt.get("any"):
+        return
+    raw = str(dt.get("raw_expression") or "")
+    window = time_window(raw)
+    if window is None:
+        return
+    tz_name = dt.get("timezone") or settings.default_timezone
+    start = _aware(_parse_datetime(dt.get("start")), tz_name)
+    if start is None:
+        return
+    end = _aware(_parse_datetime(dt.get("end")), tz_name)
+    start_h, start_m, end_h, end_m = window
+    if not has_explicit_clock(raw):
+        start = start.replace(hour=start_h, minute=start_m,
+                              second=0, microsecond=0)
+    end = (end or start).replace(hour=end_h, minute=end_m,
+                                 second=0, microsecond=0)
+    if end <= start and end.date() == start.date():
+        end += timedelta(days=1)
+    dt["start"] = start.isoformat()
+    dt["end"] = end.isoformat()
+
+
+def _clean_category(value) -> list[str]:
+    """Keep known categories only, deduplicated and capped.
+
+    "All seven categories" is a broad request, not a filter: drop it.
+    """
+    if isinstance(value, str):
+        value = [value]
+    if not isinstance(value, list):
+        return []
+    kept: list[str] = []
+    for item in value:
+        text = str(item).strip().lower()
+        if text in EVENT_CATEGORY_SET and text not in kept:
+            kept.append(text)
+    if set(kept) >= EVENT_CATEGORY_SET:
+        return []
+    return kept[:MAX_CATEGORIES]
+
+
+def _clean_text_list(value, *, limit: int, max_len: int = MAX_SLOT_TEXT
+                     ) -> list[str]:
+    """Lowercase/strip, dedupe, truncate and cap free-form slot lists.
+
+    Unknown values are kept: the search layer decides what to do with them.
+    """
+    if isinstance(value, str):
+        value = [value]
+    if not isinstance(value, list):
+        return []
+    cleaned: list[str] = []
+    for item in value:
+        text = str(item).strip().lower()[:max_len].strip()
+        if text and text not in cleaned:
+            cleaned.append(text)
+        if len(cleaned) >= limit:
+            break
+    return cleaned
+
+
+def _clean_price(value) -> float | None:
+    try:
+        price = float(value)
+    except (TypeError, ValueError):
+        return None
+    return price if price > 0 else None
+
+
 def sanitize(contract: StateContract) -> StateContract:
     """Server-side normalization: clamp slots and fill configured defaults."""
     from ...models import intent as intents
@@ -112,29 +219,50 @@ def sanitize(contract: StateContract) -> StateContract:
         hard["party_size"] = (0 if value == 0 else
                               min(PARTY_SIZE_MAX, max(PARTY_SIZE_MIN, value)))
     location = hard.get("location") or {}
-    if location.get("any"):
+    city = location.get("city")
+    if location.get("any") or not (isinstance(city, str) and city.strip()):
+        # Never invent a city here: the default is applied at search time.
         location["city"] = None
-    elif not location.get("city"):
-        location["city"] = None
+    else:
+        location["city"] = city.strip()
     hard["location"] = location
-    themes = hard.get("themes")
-    hard["themes"] = ([str(theme).strip().lower() for theme in themes
-                       if str(theme).strip()][:5]
-                      if isinstance(themes, list) else [])
+    hard["category"] = _clean_category(hard.get("category"))
+    hard["themes"] = _clean_text_list(hard.get("themes"), limit=MAX_THEMES)
+    hard["amenities_required"] = _clean_text_list(
+        hard.get("amenities_required"), limit=MAX_AMENITIES)
+    negative = data.get("negative_filters") or {}
+    for key in ("exclude_categories", "exclude_tags", "exclude_districts"):
+        negative[key] = _clean_text_list(
+            negative.get(key), limit=MAX_NEGATIVE_FILTERS)
+    data["negative_filters"] = negative
     if hard.get("datetime") is not None and not hard["datetime"].get("timezone"):
         hard["datetime"]["timezone"] = settings.default_timezone
     if hard.get("datetime") is not None and hard["datetime"].get("any"):
         hard["datetime"]["start"] = None
         hard["datetime"]["end"] = None
+    if hard.get("datetime") is not None:
+        _normalize_time_of_day(hard["datetime"])
     budget = hard.get("budget")
-    if budget is not None and not budget.get("currency"):
-        budget["currency"] = settings.default_currency
+    if budget is not None:
+        if not budget.get("currency"):
+            budget["currency"] = settings.default_currency
+        if budget.get("any"):
+            budget["max_price_per_person"] = None
+        else:
+            budget["max_price_per_person"] = _clean_price(
+                budget.get("max_price_per_person"))
     payload = data["semantic_payload"]
     if not payload.get("language"):
         payload["language"] = settings.default_language
+    raw_vector = payload.get("vector_query")
+    payload["vector_query"] = (
+        raw_vector.strip()[:MAX_VECTOR_QUERY]
+        if isinstance(raw_vector, str) else "")
     context = data["context_state"]
-    if not context.get("session_id"):
-        context["session_id"] = ANONYMOUS_SESSION
+    session_id = context.get("session_id")
+    session_id = (session_id.strip()[:MAX_SESSION_ID]
+                  if isinstance(session_id, str) else "")
+    context["session_id"] = session_id or ANONYMOUS_SESSION
     context["turn_count"] = max(1, int(context.get("turn_count") or 1)) + 1
     # Server owns the clarification flags; the client suggestion is advisory.
     data["needs_clarification"] = False

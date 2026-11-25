@@ -56,30 +56,39 @@ class DateRangeFilter(Filter):
     for any day inside their period, not only the start date. Events without
     `start_at` are dropped when the user named a date: a scraped post without
     a date cannot be promised for that evening.
+
+    `end` is optional: the future floor only needs "not finished before now",
+    so a query without an explicit date keeps every event still running.
     """
 
-    def __init__(self, start: datetime, end: datetime) -> None:
+    def __init__(self, start: datetime, end: datetime | None = None) -> None:
         self._start = start
         self._end = end
 
     def qdrant_must(self) -> dict[str, PayloadDateRange]:
-        # start_at < query_end AND end_at >= query_start.
+        # start_at < query_end (only with an end) AND end_at >= query_start.
         # Payload stores end_at = start_at for single-day events.
-        return {
-            "start_at": PayloadDateRange(lt=self._end.isoformat()),
+        must: dict[str, PayloadDateRange] = {
             "end_at": PayloadDateRange(gte=self._start.isoformat()),
         }
+        if self._end is not None:
+            must["start_at"] = PayloadDateRange(lt=self._end.isoformat())
+        return must
 
     def lexical_params(self) -> dict[str, str]:
-        return {"date_from": self._start.isoformat(),
-                "date_to": self._end.isoformat()}
+        params = {"date_from": self._start.isoformat()}
+        if self._end is not None:
+            params["date_to"] = self._end.isoformat()
+        return params
 
     def matches(self, hit: FusedHit) -> bool:
         start = _parse_datetime(hit.payload.get("start_at"))
         if start is None:
             return False
+        if self._end is not None and start >= self._end:
+            return False
         end = _parse_datetime(hit.payload.get("end_at")) or start
-        return start < self._end and end >= self._start
+        return end >= self._start
 
 
 class RubricFilter(Filter):

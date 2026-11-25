@@ -1,3 +1,6 @@
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 import httpx
 import pytest
 
@@ -75,7 +78,8 @@ def make_contract(**overrides) -> StateContract:
     return StateContract.model_validate(base)
 
 
-def make_service(store, collector, weather=None) -> DialogueService:
+def make_service(store, collector, weather=None,
+                 settings=None, now=None) -> DialogueService:
     booking = BookingClient("http://booking:8082",
                             transport=httpx.MockTransport(booking_handler))
     return DialogueService(
@@ -84,7 +88,8 @@ def make_service(store, collector, weather=None) -> DialogueService:
         weather=weather or FakeWeather(),
         booking=booking,
         db_url="",
-        settings=Settings(),
+        settings=settings or Settings(),
+        now=now,
     )
 
 
@@ -252,3 +257,273 @@ async def test_empty_vector_index_falls_back_to_lexical():
     response = await service.search_turn(make_contract())
     assert response.messages[-1].kind == "results"
     assert {card.event_id for card in response.messages[-1].results} == {"aaa", "7"}
+
+
+def test_date_window_uses_evening_hours():
+    service = make_service(two_event_store(), FakeCollector([]))
+    contract = StateContract.model_validate({
+        "hard_filters": {
+            "datetime": {
+                "start": "2026-11-27T18:00:00+03:00",
+                "end": "2026-11-27T23:59:00+03:00",
+                "raw_expression": "вечер пятницы",
+                "timezone": "Europe/Minsk",
+            }
+        },
+    })
+    start, end = service._date_window(contract.hard_filters)
+    assert start is not None and end is not None
+    assert (start.hour, start.minute) == (18, 0)
+    assert (end.hour, end.minute) == (23, 59)
+    assert start.date().isoformat() == "2026-11-27"
+
+
+def test_date_window_without_time_of_day_is_whole_day():
+    service = make_service(two_event_store(), FakeCollector([]))
+    contract = StateContract.model_validate({
+        "hard_filters": {
+            "datetime": {
+                "start": "2026-11-27T12:00:00+03:00",
+                "raw_expression": "пятница",
+                "timezone": "Europe/Minsk",
+            }
+        },
+    })
+    start, end = service._date_window(contract.hard_filters)
+    assert start is not None and end is not None
+    assert (start.hour, start.minute) == (0, 0)
+    assert start.date().isoformat() == "2026-11-27"
+    assert end.date().isoformat() == "2026-11-28"
+
+
+def test_required_slots_only_asks_events_for_a_date():
+    from app.services.rules import required_slots
+
+    venue = StateContract.model_validate({
+        "intent": "find_venue_bar", "hard_filters": {},
+    })
+    assert required_slots(venue, Settings()) == []
+
+    undated = StateContract.model_validate({
+        "intent": "find_events", "hard_filters": {},
+    })
+    assert required_slots(undated, Settings()) == ["datetime"]
+
+    dated = StateContract.model_validate({
+        "intent": "find_events",
+        "hard_filters": {"datetime": {"start": "2026-10-24T19:00:00"}},
+    })
+    assert required_slots(dated, Settings()) == []
+
+    any_date = StateContract.model_validate({
+        "intent": "find_events",
+        "hard_filters": {"datetime": {"any": True}},
+    })
+    assert required_slots(any_date, Settings()) == []
+
+
+def test_required_slots_asks_for_city_only_without_a_default():
+    from app.services.rules import required_slots
+
+    contract = StateContract.model_validate({
+        "intent": "find_venues", "hard_filters": {},
+    })
+    assert required_slots(contract, Settings(default_city="")) == ["city"]
+    assert required_slots(contract, Settings(default_city="Минск")) == []
+
+
+def test_apply_rules_venue_needs_no_budget_or_party():
+    contract = StateContract.model_validate({
+        "intent": "find_venues",
+        "clarify_missing": True,
+        "hard_filters": {},
+    })
+    service = make_service(InMemoryStore(), FakeCollector([]))
+    ruled = service.apply_rules(contract)
+    assert ruled.needs_clarification is False
+    assert ruled.dialogue_action == "search"
+    assert ruled.clarification_slots == []
+
+
+def test_apply_rules_asks_only_for_the_event_date():
+    contract = StateContract.model_validate({
+        "intent": "find_events",
+        "clarify_missing": True,
+        "hard_filters": {},
+    })
+    service = make_service(InMemoryStore(), FakeCollector([]))
+    ruled = service.apply_rules(contract)
+    assert ruled.dialogue_action == "ask_clarification"
+    assert ruled.clarification_slots == ["datetime"]
+    assert "дата" in ruled.clarification_prompt
+    assert "бюджет" not in ruled.clarification_prompt
+    assert "человек" not in ruled.clarification_prompt
+
+
+def test_apply_rules_clears_stale_slots_when_nothing_is_missing():
+    contract = StateContract.model_validate({
+        "intent": "find_events",
+        "clarify_missing": True,
+        "clarification_slots": ["datetime", "budget"],
+        "hard_filters": {"datetime": {"start": "2026-10-24T19:00:00"}},
+    })
+    service = make_service(InMemoryStore(), FakeCollector([]))
+    ruled = service.apply_rules(contract)
+    assert ruled.clarification_slots == []
+    assert ruled.dialogue_action == "search"
+
+
+def test_search_plan_applies_the_default_city():
+    service = make_service(InMemoryStore(), FakeCollector([]))
+    contract = make_contract(hard_filters={
+        "datetime": {"start": "2026-10-24T12:00:00"},
+        "category": ["concert"],
+    })
+    assert service._search_plan(contract).city == "Минск"
+
+    any_city = make_contract(hard_filters={
+        "datetime": {"start": "2026-10-24T12:00:00"},
+        "location": {"any": True},
+    })
+    assert service._search_plan(any_city).city is None
+
+
+def test_venue_plan_uses_rubric_and_never_the_city_as_query():
+    service = make_service(InMemoryStore(), FakeCollector([]))
+    contract = StateContract.model_validate({
+        "intent": "find_venue_bar",
+        "hard_filters": {},
+    })
+    plan = service._venue_plan(contract)
+    assert plan.rubric == "Бары"
+    assert plan.vector_query == "Бары"
+    assert plan.city == "Минск"
+
+    any_city = StateContract.model_validate({
+        "intent": "find_venues",
+        "hard_filters": {"location": {"any": True}},
+    })
+    fallback = service._venue_plan(any_city)
+    assert fallback.city is None
+    assert fallback.rubric is None
+    assert fallback.vector_query == "места"
+
+
+FIXED_NOW = datetime(2026, 11, 25, 12, 0, tzinfo=ZoneInfo("Europe/Minsk"))
+
+
+def fixed_now() -> datetime:
+    return FIXED_NOW
+
+
+class RecordingWeather(FakeWeather):
+    def __init__(self):
+        super().__init__()
+        self.dates: list[str] = []
+
+    async def forecast(self, date, lat, lon):
+        self.dates.append(date)
+        return Weather(date=date, temp_max=11.0,
+                       precipitation_probability=10, weathercode=1)
+
+
+@pytest.mark.asyncio
+async def test_weather_turn_returns_only_the_forecast():
+    weather = RecordingWeather()
+    service = make_service(InMemoryStore(), FakeCollector([]),
+                           weather=weather, now=fixed_now)
+    contract = make_contract(intent="weather",
+                             hard_filters={"location": {"city": "Минск"}})
+    response = await service.weather_turn(contract)
+    assert [message.kind for message in response.messages] == ["weather"]
+    assert response.messages[0].results is None
+    # No date in the contract: the injected clock decides "today".
+    assert weather.dates == ["2026-11-25"]
+    assert "2026-11-25" in response.messages[0].text
+
+    dated = await service.weather_turn(make_contract(
+        intent="weather",
+        hard_filters={"datetime": {"start": "2026-12-01T19:00:00+03:00"}}))
+    assert dated.messages[0].results is None
+    assert weather.dates[-1] == "2026-12-01"
+
+
+def test_search_plan_without_a_date_starts_now():
+    service = make_service(InMemoryStore(), FakeCollector([]), now=fixed_now)
+    contract = make_contract(hard_filters={
+        "location": {"city": "Минск"}, "category": ["concert"]})
+    plan = service._search_plan(contract)
+    assert plan.date_from == FIXED_NOW
+    assert plan.date_to is None
+
+    any_date = make_contract(hard_filters={
+        "datetime": {"any": True},
+        "location": {"city": "Минск"},
+    })
+    assert service._search_plan(any_date).date_from == FIXED_NOW
+
+
+@pytest.mark.asyncio
+async def test_search_turn_drops_past_events_without_a_date():
+    """The future floor applies only when the user named no date."""
+    store = InMemoryStore(
+        [
+            ("past", [1.0, 0.0, 0.0],
+             {"title": "Прошлый концерт", "city": "Минск",
+              "price_min": 25.0, "category": "concert",
+              "start_at": "2026-11-01T19:00:00+00:00"}),
+            ("future", [1.0, 0.0, 0.0],
+             {"title": "Будущий концерт", "city": "Минск",
+              "price_min": 25.0, "category": "concert",
+              "start_at": "2026-12-05T19:00:00+00:00"}),
+        ],
+        {"past": encode_sparse("прошлый концерт"),
+         "future": encode_sparse("будущий концерт")},
+    )
+    service = make_service(store, FakeCollector([]), now=fixed_now)
+    contract = make_contract(hard_filters={
+        "location": {"city": "Минск"}, "category": ["concert"]})
+    response = await service.search_turn(contract)
+    assert [message.kind for message in response.messages] == ["filters",
+                                                                "results"]
+    ids = {card.event_id for card in response.messages[-1].results}
+    assert ids == {"future"}
+
+
+def test_dialogue_router_dispatches_weather(monkeypatch):
+    from types import SimpleNamespace
+
+    from fastapi.testclient import TestClient
+
+    import app.api.routers.dialogue as dialogue_router
+    from app.api.schemas.dialogue import ChatMessage, DialogResponse
+    from app.main import create_app
+
+    calls: list[str] = []
+
+    class FakeDialogue:
+        async def weather_turn(self, contract):
+            calls.append(contract.intent)
+            return DialogResponse(
+                contract=contract,
+                messages=[ChatMessage(kind="weather", text="погода")])
+
+        def record_run(self, contract, duration_ms):
+            calls.append("recorded")
+
+        def elapsed_ms(self, started):
+            return 1
+
+    monkeypatch.setattr(dialogue_router, "get_components",
+                        lambda: SimpleNamespace(dialogue=FakeDialogue()))
+    client = TestClient(create_app())
+    response = client.post("/assistant/dialogue/v2", json={
+        "dialogue_action": "search",
+        "intent": "weather",
+        "hard_filters": {},
+        "context_state": {"session_id": "weather-1"},
+    })
+    assert response.status_code == 200
+    body = response.json()
+    assert [message["kind"] for message in body["messages"]] == ["weather"]
+    assert calls == ["weather", "recorded"]

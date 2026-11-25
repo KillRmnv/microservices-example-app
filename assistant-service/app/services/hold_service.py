@@ -8,12 +8,15 @@ from __future__ import annotations
 
 import logging
 
+import psycopg
+
 from ..clients.booking import BookingClient
 from ..core import db
 from ..errors import (
     BackendUnavailable,
     ConflictError,
     HoldGone,
+    NotEnoughSeats,
     PriceMismatch,
     ValidationError,
 )
@@ -45,18 +48,30 @@ class HoldService:
             raise BackendUnavailable("booking-service is unavailable")
         if availability.status == SOLD_OUT:
             raise ConflictError("event is sold out")
-        self._validate(zone, price, availability)
+        self._validate(zone, price, availability, party)
         # TODO(stage-3b): replace this local intent with a real inventory
         # hold in booking-service once user-auth passthrough exists.
         with db.get_conn(self._db_url) as conn:
             existing = holds_repo.find_pending(conn, session_id, event_id)
             if existing is not None:
                 return existing
-            return holds_repo.create(conn, session_id, event_id, zone,
-                                     float(price), party)
+            try:
+                # A past-due PENDING row still holds the partial unique index
+                # slot; retire it in the same transaction as the insert.
+                holds_repo.expire_stale(conn, session_id, event_id)
+                return holds_repo.create(conn, session_id, event_id, zone,
+                                         float(price), party)
+            except psycopg.errors.UniqueViolation:
+                # Two requests passed the pre-check together; the partial
+                # unique index picked a winner. Return that same hold.
+                conn.rollback()
+                existing = holds_repo.find_pending(conn, session_id, event_id)
+                if existing is not None:
+                    return existing
+                raise
 
     @staticmethod
-    def _validate(zone: str, price: float, availability) -> None:
+    def _validate(zone: str, price: float, availability, party: int) -> None:
         if not zone.strip():
             raise ValidationError("zone is required")
         if price <= 0:
@@ -67,6 +82,10 @@ class HoldService:
                       if slot["zone"] == zone), None)
         if match is None:
             raise ValidationError(f"unknown zone: {zone}")
+        count = match.get("count")
+        if count is not None and party > int(count):
+            raise NotEnoughSeats(
+                f"only {int(count)} seats left in {zone}, requested {party}")
         min_price = match.get("min_price")
         if min_price is not None and price + PRICE_EPSILON < float(min_price):
             raise PriceMismatch(

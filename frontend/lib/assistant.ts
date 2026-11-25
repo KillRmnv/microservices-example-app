@@ -3,7 +3,7 @@
 // Assistant backend client. Same-origin calls: /assistant/* is proxied
 // to the gateway by nginx (see frontend/nginx.conf).
 // NEXT_PUBLIC_ASSISTANT_MOCK=true keeps the old demo scenarios.
-import { ApiError } from './api'
+import { ApiError, tokenStore } from './api'
 import type { StateContract } from './types'
 
 export interface DialogResultCard {
@@ -44,9 +44,12 @@ export function isMockMode(): boolean {
 }
 
 async function postJson<T>(path: string, body: unknown): Promise<T> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  const token = tokenStore.token
+  if (token) headers.Authorization = `Bearer ${token}`
   const response = await fetch(path, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify(body),
   })
   if (!response.ok) {

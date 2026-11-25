@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { ArrowRight, CheckCircle2, CloudRain, HelpCircle, MessageCircle, MessageSquare, Plus, RefreshCcw, Sun, Trash2, X } from 'lucide-react'
 import type { StateContract } from '@/lib/types'
-import { api } from '@/lib/api'
+import { api, ApiError, tokenStore } from '@/lib/api'
 import { sourceLabel } from '@/lib/catalog'
 import {
   createHold,
@@ -199,6 +199,8 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
   const [planThinking, setPlanThinking] = useState<number | null>(null)
   const [clarifyMissing, setClarifyMissing] = useState(true)
   const endRef = useRef<HTMLDivElement | null>(null)
+  // One degraded-mode notice per chat, no matter how many turns fall back.
+  const degradedNotices = useRef<Set<string>>(new Set())
   const mock = isMockMode()
 
   useEffect(() => {
@@ -275,6 +277,19 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
     appendToChat(chatId, [{ id: nextId(), kind: 'assistant', text, error: true }])
   }
 
+  // Holds are secured by the gateway: anonymous clicks must not reach the API.
+  const LOGIN_PROMPT = 'Войдите в аккаунт, чтобы оформить бронь — /login'
+
+  const pushLoginPrompt = (chatId: string) => {
+    appendToChat(chatId, [{ id: nextId(), kind: 'assistant', text: LOGIN_PROMPT }])
+  }
+
+  const canHold = (chatId: string): boolean => {
+    if (tokenStore.token) return true
+    pushLoginPrompt(chatId)
+    return false
+  }
+
   const startNewChat = (): Chat => {
     const chat = createChat(null, nextChatNumber(chats))
     setChats((prev) => [chat, ...prev].slice(0, 20))
@@ -329,17 +344,19 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
           }])
           return
         }
-        contract = mergeContracts(remote.contract, contract, parsed)
-      } catch (e) {
-        // Never replay the previous contract on a structure failure: that
-        // returned the same stale list for a completely new question.
-        pushError(
-          e instanceof Error
-            ? `Не удалось разобрать запрос ассистентом: ${e.message}. Попробуйте ещё раз.`
-            : 'Не удалось разобрать запрос ассистентом. Попробуйте ещё раз.',
-          chatId,
-        )
-        return
+        contract = mergeContracts(remote.contract, contract, parsed, previous ?? undefined)
+      } catch {
+        // The model stage is optional: keep the deterministic contract and
+        // continue to /dialogue/v2 instead of failing the turn. One neutral
+        // notice per chat keeps the degraded mode visible but quiet.
+        if (!degradedNotices.current.has(chatId)) {
+          degradedNotices.current.add(chatId)
+          appendToChat(chatId, [{
+            id: nextId(),
+            kind: 'assistant',
+            text: 'Модель недоступна — ищу по локальным правилам.',
+          }])
+        }
       }
       const response = await sendDialogue(contract)
       const incoming = response.messages.length
@@ -423,6 +440,7 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
   const selectResult = async (chatId: string,
                                result: { title: string; meta: string; price: string; event_id?: string }) => {
     if (!isBookable(result.event_id)) return
+    if (!canHold(chatId)) return
     const chat = chats.find((item) => item.id === chatId)
     const contract = chat?.contract
     const sessionId = contract?.context_state.session_id ?? `web_${Date.now()}`
@@ -451,6 +469,10 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
         holdId: hold.id,
       }])
     } catch (e) {
+      if (e instanceof ApiError && e.status === 401) {
+        pushLoginPrompt(chatId)
+        return
+      }
       pushError(e instanceof Error ? `Не удалось оформить бронь: ${e.message}` : 'Не удалось оформить бронь.', chatId)
     } finally {
       setBusy(false)
@@ -464,6 +486,7 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
       pushError('В этом плане нет событий с онлайн-бронью — откройте события по ссылкам.', chatId)
       return
     }
+    if (!canHold(chatId)) return
     const chat = chats.find((item) => item.id === chatId)
     const contract = chat?.contract
     const sessionId = contract?.context_state.session_id ?? `web_${Date.now()}`
@@ -491,6 +514,10 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
           })
           booked.push(`${step.title} — ${cheapest.zone}, ${cheapest.price} руб. (бронь №${hold.id})`)
         } catch (e) {
+          if (e instanceof ApiError && e.status === 401) {
+            pushLoginPrompt(chatId)
+            return
+          }
           failed.push(`${step.title}: ${e instanceof Error ? e.message : 'ошибка брони'}`)
         }
       }

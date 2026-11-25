@@ -48,5 +48,9 @@ class PriceMismatch(ValidationError):
     code = "price_mismatch"
 
 
+class NotEnoughSeats(ConflictError):
+    code = "not_enough_seats"
+
+
 class BackendUnavailable(UpstreamError):
     code = "backend_unavailable"

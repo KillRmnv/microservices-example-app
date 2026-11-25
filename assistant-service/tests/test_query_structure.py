@@ -288,3 +288,39 @@ async def test_clarification_survives_broken_llm_json():
     assert contract.hard_filters.party_size == 3
     assert contract.semantic_payload.vector_query == "обед, поесть"
     assert contract.dialogue_action == "search"
+
+
+@pytest.mark.asyncio
+async def test_clarification_uses_required_slots_and_settings():
+    # No default city configured: the open slot is the city, not budget/party.
+    service = QueryStructureService(FakeProvider(json.dumps({"city": "Минск"},
+                                                           ensure_ascii=False)),
+                                    Settings(default_city=""))
+    previous = StateContract.model_validate({
+        "dialogue_action": "ask_clarification",
+        "intent": "find_venues",
+        "needs_clarification": True,
+        "clarify_missing": True,
+        "hard_filters": {},
+    })
+    contract = await service.parse("Минск", previous=previous)
+    assert contract.hard_filters.location.city == "Минск"
+    assert contract.clarification_slots == []
+
+
+@pytest.mark.asyncio
+async def test_clarification_asks_only_the_event_date():
+    service, fast, _ = make_service(
+        json.dumps({"datetime_start": "2026-10-31T19:00:00"}))
+    previous = StateContract.model_validate({
+        "dialogue_action": "ask_clarification",
+        "intent": "find_events",
+        "needs_clarification": True,
+        "clarify_missing": True,
+        "hard_filters": {},
+    })
+    contract = await service.parse("31 октября", previous=previous)
+    assert contract.hard_filters.datetime.start.startswith("2026-10-31")
+    system = fast.calls[0]["system"]
+    assert "дата" in system
+    assert "бюджет" not in system

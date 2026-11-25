@@ -10,17 +10,79 @@ const MONTHS: Record<string, number> = {
   июля: 7, августа: 8, сентября: 9, октября: 10, ноября: 11, декабря: 12,
 }
 
-const WEEKDAYS = ['воскресенье', 'понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота']
-
-const CATEGORY_KEYWORDS: Array<[RegExp, string]> = [
-  [/концерт|музык|джаз|рок/i, 'concert'],
-  [/спектакл|театр|балет|опера/i, 'theatre'],
-  [/выставк|музей|галере/i, 'exhibition'],
-  [/кино|фильм/i, 'film'],
-  [/спорт|матч|стадион/i, 'sport'],
-  [/детск|для детей/i, 'kids'],
-  [/ресторан|кафе|бар|клуб|кофейн|еда|ужин|обед/i, 'restaurant'],
+const WEEKDAY_STEMS: Array<[string, number]> = [
+  ['воскресень', 0], ['понедельник', 1], ['вторник', 2],
+  ['сред', 3], ['четверг', 4], ['пятниц', 5], ['суббот', 6],
 ]
+
+// Event categories only: venue words ("бар", "театр", "музей") are a different
+// axis (`intent`) and must not narrow the event catalogue.
+const CATEGORY_KEYWORDS: Array<[RegExp, string]> = [
+  [/концерт|музык|джаз|рок|выступлен/i, 'concert'],
+  [/спектакл|балет|опера|пьес/i, 'theatre'],
+  [/выставк/i, 'exhibition'],
+  [/кино(?!театр)|фильм/i, 'film'],
+  [/спорт(?!зал)|матч|стадион|футбол|хоккей/i, 'sport'],
+  [/детск|для детей|ребен|ребён/i, 'kids'],
+]
+
+// Venue intents: where to go, not what event to watch. Cafe is checked before
+// bar so "выпить кофе" does not become a bar search.
+const VENUE_INTENT_KEYWORDS: Array<[RegExp, string]> = [
+  [/кафе|кофейн|кофе/i, 'find_venue_cafe'],
+  [/бар|паб|пивн|пивка|выпить/i, 'find_venue_bar'],
+  [/ресторан|ужин|обед|поужинать|пообедать|поесть|еда/i, 'find_venue_restaurant'],
+  [/кинотеатр/i, 'find_venue_cinema'],
+  [/театр/i, 'find_venue_theatre'],
+  [/музе[йяеи]|галере/i, 'find_venue_exhibition'],
+  [/спортзал|фитнес|тренаж[её]р|потренироваться/i, 'find_venue_gym'],
+  [/библиотек|книжн|почитать|книг/i, 'find_venue_library'],
+]
+
+const EVENT_INTENT_KEYWORDS: Array<[RegExp, string]> = [
+  [/концерт|джаз|рок|музык|выступлен/i, 'find_event_concert'],
+  [/спектакл|балет|опера|пьес/i, 'find_event_theatre'],
+  [/выставк/i, 'find_event_exhibition'],
+  [/кино(?!театр)|фильм/i, 'find_event_film'],
+  [/спорт(?!зал)|матч|стадион|футбол|хоккей/i, 'find_event_sport'],
+  [/детск|для детей|ребен|ребён/i, 'find_event_kids'],
+]
+
+const PLAN_INTENT = /план|маршрут|составь план|собери план/i
+const WEATHER_INTENT = /погод|прогноз|дожд|снег|температур/i
+const BOOKING_INTENT = /забронир|бронь|купить билет/i
+// An explicit "anything goes" request: generic, but not a signal-less turn.
+const GENERIC_INTENT = /что-нибудь|что-то|куда сходить|что есть|погулять|чем заняться/i
+
+function firstIntentMatch(text: string,
+                          table: Array<[RegExp, string]>): string | undefined {
+  for (const [pattern, intent] of table) {
+    if (pattern.test(text)) return intent
+  }
+  return undefined
+}
+
+/**
+ * Local intent classifier. It only picks the section of the catalogue to use
+ * (events, venues or both) plus plan/weather/booking shortcuts; the server
+ * still owns the final contract. Returns `null` when the turn carries no
+ * intent signal at all (a slot follow-up like "а подешевле?"), so the caller
+ * can inherit the previous intent. Never returns "unsupported".
+ */
+export function detectIntent(text: string): string | null {
+  const lowered = text.toLowerCase()
+  if (PLAN_INTENT.test(lowered)) return 'plan'
+  if (WEATHER_INTENT.test(lowered)) return 'weather'
+  if (BOOKING_INTENT.test(lowered)) return 'booking'
+  const venue = firstIntentMatch(lowered, VENUE_INTENT_KEYWORDS)
+  const event = firstIntentMatch(lowered, EVENT_INTENT_KEYWORDS)
+  if (venue && event) return 'both'
+  if (venue) return venue
+  if (event) return event
+  // Explicit "anything" is a generic request, not a follow-up.
+  if (GENERIC_INTENT.test(lowered)) return 'both'
+  return null
+}
 
 // Domain defaults are configuration, not logic.
 const DEFAULT_CITY = process.env.NEXT_PUBLIC_DEFAULT_CITY ?? 'Минск'
@@ -28,6 +90,9 @@ const DEFAULT_LANGUAGE = process.env.NEXT_PUBLIC_DEFAULT_LANGUAGE ?? 'ru'
 
 export interface ParsedQuery {
   rawExpression: string
+  /** Local intent: events/venues section, plan/weather/booking, or null when
+   * the turn carries no intent signal (a slot follow-up). */
+  intent: string | null
   start?: string
   end?: string
   category: string[]
@@ -37,6 +102,12 @@ export interface ParsedQuery {
   vectorQuery: string
   /** True when the user actually named a date (not an inherited one). */
   dateExplicit: boolean
+  /**
+   * True when the whole turn is a bare "не важно"/"все равно" answer.
+   * It carries no slot of its own: it only applies to slots the server asked
+   * about (`clarification_slots`), so it must not wipe an inherited date.
+   */
+  bareAny: boolean
   /** True when the user explicitly said any date is fine. */
   dateAny: boolean
   /** True when the user explicitly said any city is fine. */
@@ -76,11 +147,13 @@ export function parseQuery(text: string, now = new Date()): ParsedQuery {
   const lowered = text.toLowerCase()
   const result: ParsedQuery = {
     rawExpression: text.trim().slice(0, 200),
+    intent: detectIntent(text),
     category: [],
     partySize: 2,
     excludeTags: [],
     vectorQuery: '',
     dateExplicit: false,
+    bareAny: false,
     dateAny: false,
     cityAny: false,
     budgetAny: false,
@@ -94,16 +167,17 @@ export function parseQuery(text: string, now = new Date()): ParsedQuery {
   let time: string | null = null
   const timeMatch = lowered.match(/(\d{1,2})[:.](\d{2})/)
   if (timeMatch) time = `${pad(Number(timeMatch[1]))}:${timeMatch[2]}`
-  const anyAll = /^(?:не\s+важно|все\s+равно|любой\s+вариант|без\s+разницы)[.!?]*$/.test(lowered)
-  const dateAny = anyAll || /не\s+имеет\s+значения|не\s+важно|любая\s+дата|без\s+даты|все\s+равно/.test(lowered)
-  result.cityAny = anyAll || /любой\s+город|без\s+разницы\s+где|не\s+важно\s+где|город\s+не\s+важен/.test(lowered)
-  result.budgetAny = anyAll || /без\s+бюджета|цена\s*не\s*важна|цена\s+неважна|любая\s+цена|деньги\s+не\s+важны/.test(lowered)
-  result.partyAny = anyAll || /компания\s+любая|сколько\s+угодно\s+человек|нас\s+любое|число\s+человек\s+не\s+важно/.test(lowered)
+  // A bare "не важно" answers whatever the server asked about; it is not an
+  // "any date" instruction on its own, so keep it in a separate flag.
+  result.bareAny = /^(?:не\s+важно|неважно|все\s+равно|любой\s+вариант|без\s+разницы|как\s+угодно)[.!?]*$/.test(lowered)
+  result.dateAny = /любая\s+дата|без\s+даты|дата\s+не\s+(?:важна|имеет\s+значения)/.test(lowered)
+  result.cityAny = /любой\s+город|без\s+разницы\s+где|не\s+важно\s+где|город\s+не\s+важен/.test(lowered)
+  result.budgetAny = /без\s+бюджета|цена\s*не\s*важна|цена\s+неважна|любая\s+цена|деньги\s+не\s+важны|бюджет\s+не\s+важен|бюджет\s+любой/.test(lowered)
+  result.partyAny = /компания\s+любая|сколько\s+угодно\s+человек|нас\s+любое|число\s+человек\s+не\s+важно|компания\s+не\s+важна/.test(lowered)
   const numericRange = lowered.match(/(\d{1,2})[./](\d{1,2})\s*[-–—]\s*(\d{1,2})[./](\d{1,2})/)
   const namedRange = lowered.match(/(?:с\s+)?(\d{1,2})\s*(?:[-–—]|по)\s*(\d{1,2})\s+(января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)/)
   const tomorrowRange = /завтра\s*[-–—]\s*послезавтра/.test(lowered)
-  if (dateAny) {
-    result.dateAny = true
+  if (result.dateAny) {
     result.dateExplicit = true
   } else if (numericRange) {
     const startMonth = Number(numericRange[2]) - 1
@@ -137,8 +211,8 @@ export function parseQuery(text: string, now = new Date()): ParsedQuery {
       day = weekend.start
       endDay = weekend.end
     } else {
-      for (let index = 0; index < WEEKDAYS.length; index += 1) {
-        if (lowered.includes(WEEKDAYS[index])) {
+      for (const [stem, index] of WEEKDAY_STEMS) {
+        if (lowered.includes(stem)) {
           day = nextWeekday(now, index)
           break
         }
@@ -146,10 +220,28 @@ export function parseQuery(text: string, now = new Date()): ParsedQuery {
     }
   }
   if (day) {
-    const stamp = time ?? '12:00'
+    let dayStart = '12:00'
+    let dayEnd = '23:59'
+    // JS `\b` only knows ASCII word chars, so `/\bвечер/` never matches
+    // Cyrillic. Use plain stems plus an explicit boundary for the noun "день".
+    if (/утр|morning/i.test(lowered)) {
+      dayStart = '09:00'
+      dayEnd = '11:59'
+    } else if (/вечер|evening/i.test(lowered)) {
+      dayStart = '18:00'
+      dayEnd = '23:59'
+    } else if (/ноч|night/i.test(lowered)) {
+      dayStart = '22:00'
+      dayEnd = '23:59'
+    } else if (/дн[её]м|дневн|(?:^|[^а-яёa-z])день(?:[^а-яёa-z]|$)/i.test(lowered)) {
+      dayStart = '12:00'
+      dayEnd = '17:59'
+    }
+    const stamp = time ?? dayStart
     result.start = `${isoDay(day)}T${stamp}:00`
     const end = endDay ?? day
-    result.end = `${isoDay(end)}T${time ?? '23:59'}:00`
+    const endStamp = time ? '23:59' : dayEnd
+    result.end = `${isoDay(end)}T${endStamp}:00`
     result.dateExplicit = true
   }
 
@@ -203,7 +295,8 @@ export function parseQuery(text: string, now = new Date()): ParsedQuery {
     .trim()
     .replace(/^(?:на|из)\s+|\s+(?:на|из)$/g, '')
   const followUpOnly = /^(?:а\s+)?(?:ещё|еще|подешевле|дешевле|подороже|дороже|другие|другой|варианты|что-нибудь|что-то|а\s+есть\s+ещё)[\s?.!]*$/
-  result.vectorQuery = followUpOnly.test(semantic) || semantic.length <= 2
+  // A bare "не важно" answers a slot question; it is not a semantic topic.
+  result.vectorQuery = result.bareAny || followUpOnly.test(semantic) || semantic.length <= 2
     ? ''
     : semantic.slice(0, 300)
 
@@ -214,23 +307,32 @@ export function contractFromParsed(parsed: ParsedQuery, previous?: StateContract
   const previousTurn = previous?.context_state.turn_count ?? 0
   const previousHard = previous?.hard_filters
   const previousNegative = previous?.negative_filters
+  // A bare "не важно" only means "any" for the slot the server just asked
+  // about. Without that context it must behave as an empty follow-up.
+  const asked = previous?.needs_clarification ? (previous.clarification_slots ?? []) : []
+  const asksFor = (slot: string) => parsed.bareAny && asked.includes(slot)
+  // A signal-less follow-up ("а подешевле?") inherits the previous section.
+  const intent = parsed.intent ?? previous?.intent ?? 'both'
+  // Categories exist only on the event axe: a venue search ("бар") must not
+  // inherit an old event filter, and venue words never add one.
+  const isEventIntent = intent === 'both' || intent.startsWith('find_event')
   const excludeTags = Array.from(new Set([
     ...(previousNegative?.exclude_tags ?? []),
     ...parsed.excludeTags,
   ]))
   const contract: StateContract = {
     dialogue_action: 'search',
-    intent: previous?.intent ?? 'find_events',
+    intent,
     clarify_missing: previous?.clarify_missing ?? true,
     needs_clarification: false,
     clarification_prompt: null,
     hard_filters: {
-      location: parsed.cityAny
+      location: parsed.cityAny || asksFor('city')
         ? { city: null, any: true }
         : previousHard?.location ?? {},
       category: previousHard?.category ?? [],
       themes: previousHard?.themes ?? [],
-      party_size: parsed.partyAny
+      party_size: parsed.partyAny || asksFor('party')
         ? 0
         : parsed.partyExplicit
           ? parsed.partySize
@@ -251,26 +353,28 @@ export function contractFromParsed(parsed: ParsedQuery, previous?: StateContract
       session_id: previous?.context_state.session_id ?? `web_${Date.now()}`,
     },
   }
-  if (parsed.dateAny) {
-    contract.hard_filters.datetime = { any: true, raw_expression: parsed.rawExpression }
-  } else if (parsed.start) {
+  if (parsed.start) {
     contract.hard_filters.datetime = {
       start: parsed.start,
       end: parsed.end,
       raw_expression: parsed.rawExpression,
     }
-  } else if (previousHard?.datetime?.any) {
-    contract.hard_filters.datetime = previousHard.datetime
-  } else if (previousHard?.datetime?.start) {
-    // Follow-up ("а подешевле?") keeps the date from the previous turn.
+  } else if (parsed.dateAny || asksFor('datetime')) {
+    contract.hard_filters.datetime = { any: true, raw_expression: parsed.rawExpression }
+  } else if (previousHard?.datetime) {
+    // Follow-up ("а подешевле?") keeps the date from the previous turn, even
+    // when the user answered another slot with "не важно".
     contract.hard_filters.datetime = previousHard.datetime
   }
   const inheritedCategory = previousHard?.category?.length
     ? previousHard.category
     : undefined
-  const category = parsed.category.length ? parsed.category : inheritedCategory
+  const category = isEventIntent
+    ? (parsed.category.length ? parsed.category : inheritedCategory)
+    : undefined
   if (category?.length) contract.hard_filters.category = category
-  if (parsed.budgetAny) {
+  else if (!isEventIntent) contract.hard_filters.category = []
+  if (parsed.budgetAny || asksFor('budget')) {
     contract.hard_filters.budget = { any: true }
   } else if (parsed.maxPrice !== undefined) {
     contract.hard_filters.budget = { max_price_per_person: parsed.maxPrice }
@@ -283,23 +387,53 @@ export function contractFromParsed(parsed: ParsedQuery, previous?: StateContract
 
 const FOLLOW_UP_VECTOR = /^(?:а\s+)?(?:ещё|еще|подешевле|дешевле|подороже|дороже|другие|другой|варианты|что-нибудь|что-то)[\s?.!]*$/i
 
+// Generic sections carry no topic of their own, so a specific intent from the
+// other side should win.
+const GENERIC = new Set(['find_events', 'find_venues', 'both'])
+
 /** Prefer the model's semantic fields, keep deterministic local date parsing. */
-export function mergeContracts(remote: StateContract, local: StateContract, parsed?: ParsedQuery): StateContract {
+export function mergeContracts(
+  remote: StateContract,
+  local: StateContract,
+  parsed?: ParsedQuery,
+  previous?: StateContract,
+): StateContract {
   const remoteDate = remote.hard_filters.datetime
   const remoteVector = (remote.semantic_payload.vector_query || '').trim()
+  // The local parser owns the slots the user actually named (or answered with
+  // a bare "не важно" after the server asked). Everything else keeps the
+  // model's value so an inherited local field cannot mask a model filter.
+  const asked = previous?.needs_clarification ? (previous.clarification_slots ?? []) : []
   const localDateWins = parsed
-    ? parsed.dateAny || parsed.dateExplicit
+    ? parsed.dateExplicit || (parsed.bareAny && asked.includes('datetime'))
     : Boolean(local.hard_filters.datetime?.start)
+  const localBudgetWins = parsed
+    ? parsed.maxPrice !== undefined
+      || parsed.budgetAny
+      || (parsed.bareAny && asked.includes('budget'))
+    : local.hard_filters.budget !== undefined
+  const localPartyWins = parsed
+    ? parsed.partyExplicit
+      || parsed.partyAny
+      || (parsed.bareAny && asked.includes('party'))
+    : local.hard_filters.party_size !== undefined
   // A follow-up inherits the date, so the model's "ask for a date" verdict
   // no longer applies: the turn has everything needed to search.
   const action = remote.dialogue_action === 'ask_clarification'
     && local.hard_filters.datetime?.start
     ? 'search'
     : remote.dialogue_action
+  // Specific intent wins over generic on either side; local specific RU venue
+  // words ("бар", "кофейня") beat a model that folded them into find_events.
+  const localIntent = local.intent ?? 'both'
+  const intent = remote.intent
+    && (GENERIC.has(localIntent) || !GENERIC.has(remote.intent))
+    ? remote.intent
+    : localIntent
   return {
     ...local,
     dialogue_action: action,
-    intent: remote.intent || local.intent,
+    intent,
     clarify_missing: local.clarify_missing ?? remote.clarify_missing,
     hard_filters: {
       ...local.hard_filters,
@@ -324,22 +458,28 @@ export function mergeContracts(remote: StateContract, local: StateContract, pars
               city: remote.hard_filters.location?.city || local.hard_filters.location?.city,
               any: false,
             },
-      category: remote.hard_filters.category?.length
-        ? remote.hard_filters.category
-        : local.hard_filters.category,
+      category: intent.startsWith('find_venue')
+        ? []
+        : remote.hard_filters.category?.length
+          ? remote.hard_filters.category
+          : local.hard_filters.category,
       themes: remote.hard_filters.themes?.length
         ? remote.hard_filters.themes
         : local.hard_filters.themes,
       // Party size comes from the deterministic parser (incl. inheritance):
       // the model always defaults it to 2, which would reset a follow-up.
-      party_size: local.hard_filters.party_size === 0
-        ? 0
-        : remote.hard_filters.party_size === 0
+      party_size: localPartyWins
+        ? local.hard_filters.party_size
+        : local.hard_filters.party_size === 0
           ? 0
-          : local.hard_filters.party_size || remote.hard_filters.party_size,
-      budget: local.hard_filters.budget?.any
-        ? { any: true }
-        : remote.hard_filters.budget ?? local.hard_filters.budget,
+          : remote.hard_filters.party_size === 0
+            ? 0
+            : local.hard_filters.party_size || remote.hard_filters.party_size,
+      budget: localBudgetWins
+        ? local.hard_filters.budget
+        : local.hard_filters.budget?.any
+          ? { any: true }
+          : remote.hard_filters.budget ?? local.hard_filters.budget,
       amenities_required: remote.hard_filters.amenities_required?.length
         ? remote.hard_filters.amenities_required
         : local.hard_filters.amenities_required,

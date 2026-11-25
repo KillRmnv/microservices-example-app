@@ -22,3 +22,14 @@ def test_capabilities_and_unsupported_are_not_dialogue_intents():
     assert "unsupported" not in intents.DIALOGUE_INTENTS
     assert "find_venue_bar" in intents.DIALOGUE_INTENTS
     assert "find_event_sport" in intents.DIALOGUE_INTENTS
+
+
+def test_vocabulary_derives_from_the_intent_registry():
+    from app.models import vocabulary
+
+    assert set(vocabulary.EVENT_CATEGORY_SET) == {
+        categories[0] for categories in intents.EVENT_INTENTS.values()}
+    assert len(vocabulary.EVENT_CATEGORIES) == 7
+    expected = [rubric for rubrics in intents.VENUE_INTENTS.values()
+                for rubric in rubrics]
+    assert list(vocabulary.VENUE_RUBRICS) == list(dict.fromkeys(expected))
