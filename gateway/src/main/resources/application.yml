@@ -166,10 +166,12 @@ resilience4j:
         timeout-duration: 600s
 logging:
   level:
+    root: INFO
     org.springframework.cloud.gateway: INFO
-    org.springframework.security: DEBUG
-    com.microservices_example_app.gateway: DEBUG
-    org.springframework.http.server.reactive: INFO
+    org.springframework.security: INFO
+    com.microservices_example_app.gateway: INFO
     org.springframework.web.server: INFO
+    org.apache.kafka: WARN
+    org.springframework.http.server.reactive: INFO
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} [traceId=%X{traceId}, spanId=%X{spanId}] - %msg%n"

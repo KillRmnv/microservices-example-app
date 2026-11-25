@@ -41,13 +41,13 @@ public class JwtAuthenticationGlobalFilter implements GlobalFilter, Ordered {
         ServerHttpRequest request = exchange.getRequest();
         String path = request.getURI().getPath();
         String method = request.getMethod().name();
-        log.info("Incoming request: {} {}", method, path);
+        log.debug("Incoming request: {} {}", method, path);
 
         if (!routeValidator.isSecured.test(request)) {
-            log.info("Request {} is NOT secured, skipping JWT check", path);
+            log.debug("Request {} is NOT secured, skipping JWT check", path);
             return chain.filter(exchange);
         }
-        log.info("Request {} IS secured, validating JWT", path);
+        log.debug("Request {} IS secured, validating JWT", path);
 
         String authHeader = request.getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
 

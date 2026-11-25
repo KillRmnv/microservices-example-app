@@ -70,7 +70,7 @@ public class RouteValidator {
                             && PUBLIC_GET_PREFIXES.stream().anyMatch(path::startsWith))
                         || (HttpMethod.POST.equals(request.getMethod())
                             && PUBLIC_POST_PATHS.contains(path));
-                log.info("RouteValidator: path={}, isOpenEndpoint={}, isSecured={}", path, isOpen, !isOpen);
+                log.debug("RouteValidator: path={}, isOpenEndpoint={}, isSecured={}", path, isOpen, !isOpen);
                 return !isOpen;
             };
 }

@@ -40,7 +40,7 @@ public class LoggingGlobalFilter implements GlobalFilter, Ordered {
         // Echo back to the caller; set before the response commits.
         outbound.getResponse().getHeaders().set(REQUEST_ID_HEADER, finalRequestId);
 
-        log.atInfo()
+        log.atDebug()
                 .addKeyValue("requestId", finalRequestId)
                 .addKeyValue("method", method)
                 .addKeyValue("path", path)
