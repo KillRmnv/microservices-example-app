@@ -18,12 +18,14 @@ from pathlib import Path
 
 import psycopg
 from psycopg.rows import dict_row
+from psycopg_pool import ConnectionPool
 
 log = logging.getLogger(__name__)
 
 MIGRATIONS_DIR = Path(__file__).resolve().parent.parent / "migrations"
 _LOCK_KEY = "schema_migrations"
 _VERSION_RE = re.compile(r"^V(\d+)__")
+_POOLS: dict[str, ConnectionPool] = {}
 
 
 class MigrationChanged(RuntimeError):
@@ -83,5 +85,30 @@ def run_migrations(database_url: str) -> list[str]:
     return applied
 
 
+def get_pool(database_url: str) -> ConnectionPool:
+    """One bounded pool per database URL; opened lazily."""
+    pool = _POOLS.get(database_url)
+    if pool is None:
+        pool = ConnectionPool(
+            conninfo=database_url,
+            min_size=1,
+            max_size=8,
+            timeout=5.0,
+            max_idle=300.0,
+            max_lifetime=3600.0,
+            kwargs={"row_factory": dict_row, "prepare_threshold": None},
+            open=False,
+        )
+        pool.open()
+        _POOLS[database_url] = pool
+    return pool
+
+
 def get_conn(database_url: str):
-    return psycopg.connect(database_url, row_factory=dict_row)
+    return get_pool(database_url).connection()
+
+
+def close_pools() -> None:
+    for pool in _POOLS.values():
+        pool.close()
+    _POOLS.clear()

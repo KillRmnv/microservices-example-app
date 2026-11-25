@@ -19,7 +19,7 @@ log = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    applied = db.run_migrations(settings.require_database_url())
+    applied = db.run_migrations(settings.require_migration_database_url())
     if applied:
         log.info("applied migrations: %s", applied)
     get_components = deps.get_components()
@@ -29,6 +29,7 @@ async def lifespan(app: FastAPI):
     finally:
         stop_scheduler(app)
         await get_components.cache.close()
+        db.close_pools()
 
 
 def create_app() -> FastAPI:
