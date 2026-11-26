@@ -13,6 +13,7 @@ import com.microservices_example_app.booking.producers.NotificationKafkaUserProd
 import com.microservices_example_app.booking.repository.EventRepository;
 import com.microservices_example_app.booking.repository.SeatRepository;
 import com.microservices_example_app.booking.repository.SeatableTicketRepository;
+import com.microservices_example_app.booking.repository.TicketRepository;
 import com.microservices_example_app.booking.specification.SeatableTicketSpecification;
 import com.microservices_example_app.booking.utils.JwtRequestUserExtractor;
 import com.microservices_example_app.booking.util.SensitiveMask;
@@ -35,6 +36,7 @@ import java.util.List;
 public class SeatableTicketService {
 
     private final SeatableTicketRepository seatableTicketRepository;
+    private final TicketRepository ticketRepository;
     private final EventRepository eventRepository;
     private final SeatRepository seatRepository;
     private final NotificationKafkaBookingProducer notificationKafkaBookingProducer;
@@ -247,7 +249,10 @@ public class SeatableTicketService {
             throw new IllegalArgumentException("SeatableTicket id must be positive");
         }
 
-        SeatableTicket ticket = seatableTicketRepository.findByIdForUpdate(id)
+        if (ticketRepository.lockById(id).isEmpty()) {
+            throw new NotFoundException("Seatable ticket not found");
+        }
+        SeatableTicket ticket = seatableTicketRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("Seatable ticket not found"));
 
         Long currentUserId = jwtRequestUserExtractor.extractUserId();

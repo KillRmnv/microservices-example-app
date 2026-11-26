@@ -11,9 +11,31 @@ import org.springframework.stereotype.Repository;
 import java.math.BigDecimal;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface TicketRepository extends JpaRepository<Ticket, Long>, JpaSpecificationExecutor<Ticket> {
+
+    /**
+     * Locks the {@code tickets} row that carries the mutable state
+     * ({@code active}, {@code user_id}).
+     *
+     * <p>Native on purpose. A JPA {@code PESSIMISTIC_WRITE} lock on
+     * {@code Ticket} or on the joined {@code SeatableTicket} subtype cannot be
+     * inlined into the select, because resolving the concrete type of the
+     * JOINED hierarchy already needs a join. Hibernate then falls back to
+     * follow-on locking: a second locking statement driven by a query plan
+     * that is cached and shared between threads. Concurrent refunds of one
+     * ticket mutate that shared plan state, which either throws
+     * {@link java.util.ConcurrentModificationException} out of the lock
+     * acquisition or silently loses the lock and refunds the ticket twice.
+     * A native {@code FOR NO KEY UPDATE} locks the row in one statement and
+     * has no shared execution state.
+     */
+    @Query(value = "select id from tickets where id = :id for no key update",
+            nativeQuery = true)
+    Optional<Long> lockById(@Param("id") Long id);
+
     List<Ticket> findByEventId(Long eventId);
 
     List<Ticket> findByUserId(Long userId);

@@ -18,6 +18,7 @@ import com.microservices_example_app.booking.producers.NotificationKafkaUserProd
 import com.microservices_example_app.booking.repository.EventRepository;
 import com.microservices_example_app.booking.repository.SeatRepository;
 import com.microservices_example_app.booking.repository.SeatableTicketRepository;
+import com.microservices_example_app.booking.repository.TicketRepository;
 import com.microservices_example_app.booking.service.SeatableTicketService;
 import com.microservices_example_app.booking.utils.JwtRequestUserExtractor;
 import org.junit.jupiter.api.BeforeEach;
@@ -45,6 +46,9 @@ class SeatableTicketServiceTest {
 
     @Mock
     private SeatableTicketRepository seatableTicketRepository;
+
+    @Mock
+    private TicketRepository ticketRepository;
 
     @Mock
     private EventRepository eventRepository;
@@ -400,7 +404,8 @@ class SeatableTicketServiceTest {
         Event event = Event.builder().id(10L).title("Rock Concert").build();
         Seat seat = Seat.builder().id(5L).sector("A").row("3").number("12").build();
         SeatableTicket ticket = SeatableTicket.builder().id(100L).event(event).seat(seat).zone(Zone.VIP).price(BigDecimal.valueOf(200)).active(true).userId(77L).build();
-        when(seatableTicketRepository.findByIdForUpdate(100L)).thenReturn(Optional.of(ticket));
+        when(ticketRepository.lockById(100L)).thenReturn(Optional.of(100L));
+        when(seatableTicketRepository.findById(100L)).thenReturn(Optional.of(ticket));
         when(jwtRequestUserExtractor.extractUserId()).thenReturn(77L);
         when(jwtRequestUserExtractor.extractEmail()).thenReturn("test@mail.com");
         when(jwtRequestUserExtractor.extractUsername()).thenReturn("alex");
@@ -412,7 +417,7 @@ class SeatableTicketServiceTest {
 
     @Test
     void refund_shouldThrowWhenTicketNotFound() {
-        when(seatableTicketRepository.findByIdForUpdate(100L)).thenReturn(Optional.empty());
+        when(ticketRepository.lockById(100L)).thenReturn(Optional.empty());
         assertThatThrownBy(() -> seatableTicketService.refund(100L))
                 .isInstanceOf(NotFoundException.class)
                 .hasMessage("Seatable ticket not found");
@@ -423,7 +428,8 @@ class SeatableTicketServiceTest {
         Event event = Event.builder().id(10L).title("Rock Concert").build();
         Seat seat = Seat.builder().id(5L).sector("A").row("3").number("12").build();
         SeatableTicket ticket = SeatableTicket.builder().id(100L).event(event).seat(seat).zone(Zone.VIP).userId(88L).build();
-        when(seatableTicketRepository.findByIdForUpdate(100L)).thenReturn(Optional.of(ticket));
+        when(ticketRepository.lockById(100L)).thenReturn(Optional.of(100L));
+        when(seatableTicketRepository.findById(100L)).thenReturn(Optional.of(ticket));
         when(jwtRequestUserExtractor.extractUserId()).thenReturn(77L);
         assertThatThrownBy(() -> seatableTicketService.refund(100L))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -435,7 +441,8 @@ class SeatableTicketServiceTest {
         Event event = Event.builder().id(10L).title("Rock Concert").build();
         Seat seat = Seat.builder().id(5L).sector("A").row("3").number("12").build();
         SeatableTicket ticket = SeatableTicket.builder().id(100L).event(event).seat(seat).zone(Zone.VIP).active(false).userId(77L).build();
-        when(seatableTicketRepository.findByIdForUpdate(100L)).thenReturn(Optional.of(ticket));
+        when(ticketRepository.lockById(100L)).thenReturn(Optional.of(100L));
+        when(seatableTicketRepository.findById(100L)).thenReturn(Optional.of(ticket));
         when(jwtRequestUserExtractor.extractUserId()).thenReturn(77L);
         assertThatThrownBy(() -> seatableTicketService.refund(100L))
                 .isInstanceOf(IllegalArgumentException.class)
