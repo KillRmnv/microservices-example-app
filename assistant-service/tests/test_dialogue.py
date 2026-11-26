@@ -9,8 +9,9 @@ from app.clients.booking import BookingClient
 from app.clients.collector import CollectorClient
 from app.clients.vector import InMemoryStore
 from app.core.config import Settings
+from app.models.search import FusedHit
 from app.models.weather import Weather
-from app.services.dialogue_service import DialogueService
+from app.services.dialogue_service import CATEGORY_VENUE_FALLBACK, DialogueService
 from app.services.search_service import SearchService
 from app.sparse import encode_sparse
 
@@ -123,11 +124,15 @@ async def test_search_turn_returns_messages():
     assert {card.event_id for card in cards} == {"aaa", "7"}
     scraped = next(card for card in cards if card.event_id == "aaa")
     assert "наличие уточняйте у источника" in scraped.meta
+    # The source price is known, so the card must show it (not "цена
+    # уточняется"); scraped rows still carry no live inventory.
+    assert scraped.price == "от 25 руб."
     assert scraped.detail_id == "aaa"
     assert scraped.source == "ticketpro"
     booked = next(card for card in cards if card.event_id == "7")
     assert booked.meta == "осталось мало"  # 2 active tickets < 10
-    assert booked.price == "от 60 руб."
+    # Zone prices: 60 (BASIC) .. 120 (VIP) is the per-zone range.
+    assert booked.price == "60–120 руб."
 
 
 @pytest.mark.asyncio
@@ -225,7 +230,8 @@ async def test_search_turn_uses_english_catalog():
     contract.semantic_payload.language = "en"
     service = make_service(two_event_store(), FakeCollector(collector_rows()))
     response = await service.search_turn(contract)
-    assert response.messages[0].text == "Search conditions are locked in."
+    assert "Section:" in response.messages[0].text
+    assert "When:" in response.messages[0].text
     assert response.messages[-1].text == "Here is what we found:"
 
 
@@ -377,23 +383,29 @@ def test_required_slots_only_asks_events_for_a_date():
         "intent": "find_venue_bar", "hard_filters": {},
     })
     assert required_slots(venue, Settings()) == []
+    assert required_slots(venue, Settings(), clarify_required_slots=True) == []
 
     undated = StateContract.model_validate({
         "intent": "find_events", "hard_filters": {},
     })
-    assert required_slots(undated, Settings()) == ["datetime"]
+    # A search never blocks on a date; only the explicit clarification path
+    # can ask for it.
+    assert required_slots(undated, Settings()) == []
+    assert required_slots(undated, Settings(),
+                          clarify_required_slots=True) == ["datetime"]
 
     dated = StateContract.model_validate({
         "intent": "find_events",
         "hard_filters": {"datetime": {"start": "2026-10-24T19:00:00"}},
     })
-    assert required_slots(dated, Settings()) == []
+    assert required_slots(dated, Settings(), clarify_required_slots=True) == []
 
     any_date = StateContract.model_validate({
         "intent": "find_events",
         "hard_filters": {"datetime": {"any": True}},
     })
-    assert required_slots(any_date, Settings()) == []
+    assert required_slots(any_date, Settings(),
+                          clarify_required_slots=True) == []
 
 
 def test_required_slots_asks_for_city_only_without_a_default():
@@ -402,8 +414,11 @@ def test_required_slots_asks_for_city_only_without_a_default():
     contract = StateContract.model_validate({
         "intent": "find_venues", "hard_filters": {},
     })
-    assert required_slots(contract, Settings(default_city="")) == ["city"]
-    assert required_slots(contract, Settings(default_city="Минск")) == []
+    assert required_slots(contract, Settings(default_city="")) == []
+    assert required_slots(contract, Settings(default_city=""),
+                          clarify_required_slots=True) == ["city"]
+    assert required_slots(contract, Settings(default_city="Минск"),
+                          clarify_required_slots=True) == []
 
 
 def test_apply_rules_venue_needs_no_budget_or_party():
@@ -419,19 +434,37 @@ def test_apply_rules_venue_needs_no_budget_or_party():
     assert ruled.clarification_slots == []
 
 
-def test_apply_rules_asks_only_for_the_event_date():
-    contract = StateContract.model_validate({
+def test_apply_rules_never_blocks_a_dated_or_undated_search():
+    service = make_service(InMemoryStore(), FakeCollector([]))
+    undated = StateContract.model_validate({
         "intent": "find_events",
         "clarify_missing": True,
         "hard_filters": {},
     })
+    ruled = service.apply_rules(undated)
+    assert ruled.dialogue_action == "search"
+    assert ruled.needs_clarification is False
+    assert ruled.clarification_slots == []
+
+    dated = StateContract.model_validate({
+        "intent": "find_events",
+        "clarify_missing": True,
+        "hard_filters": {"datetime": {"start": "2026-10-24T19:00:00"}},
+    })
+    assert service.apply_rules(dated).dialogue_action == "search"
+
+
+def test_apply_rules_downgrades_clarification_without_opt_in():
     service = make_service(InMemoryStore(), FakeCollector([]))
+    contract = StateContract.model_validate({
+        "intent": "find_events",
+        "dialogue_action": "ask_clarification",
+        "hard_filters": {},
+    })
     ruled = service.apply_rules(contract)
-    assert ruled.dialogue_action == "ask_clarification"
-    assert ruled.clarification_slots == ["datetime"]
-    assert "дата" in ruled.clarification_prompt
-    assert "бюджет" not in ruled.clarification_prompt
-    assert "человек" not in ruled.clarification_prompt
+    assert ruled.dialogue_action == "search"
+    assert ruled.needs_clarification is False
+    assert ruled.clarification_slots == []
 
 
 def test_apply_rules_clears_stale_slots_when_nothing_is_missing():
@@ -522,19 +555,32 @@ async def test_weather_turn_returns_only_the_forecast():
     assert weather.dates[-1] == "2026-12-01"
 
 
-def test_search_plan_without_a_date_starts_now():
+def test_search_plan_without_a_date_starts_now_for_generic_queries():
     service = make_service(InMemoryStore(), FakeCollector([]), now=fixed_now)
     contract = make_contract(hard_filters={
-        "location": {"city": "Минск"}, "category": ["concert"]})
+        "location": {"city": "Минск"}})
     plan = service._search_plan(contract)
     assert plan.date_from == FIXED_NOW
     assert plan.date_to is None
+    assert plan.include_undated is False
 
     any_date = make_contract(hard_filters={
         "datetime": {"any": True},
         "location": {"city": "Минск"},
     })
     assert service._search_plan(any_date).date_from == FIXED_NOW
+
+
+def test_category_search_without_a_date_includes_undated_posts():
+    service = make_service(InMemoryStore(), FakeCollector([]), now=fixed_now)
+    contract = make_contract(hard_filters={
+        "location": {"city": "Минск"}, "category": ["film"]})
+    plan = service._search_plan(contract)
+    assert plan.include_undated is True
+    # The future floor is kept; undated posts pass through the filter's
+    # allow_undated mode, past dated events still do not.
+    assert plan.date_from == FIXED_NOW
+    assert plan.date_to is None
 
 
 @pytest.mark.asyncio
@@ -544,19 +590,21 @@ async def test_search_turn_drops_past_events_without_a_date():
         [
             ("past", [1.0, 0.0, 0.0],
              {"title": "Прошлый концерт", "city": "Минск",
-              "price_min": 25.0, "category": "concert",
+              "price_min": 25.0,
               "start_at": "2026-11-01T19:00:00+00:00"}),
             ("future", [1.0, 0.0, 0.0],
              {"title": "Будущий концерт", "city": "Минск",
-              "price_min": 25.0, "category": "concert",
+              "price_min": 25.0,
               "start_at": "2026-12-05T19:00:00+00:00"}),
         ],
         {"past": encode_sparse("прошлый концерт"),
          "future": encode_sparse("будущий концерт")},
     )
     service = make_service(store, FakeCollector([]), now=fixed_now)
+    # No category: generic queries keep the future floor. A theme keeps the
+    # intent's event scope without turning the turn into "events + venues".
     contract = make_contract(hard_filters={
-        "location": {"city": "Минск"}, "category": ["concert"]})
+        "location": {"city": "Минск"}, "themes": ["concert"]})
     response = await service.search_turn(contract)
     assert [message.kind for message in response.messages] == ["filters",
                                                                 "results"]
@@ -601,3 +649,574 @@ def test_dialogue_router_dispatches_weather(monkeypatch):
     body = response.json()
     assert [message["kind"] for message in body["messages"]] == ["weather"]
     assert calls == ["weather", "recorded"]
+
+
+# --- rain adjustment / party availability / venue card fields -----------
+
+
+@pytest.mark.asyncio
+async def test_rain_excludes_terrace_venues_and_explains():
+    store = InMemoryStore(
+        [
+            ("11111111-1111-4111-8111-111111111111", [1.0, 0.0, 0.0],
+             {"name": "Летняя терраса", "rubric": "Кафе", "city": "Минск",
+              "amenities": ["terrace", "wifi"]}),
+            ("22222222-2222-4222-8222-222222222222", [1.0, 0.0, 0.0],
+             {"name": "Кафе в помещении", "rubric": "Кафе", "city": "Минск",
+              "amenities": ["wifi"]}),
+        ],
+        {"11111111-1111-4111-8111-111111111111": encode_sparse("кафе"),
+         "22222222-2222-4222-8222-222222222222": encode_sparse("кафе")},
+    )
+    rainy = Weather(date="2026-10-24", temp_max=9.0,
+                    precipitation_probability=85, weathercode=61)
+    service = make_service(store, FakeCollector([]),
+                           weather=FakeWeather(rainy))
+    contract = StateContract.model_validate({
+        "intent": "find_venue_cafe",
+        "hard_filters": {
+            "datetime": {"start": "2026-10-24T19:00:00+03:00"},
+            "location": {"city": "Минск"},
+            "amenities_required": ["terrace"],
+        },
+        "semantic_payload": {"vector_query": "кафе"},
+        "context_state": {"session_id": "rain"},
+    })
+    response = await service.search_turn(contract)
+    kinds = [message.kind for message in response.messages]
+    assert kinds == ["filters", "weather", "assistant", "results"]
+    assert "террас" in response.messages[2].text
+    assert "85" in response.messages[2].text
+    cards = response.messages[-1].results
+    assert [card.title for card in cards] == ["Кафе в помещении"]
+
+
+@pytest.mark.asyncio
+async def test_events_only_rain_turn_keeps_plain_advice():
+    rainy = Weather(date="2026-10-24", temp_max=9.0,
+                    precipitation_probability=85, weathercode=61)
+    service = make_service(two_event_store(),
+                           FakeCollector(collector_rows()),
+                           weather=FakeWeather(rainy))
+    response = await service.search_turn(make_contract())
+    kinds = [message.kind for message in response.messages]
+    # Nothing outdoor was filtered on an events-only turn, so no "excluded"
+    # claim is allowed.
+    assert kinds == ["filters", "weather", "results"]
+    assert all("исключены" not in (message.text or "")
+               for message in response.messages)
+
+
+@pytest.mark.asyncio
+async def test_party_availability_marks_the_card():
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/booking/events/7/availability":
+            assert request.url.params["party"] == "6"
+            return httpx.Response(200, json={
+                "eventId": 7,
+                "status": "insufficient",
+                "capacity": 20,
+                "zones": [{"zone": "VIP", "seatsLeft": 2, "minPrice": 120.0}],
+            })
+        return booking_handler(request)
+
+    booking = BookingClient("http://booking:8082",
+                            transport=httpx.MockTransport(handler))
+    service = DialogueService(
+        search=SearchService(FakeEmbedder(), two_event_store(),
+                             FakeCollector(collector_rows())),
+        search_venues=SearchService(FakeEmbedder(), two_event_store(),
+                                    FakeCollector(collector_rows())),
+        weather=FakeWeather(), booking=booking, db_url="",
+        settings=Settings(),
+    )
+    contract = make_contract(hard_filters={
+        "datetime": {"start": "2026-10-24T12:00:00"},
+        "location": {"city": "Минск"},
+        "category": ["concert"],
+        "party_size": 6,
+    })
+    response = await service.search_turn(contract)
+    card = next(card for card in response.messages[-1].results
+                if card.event_id == "7")
+    assert card.status == "insufficient"
+    assert card.meta == "на 6 человек нет мест"
+    assert card.fits_party is False
+    assert card.seats_left == 2
+    assert card.price == "от 120 руб."
+
+
+@pytest.mark.asyncio
+async def test_venue_card_exposes_rating_and_hours():
+    store = InMemoryStore(
+        [("33333333-3333-4333-8333-333333333333", [1.0, 0.0, 0.0],
+          {"name": "Кофейня", "rubric": "Кафе", "city": "Минск",
+           "address": "ул. Немига, 5", "rating": 4.6, "review_count": 123,
+           "hours": {"wed": ["10:00", "23:00"]}})],
+        {"33333333-3333-4333-8333-333333333333": encode_sparse("кофейня")},
+    )
+    service = make_service(store, FakeCollector([]))
+    contract = StateContract.model_validate({
+        "intent": "find_venue_cafe",
+        "hard_filters": {"location": {"city": "Минск"}},
+        "semantic_payload": {"vector_query": "кофейня"},
+        "context_state": {"session_id": "v3"},
+    })
+    response = await service.search_turn(contract)
+    card = response.messages[-1].results[0]
+    assert card.rating == 4.6
+    assert card.review_count == 123
+    assert card.address == "ул. Немига, 5"
+    assert card.hours == "до 23:00"
+    # The rating is structured (the UI renders its own badge): meta stays
+    # rubric-only, so the rating is not shown twice.
+    assert card.meta == "Кафе"
+    assert "★" not in card.meta
+
+
+@pytest.mark.asyncio
+async def test_booking_party_endpoint_is_preferred():
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/booking/events/7/availability"
+        assert request.url.params["party"] == "6"
+        return httpx.Response(200, json={
+            "eventId": 7, "status": "few_left", "capacity": 20,
+            "zones": [
+                {"zone": "VIP", "seatsLeft": 3, "minPrice": 120.0},
+                {"zone": "BASIC", "seatsLeft": 0, "minPrice": 60.0},
+            ]})
+
+    from app.models.availability import FEW_LEFT
+
+    client = BookingClient("http://booking:8082",
+                           transport=httpx.MockTransport(handler))
+    availability = await client.check_availability(7, party=6)
+    assert availability.status == FEW_LEFT
+    assert availability.min_price == 60.0
+    assert availability.capacity == 20
+    assert availability.seats_left == 3
+
+
+@pytest.mark.asyncio
+async def test_booking_fallback_paginates_ticket_search():
+    from app.clients.booking import TICKET_PAGE_SIZE
+    from app.models.availability import AVAILABLE
+
+    requests: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/availability"):
+            return httpx.Response(404, json={"error": "not found"})
+        if "seatable" in request.url.path:
+            return httpx.Response(200, json=[])
+        page = int(request.url.params.get("page", "1"))
+        requests.append(page)
+        if page == 1:
+            return httpx.Response(200, json=[
+                {"id": i, "active": True, "zone": "BASIC", "price": 50.0}
+                for i in range(TICKET_PAGE_SIZE)])
+        if page == 2:
+            return httpx.Response(200, json=[
+                {"id": 999, "active": True, "zone": "BASIC", "price": 50.0}])
+        return httpx.Response(200, json=[])
+
+    client = BookingClient("http://booking:8082",
+                           transport=httpx.MockTransport(handler))
+    availability = await client.check_availability(7, party=2)
+    assert availability.status == AVAILABLE
+    assert availability.seats_left == TICKET_PAGE_SIZE + 1
+    assert requests == [1, 2]
+
+
+@pytest.mark.asyncio
+async def test_rain_drops_terrace_amenity_but_keeps_a_text_mention():
+    """Amenity-only exclusion: a description is not a terrace."""
+
+    def venue_store() -> InMemoryStore:
+        return InMemoryStore(
+            [
+                ("11111111-1111-4111-8111-111111111111", [1.0, 0.0, 0.0],
+                 {"name": "Летняя терраса", "rubric": "Кафе", "city": "Минск",
+                  "amenities": ["terrace", "wifi"]}),
+                ("22222222-2222-4222-8222-222222222222", [1.0, 0.0, 0.0],
+                 {"name": "Кофейня «Уют»", "rubric": "Кафе", "city": "Минск",
+                  "description": "есть уютная терраса", "amenities": ["wifi"]}),
+                ("33333333-3333-4333-8333-333333333333", [1.0, 0.0, 0.0],
+                 {"name": "Кафе в помещении", "rubric": "Кафе", "city": "Минск",
+                  "amenities": ["wifi"]}),
+            ],
+            {doc_id: encode_sparse("кафе") for doc_id in (
+                "11111111-1111-4111-8111-111111111111",
+                "22222222-2222-4222-8222-222222222222",
+                "33333333-3333-4333-8333-333333333333")},
+        )
+
+    contract = StateContract.model_validate({
+        "intent": "find_venue_cafe",
+        "hard_filters": {
+            "datetime": {"start": "2026-10-24T19:00:00+03:00"},
+            "location": {"city": "Минск"},
+        },
+        "semantic_payload": {"vector_query": "кафе"},
+        "context_state": {"session_id": "rain-amenity"},
+    })
+
+    rainy = Weather(date="2026-10-24", temp_max=9.0,
+                    precipitation_probability=85, weathercode=61)
+    wet = make_service(venue_store(), FakeCollector([]),
+                       weather=FakeWeather(rainy))
+    wet_cards = (await wet.search_turn(contract)).messages[-1].results
+    titles = {card.title for card in wet_cards}
+    assert "Летняя терраса" not in titles
+    # The description mentions a terrace, but the amenity list does not.
+    assert "Кофейня «Уют»" in titles
+    assert "Кафе в помещении" in titles
+
+    dry = make_service(venue_store(), FakeCollector([]),
+                       weather=FakeWeather())
+    dry_cards = (await dry.search_turn(contract)).messages[-1].results
+    assert "Летняя терраса" in {card.title for card in dry_cards}
+
+
+def test_rain_keeps_user_exclude_tags_as_text_filters():
+    service = make_service(InMemoryStore(), FakeCollector([]))
+    contract = StateContract.model_validate({
+        "intent": "find_venue_bar",
+        "hard_filters": {"location": {"city": "Минск"}},
+        "negative_filters": {"exclude_tags": ["кальян"]},
+    })
+    plan = service._venue_plan(contract)
+    assert plan.exclude_tags == ["кальян"]
+    # No weather exclusion unless a rainy venue turn asks for it.
+    assert plan.exclude_amenities == []
+    rainy = service._venue_plan(
+        contract, extra_exclude_amenities=["terrace"])
+    assert rainy.exclude_amenities == ["terrace"]
+    assert rainy.exclude_tags == ["кальян"]
+
+
+def test_search_plan_keeps_sparse_retrieval_for_themes():
+    service = make_service(InMemoryStore(), FakeCollector([]))
+    contract = make_contract(
+        hard_filters={
+            "datetime": {"start": "2026-10-24T12:00:00"},
+            "location": {"city": "Минск"},
+            "themes": ["джаз"],
+        },
+        semantic_payload={"vector_query": ""},
+    )
+    plan = service._search_plan(contract)
+    assert plan.themes == ["джаз"]
+    # Themes are a lexical signal now: dense-only is no longer implied.
+    assert plan.dense_only is False
+
+
+# --- explicit target collection ----------------------------------------
+
+
+def venue_store() -> InMemoryStore:
+    return InMemoryStore(
+        [("11111111-1111-4111-8111-111111111111", [1.0, 0.0, 0.0],
+          {"name": "Пивной бар «Кран»", "rubric": "Бары",
+           "address": "ул. Немига, 5", "city": "Минск",
+           "source": "twogis_places"})],
+        {"11111111-1111-4111-8111-111111111111": encode_sparse("пивной бар")},
+    )
+
+
+def target_contract(target: str, **overrides) -> StateContract:
+    base = {
+        "dialogue_action": "search",
+        "intent": "find_events",
+        "hard_filters": {
+            "datetime": {"start": "2026-10-24T12:00:00"},
+            "location": {"city": "Минск"},
+            "category": ["concert"],
+        },
+        "semantic_payload": {"vector_query": "пивной бар",
+                             "target_collection": target},
+        "context_state": {"session_id": "t1"},
+    }
+    base.update(overrides)
+    return StateContract.model_validate(base)
+
+
+@pytest.mark.asyncio
+async def test_target_collection_venues_overrides_event_intent():
+    service = make_service(venue_store(), FakeCollector([]))
+    response = await service.search_turn(target_contract("venues"))
+    cards = response.messages[-1].results
+    assert [card.kind for card in cards] == ["venue"]
+    assert cards[0].title == "Пивной бар «Кран»"
+
+
+@pytest.mark.asyncio
+async def test_target_collection_alias_searches_venues():
+    from app.api.schemas.contract import sanitize
+
+    service = make_service(venue_store(), FakeCollector([]))
+    contract = sanitize(target_contract("venues_atmosphere"))
+    assert contract.semantic_payload.target_collection == "venues"
+    response = await service.search_turn(contract)
+    assert [card.kind for card in response.messages[-1].results] == ["venue"]
+
+
+@pytest.mark.asyncio
+async def test_target_collection_events_overrides_venue_intent():
+    service = make_service(two_event_store(), FakeCollector([]))
+    contract = target_contract(
+        "events", intent="find_venue_bar",
+        hard_filters={"datetime": {"start": "2026-10-24T12:00:00"},
+                      "location": {"city": "Минск"}})
+    response = await service.search_turn(contract)
+    cards = response.messages[-1].results
+    assert cards and all(card.kind == "event" for card in cards)
+
+
+@pytest.mark.asyncio
+async def test_unknown_target_collection_keeps_the_intent_scope():
+    from app.api.schemas.contract import sanitize
+
+    service = make_service(two_event_store(), FakeCollector([]))
+    contract = sanitize(target_contract("spaceship"))
+    assert contract.semantic_payload.target_collection is None
+    response = await service.search_turn(contract)
+    cards = response.messages[-1].results
+    assert cards and all(card.kind == "event" for card in cards)
+
+
+@pytest.mark.asyncio
+async def test_target_collection_does_not_reroute_a_clarification():
+    service = make_service(two_event_store(), FakeCollector([]))
+    contract = target_contract("venues",
+                               dialogue_action="ask_clarification")
+    response = await service.search_turn(contract)
+    cards = response.messages[-1].results
+    # A clarification/search phase keeps the intent scope: events, not venues.
+    assert cards and all(card.kind == "event" for card in cards)
+
+
+# --- filters summary / category fallback / undated / "ещё" ---------------
+
+
+def test_filters_summary_lists_defaults_for_an_empty_contract():
+    service = make_service(InMemoryStore(), FakeCollector([]))
+    contract = StateContract.model_validate({"hard_filters": {}})
+    text = service._filters_summary(contract, "ru")
+    assert "Раздел: события" in text
+    assert "Когда: ближайшие (по умолчанию)" in text
+    assert "Где: Минск (по умолчанию)" in text
+    assert "Тип: любые" in text
+    assert "Темы: нет" in text
+    assert "Компания: не указана" in text
+    assert "Бюджет: без ограничений" in text
+    assert "Удобства: нет" in text
+    assert "Рейтинг: любой" in text
+    assert "Возраст: любой" in text
+    assert "Исключения: нет" in text
+
+
+def test_filters_summary_reflects_a_fully_specified_contract():
+    service = make_service(InMemoryStore(), FakeCollector([]))
+    contract = StateContract.model_validate({
+        "intent": "find_venues",
+        "hard_filters": {
+            "datetime": {"start": "2026-10-24T19:00:00+03:00"},
+            "location": {"city": "Гомель"},
+            "party_size": 4,
+            "budget": {"max_price_per_person": 50},
+            "min_rating": 4.5,
+            "age_max": 12,
+            "event_count": 2,
+            "amenities_required": ["terrace"],
+            "themes": ["jazz"],
+        },
+        "negative_filters": {
+            "exclude_categories": ["sport"],
+            "exclude_tags": ["кальян"],
+            "exclude_districts": ["центр"],
+        },
+    })
+    text = service._filters_summary(contract, "ru")
+    assert "Раздел: места" in text
+    assert "Событий в плане: 2" in text
+    assert "Когда: 2026-10-24 19:00" in text
+    assert "Где: Гомель" in text
+    assert "Компания: 4 чел." in text
+    assert "Бюджет: до 50 руб. на человека" in text
+    assert "Удобства: terrace" in text
+    assert "Рейтинг: от 4.5" in text
+    assert "Возраст: до 12 лет" in text
+    assert "Исключения: спорт, кальян, центр" in text
+
+
+def test_fallback_query_expands_raw_category_codes():
+    service = make_service(InMemoryStore(), FakeCollector([]))
+    film = make_contract(
+        hard_filters={"location": {"city": "Минск"}, "category": ["film"]},
+        semantic_payload={"vector_query": ""})
+    assert service._search_plan(film).vector_query == "кино, фильм, кинопоказ"
+
+    concert = make_contract(
+        hard_filters={"location": {"city": "Минск"},
+                      "category": ["concert"]},
+        semantic_payload={"vector_query": ""})
+    assert service._search_plan(concert).vector_query == \
+        "концерт, живая музыка"
+
+
+@pytest.mark.asyncio
+async def test_empty_film_events_fall_back_to_cinemas():
+    store = InMemoryStore(
+        [("cinema-uuid", [1.0, 0.0, 0.0],
+          {"name": "Кинотеатр «Победа»", "rubric": "Кинотеатры",
+           "city": "Минск", "source": "twogis_places"})],
+        {"cinema-uuid": encode_sparse("кинотеатр победа")},
+    )
+    service = make_service(store, FakeCollector([]))
+    contract = StateContract.model_validate({
+        "dialogue_action": "search",
+        "intent": "find_event_film",
+        "hard_filters": {
+            "datetime": {"start": "2026-10-24T12:00:00"},
+            "location": {"city": "Минск"},
+            "category": ["film"],
+        },
+        "semantic_payload": {"vector_query": "фильм"},
+        "context_state": {"session_id": "film-fallback"},
+    })
+    response = await service.search_turn(contract)
+    assert [message.kind for message in response.messages] == [
+        "filters", "weather", "assistant", "results"]
+    assert response.messages[2].text == "Событий с датой нет — вот кинотеатры"
+    cards = response.messages[-1].results
+    assert [card.kind for card in cards] == ["venue"]
+    assert cards[0].title == "Кинотеатр «Победа»"
+
+
+def test_film_intent_owns_the_film_category_and_cinema_fallback():
+    service = make_service(InMemoryStore(), FakeCollector([]))
+    contract = make_contract(
+        intent="find_event_film",
+        hard_filters={"location": {"city": "Минск"}},
+        semantic_payload={"vector_query": ""})
+    plan = service._search_plan(contract)
+    assert plan.categories == ["film"]
+    assert plan.vector_query == "кино, фильм, кинопоказ"
+    assert CATEGORY_VENUE_FALLBACK["film"] == (
+        "Кинотеатры", "search_empty_cinemas")
+
+
+def film_hit(**payload) -> FusedHit:
+    base = {
+        "title": "Дюна",
+        "category": "film",
+        "start_at": "2026-11-26T10:00:00+03:00",
+        "end_at": "2026-11-26T12:00:00+03:00",
+    }
+    base.update(payload)
+    return FusedHit(id="film-point", score=1.0, payload=base)
+
+
+def test_film_run_card_shows_the_run_end_instead_of_availability():
+    service = make_service(InMemoryStore(), FakeCollector([]))
+    card = service._to_card(
+        film_hit(end_at="2026-12-05T23:00:00+03:00"), None, "ru")
+    assert card.meta == "прокат до 05.12"
+    assert card.next_session_at == ""
+    assert card.cinema == ""
+    assert card.film_genre is None
+    assert card.film_duration_min is None
+
+    english = service._to_card(
+        film_hit(end_at="2026-12-05T23:00:00+03:00"), None, "en")
+    assert english.meta == "in cinemas until 05.12"
+
+
+def test_film_session_and_facts_are_rendered_and_structured():
+    service = make_service(InMemoryStore(), FakeCollector([]))
+    card = service._to_card(film_hit(
+        end_at="2026-12-05T23:00:00+03:00",
+        next_session_at="2026-11-26T19:30:00+03:00",
+        cinema="Silver Screen",
+        film_genre=["Фантастика"],
+        film_duration_min=155,
+    ), None, "ru")
+    assert "ближайший сеанс 19:30 · Silver Screen" in card.meta
+    assert "прокат до 05.12" in card.meta
+    assert "Фантастика · 155 мин" in card.meta
+    assert card.next_session_at == "2026-11-26T19:30:00+03:00"
+    assert card.cinema == "Silver Screen"
+    assert card.film_genre == ["Фантастика"]
+    assert card.film_duration_min == 155
+
+
+def test_film_card_without_new_fields_keeps_the_old_meta():
+    service = make_service(InMemoryStore(), FakeCollector([]))
+    card = service._to_card(film_hit(), None, "ru")
+    # No run, session, genre or duration: exactly the previous fallback.
+    assert card.meta == "наличие уточняйте у источника"
+    assert card.film_genre is None
+    assert card.film_duration_min is None
+
+
+def film_store() -> InMemoryStore:
+    return InMemoryStore(
+        [
+            ("dated-film", [1.0, 0.0, 0.0],
+             {"title": "Премьера фильма", "city": "Минск",
+              "category": "film", "price_min": 20.0,
+              "start_at": "2026-11-25T19:00:00+00:00"}),
+            ("undated-film", [1.0, 0.0, 0.0],
+             {"title": "Анонс кинопоказа", "city": "Минск",
+              "category": "film", "price_min": 15.0}),
+            ("past-film", [1.0, 0.0, 0.0],
+             {"title": "Прошлый кинопоказ", "city": "Минск",
+              "category": "film", "price_min": 10.0,
+              "start_at": "2026-11-01T19:00:00+00:00"}),
+        ],
+        {"dated-film": encode_sparse("премьера фильма"),
+         "undated-film": encode_sparse("анонс кинопоказа"),
+         "past-film": encode_sparse("прошлый кинопоказ")},
+    )
+
+
+@pytest.mark.asyncio
+async def test_undated_posts_are_allowed_only_without_an_explicit_date():
+    service = make_service(film_store(), FakeCollector([]), now=fixed_now)
+    undated_contract = make_contract(hard_filters={
+        "location": {"city": "Минск"}, "category": ["film"]})
+    cards = (await service.search_turn(undated_contract)).messages[-1].results
+    assert [card.event_id for card in cards] == ["dated-film", "undated-film"]
+    by_id = {card.event_id: card for card in cards}
+    assert by_id["undated-film"].meta == "дата уточняется"
+    assert by_id["dated-film"].meta != "дата уточняется"
+    # Undated mode must not resurrect a past dated event.
+    assert "past-film" not in by_id
+
+    dated_contract = make_contract(hard_filters={
+        "datetime": {"start": "2026-11-25T00:00:00+03:00"},
+        "location": {"city": "Минск"},
+        "category": ["film"],
+    })
+    dated_cards = (await service.search_turn(dated_contract)).messages[-1].results
+    assert [card.event_id for card in dated_cards] == ["dated-film"]
+
+
+@pytest.mark.asyncio
+async def test_search_more_empty_when_everything_was_shown():
+    store = InMemoryStore(
+        [("only", [1.0, 0.0, 0.0],
+          {"title": "Единственный концерт", "city": "Минск",
+           "price_min": 25.0,
+           "start_at": "2026-12-05T19:00:00+00:00"})],
+        {"only": encode_sparse("единственный концерт")},
+    )
+    service = make_service(store, FakeCollector([]), now=fixed_now)
+    contract = make_contract(
+        hard_filters={"location": {"city": "Минск"}},
+        context_state={"session_id": "more", "shown_ids": ["only"]})
+    response = await service.search_turn(contract)
+    assert response.messages[-1].kind == "assistant"
+    assert response.messages[-1].text == (
+        "Больше вариантов нет — уточните фильтры")

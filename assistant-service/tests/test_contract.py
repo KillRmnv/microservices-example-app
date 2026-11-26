@@ -222,3 +222,172 @@ def test_sanitize_does_not_fill_default_city():
         "hard_filters": {"category": ["concert"]},
     }))
     assert clean.hard_filters.location.city is None
+
+
+# --- budget basis / age / rating ---------------------------------------
+
+
+def test_sanitize_total_budget_is_derived_and_idempotent():
+    contract = StateContract.model_validate({
+        "hard_filters": {"party_size": 2,
+                         "budget": {"basis": "total", "total": 40}},
+    })
+    once = sanitize(contract)
+    budget = once.hard_filters.budget
+    assert budget.basis == "total"          # keeps the user's basis
+    assert budget.total == 40.0             # keeps the user's sum
+    assert budget.max_price_per_person == 20.0
+
+    twice = sanitize(once)
+    assert twice.hard_filters.budget.max_price_per_person == 20.0
+    assert twice.hard_filters.budget.total == 40.0
+    assert twice.hard_filters.budget.basis == "total"
+
+
+def test_sanitize_recomputes_total_budget_when_party_changes():
+    contract = StateContract.model_validate({
+        "hard_filters": {"party_size": 2,
+                         "budget": {"basis": "total", "total": 40}},
+    })
+    clean = sanitize(contract)
+    clean.hard_filters.party_size = 4
+    updated = sanitize(clean)
+    # 40 on everyone at 4 people is 10 each, not 20 / 4.
+    assert updated.hard_filters.budget.max_price_per_person == 10.0
+    assert updated.hard_filters.budget.total == 40.0
+
+
+def test_sanitize_reads_legacy_total_as_a_total():
+    clean = sanitize(StateContract.model_validate({
+        "hard_filters": {
+            "party_size": 2,
+            "budget": {"basis": "total", "max_price_per_person": 40},
+        },
+    }))
+    budget = clean.hard_filters.budget
+    assert budget.total == 40.0
+    assert budget.max_price_per_person == 20.0
+
+
+def test_sanitize_keeps_per_person_budget_as_per_person():
+    clean = sanitize(StateContract.model_validate({
+        "hard_filters": {
+            "party_size": 2,
+            "budget": {"basis": "per_person", "max_price_per_person": 40},
+        },
+    }))
+    budget = clean.hard_filters.budget
+    assert budget.max_price_per_person == 40.0
+    assert budget.total is None
+    assert budget.basis == "per_person"
+
+
+def test_sanitize_total_without_party_uses_the_configured_default():
+    clean = sanitize(StateContract.model_validate({
+        "hard_filters": {"budget": {"basis": "total", "total": 40}},
+    }))
+    budget = clean.hard_filters.budget
+    assert budget.total == 40.0
+    # No named party: use settings.default_party_size (1), not a guess.
+    assert budget.max_price_per_person == 40.0
+    assert budget.basis == "total"
+
+
+def test_sanitize_any_budget_clears_total_and_per_person():
+    clean = sanitize(StateContract.model_validate({
+        "hard_filters": {
+            "budget": {"basis": "total", "total": 40, "any": True},
+        },
+    }))
+    budget = clean.hard_filters.budget
+    assert budget.total is None
+    assert budget.max_price_per_person is None
+    assert budget.basis == "per_person"
+
+
+def test_sanitize_clamps_age_max_and_min_rating():
+    clean = sanitize(StateContract.model_validate({
+        "hard_filters": {"age_max": 99, "min_rating": 9},
+    }))
+    assert clean.hard_filters.age_max == 21
+    assert clean.hard_filters.min_rating == 5.0
+    low = sanitize(StateContract.model_validate({
+        "hard_filters": {"age_max": -3, "min_rating": -1},
+    }))
+    assert low.hard_filters.age_max == 0
+    assert low.hard_filters.min_rating == 0.0
+
+
+# --- target collection / presentation language -------------------------
+
+
+def test_sanitize_normalizes_target_collection_aliases():
+    for raw, expected in (
+        ("venues", "venues"),
+        ("venues_atmosphere", "venues"),
+        ("places", "venues"),
+        (" Events ", "events"),
+        ("both", "both"),
+        ("spaceship", None),
+        (None, None),
+    ):
+        clean = sanitize(StateContract.model_validate({
+            "semantic_payload": {"target_collection": raw},
+        }))
+        assert clean.semantic_payload.target_collection == expected
+
+
+def test_sanitize_clamps_language_to_presentation_locales():
+    assert sanitize(StateContract.model_validate(
+        {"semantic_payload": {"language": "en"}})
+    ).semantic_payload.language == "en"
+    assert sanitize(StateContract.model_validate(
+        {"semantic_payload": {"language": "en-US"}})
+    ).semantic_payload.language == "en"
+    # Retrieval stays Russian; an unsupported presentation locale is dropped.
+    assert sanitize(StateContract.model_validate(
+        {"semantic_payload": {"language": "de"}})
+    ).semantic_payload.language == "ru"
+
+
+def test_sanitize_unknown_language_uses_the_configured_default(monkeypatch):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "default_language", "en")
+    clean = sanitize(StateContract.model_validate(
+        {"semantic_payload": {"language": "de"}}))
+    assert clean.semantic_payload.language == "en"
+
+
+# --- shown_ids / plan event_count ---------------------------------------
+
+
+def test_sanitize_cleans_shown_ids():
+    clean = sanitize(StateContract.model_validate({
+        "context_state": {"shown_ids": [
+            "  abc  ", "abc", 42, "", "x" * 80,
+            *[f"id-{i}" for i in range(120)],
+        ]},
+    }))
+    ids = clean.context_state.shown_ids
+    assert ids[0] == "abc"
+    assert ids.count("abc") == 1
+    assert "42" in ids
+    assert "" not in ids
+    assert all(len(value) <= 64 for value in ids)
+    assert len(ids) == 100
+
+
+def test_sanitize_ignores_non_list_shown_ids():
+    clean = sanitize(StateContract.model_validate({
+        "context_state": {"shown_ids": {"a": 1}},
+    }))
+    assert clean.context_state.shown_ids == []
+
+
+def test_sanitize_clamps_event_count_to_one_through_five():
+    for raw, expected in ((0, 1), (1, 1), (3, 3), (9, 5), ("2", 2), (None, None)):
+        clean = sanitize(StateContract.model_validate({
+            "hard_filters": {"event_count": raw},
+        }))
+        assert clean.hard_filters.event_count == expected

@@ -9,6 +9,36 @@ export interface ChatResult {
   detail_id?: string
   source?: string
   kind?: 'event' | 'venue'
+  rating?: number | null
+  review_count?: number | null
+  address?: string
+  hours?: string
+  seats_left?: number | null
+  fits_party?: boolean | null
+  status?: string
+  /** Film-only extras persisted with a chat result. */
+  next_session_at?: string | null
+  cinema?: string | null
+  film_genre?: string[] | null
+  film_duration_min?: number | null
+}
+
+export interface ChatPlanStep {
+  time: string
+  title: string
+  detail: string
+  source: string
+  kind?: 'event' | 'venue'
+  detail_id?: string
+  event_id?: string
+  bookable?: boolean
+  rating?: number | null
+  review_count?: number | null
+  address?: string
+  hours?: string
+  seats_left?: number | null
+  fits_party?: boolean | null
+  status?: string
 }
 
 export interface ChatMessage {
@@ -17,7 +47,7 @@ export interface ChatMessage {
   text: string
   filters?: StateContract
   results?: ChatResult[]
-  plan?: { time: string; title: string; detail: string; source: string; kind?: 'event' | 'venue'; detail_id?: string; event_id?: string; bookable?: boolean }[]
+  plan?: ChatPlanStep[]
   holdId?: string
   error?: boolean
 }

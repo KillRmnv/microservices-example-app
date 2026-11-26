@@ -105,9 +105,17 @@ export interface StateContract {
     party_size?: number
     budget?: {
       max_price_per_person?: number
+      /** Whole-party cap; the backend derives the per-person figure from it. */
+      total?: number | null
+      /** "total" means the cap applies to the whole party, not one person. */
+      basis?: 'per_person' | 'total'
       any?: boolean
     }
     amenities_required?: string[]
+    age_max?: number | null
+    min_rating?: number | null
+    /** How many stops a plan should contain ("два события"). */
+    event_count?: number | null
   }
   negative_filters: {
     exclude_categories?: string[]
@@ -121,6 +129,8 @@ export interface StateContract {
   context_state: {
     turn_count: number
     session_id: string
+    /** Card ids already shown to the reader; the backend skips them on "ещё". */
+    shown_ids?: string[]
   }
 }
 
@@ -130,6 +140,8 @@ export interface CatalogEvent {
   id: string
   source: string
   source_url: string
+  /** Optional direct ticket page when the source exposes one. */
+  ticket_url?: string | null
   booking_event_id: number | null
   title: string
   description?: string | null
@@ -147,6 +159,14 @@ export interface CatalogEvent {
   latitude?: number | null
   longitude?: number | null
   venue_ref?: string | null
+  venue_rating?: number | null
+  venue_review_count?: number | null
+  age_limit?: number | null
+  /** Film-only extras; scraped cinema rows may omit any of them. */
+  next_session_at?: string | null
+  cinema?: string | null
+  film_genre?: string[] | null
+  film_duration_min?: number | null
 }
 
 export interface CatalogVenue {

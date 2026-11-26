@@ -20,7 +20,7 @@ from ..errors import (
     PriceMismatch,
     ValidationError,
 )
-from ..models.availability import SOLD_OUT, UNKNOWN
+from ..models.availability import INSUFFICIENT, SOLD_OUT, UNKNOWN
 from ..models.hold import Hold
 from ..repositories import holds as holds_repo
 
@@ -48,6 +48,9 @@ class HoldService:
             raise BackendUnavailable("booking-service is unavailable")
         if availability.status == SOLD_OUT:
             raise ConflictError("event is sold out")
+        if availability.status == INSUFFICIENT:
+            raise NotEnoughSeats(
+                f"not enough seats for a party of {party}")
         self._validate(zone, price, availability, party)
         # TODO(stage-3b): replace this local intent with a real inventory
         # hold in booking-service once user-auth passthrough exists.

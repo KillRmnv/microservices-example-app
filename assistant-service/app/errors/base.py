@@ -26,6 +26,17 @@ class ConflictError(DomainError):
     code = "conflict"
 
 
+class RateLimited(DomainError):
+    status_code = 429
+    code = "rate_limited"
+
+    def __init__(self, message: str | None = None, *,
+                 retry_after_s: int | None = None) -> None:
+        super().__init__(message or "Too many requests; retry later")
+        # Seconds until the fixed window resets (sent as Retry-After).
+        self.retry_after_s = retry_after_s
+
+
 class GoneError(DomainError):
     status_code = 410
     code = "gone"

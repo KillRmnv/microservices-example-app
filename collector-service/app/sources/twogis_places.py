@@ -7,12 +7,14 @@ Rubric/region ids are discovered once and cached in the DB.
 from __future__ import annotations
 
 import logging
+import re
 
 from ..core import db
 from ..core.config import settings
 from ..errors.domain import (QuotaExhausted, SourceConfigError,
                              SourceFetchError, SourceParseError)
 from ..parsing.normalize import VenueRow
+from ..parsing.schedule import normalize_schedule, schedule_for_storage
 from ..repositories.quota import current_month, try_consume
 from ..repositories.store import upsert_venues
 from .base import CollectContext, RunStats, SourceAdapter
@@ -49,7 +51,157 @@ def fix_coords(latitude: float | None, longitude: float | None) -> tuple[float |
     return latitude, longitude
 
 FIELDS = ("items.point,items.address_name,items.full_address_name,"
-          "items.rubrics,items.schedule,items.reviews,items.name_ex,items.name")
+          "items.rubrics,items.schedule,items.reviews,items.name_ex,items.name,"
+          # Enrichment groups. Live-verified against 3.0 /3.0/items
+          # (2026-11-26): requesting them is accepted (HTTP 200) but the
+          # items carry no attribute_groups/attributes/adm_div, so parsing
+          # below stays defensive and the venue keeps NULL enrichment values.
+          "items.attribute_groups,items.attributes,items.adm_div")
+
+# RU attribute names -> lowercase ASCII tags (contract vocabulary).
+AMENITY_TAGS = {
+    "веранда": "terrace",
+    "терраса": "terrace",
+    "wi-fi": "wifi",
+    "wifi": "wifi",
+    "вай-фай": "wifi",
+    "парковка": "parking",
+    "депозит": "deposit",
+    "доставка": "delivery",
+    "детская комната": "kids_room",
+    "детская": "kids_room",
+}
+
+# 2GIS attribute values are free text: "есть"/"нет", "500 Br", a list, ...
+# A known amenity name only becomes a tag when the value is affirmative.
+NEGATIVE_VALUES = {"нет", "no", "отсутствует", "недоступно", "не доступно",
+                   "false", "0"}
+
+_AVG_CHECK_RE = re.compile(r"(\d+(?:[.,]\d+)?)")
+_AVG_CHECK_NAME = "средний чек"
+MAX_AVG_CHECK = 100_000.0
+
+
+def _normalize_name(value) -> str:
+    return re.sub(r"\s+", " ", str(value or "").casefold().replace("ё", "е")).strip()
+
+
+def _attr_text(value) -> str:
+    if isinstance(value, dict):
+        value = value.get("name") or value.get("value") or value.get("text") or ""
+    if isinstance(value, (list, tuple)):
+        return " ".join(filter(None, (_attr_text(item) for item in value)))
+    if isinstance(value, bool):
+        return "да" if value else ""
+    return str(value).strip()
+
+
+def _attr_pair(entry) -> tuple[str, str]:
+    if isinstance(entry, dict):
+        name = entry.get("name") or entry.get("title") or entry.get("key") or ""
+        raw = entry.get("value", entry.get("values", entry.get("text", "")))
+        return str(name), _attr_text(raw)
+    if isinstance(entry, (list, tuple)) and len(entry) >= 2:
+        return str(entry[0]), _attr_text(entry[1])
+    return _attr_text(entry), ""
+
+
+def attribute_pairs(item: dict) -> list[tuple[str, str]]:
+    """Flatten the plausible 2GIS attribute shapes into (name, value) pairs.
+
+    Covered: grouped list ``[{"name": ..., "attributes": [{...}]}]`` (also
+    ``items`` inside a group), flat ``[{"name","value"}]``, and a mapping
+    ``{"Wi-Fi": "есть"}``. Unknown shapes simply contribute nothing.
+    """
+    pairs: list[tuple[str, str]] = []
+    groups = item.get("attribute_groups")
+    if isinstance(groups, list):
+        for group in groups:
+            if not isinstance(group, dict):
+                pairs.append(_attr_pair(group))
+                continue
+            entries = group.get("attributes")
+            if entries is None:
+                entries = group.get("items")
+            if isinstance(entries, dict):
+                pairs.extend((str(key), _attr_text(value))
+                             for key, value in entries.items())
+            elif isinstance(entries, list):
+                pairs.extend(_attr_pair(entry) for entry in entries)
+            elif group.get("name"):
+                pairs.append(_attr_pair(group))
+    attributes = item.get("attributes")
+    if isinstance(attributes, dict):
+        pairs.extend((str(key), _attr_text(value))
+                     for key, value in attributes.items())
+    elif isinstance(attributes, list):
+        pairs.extend(_attr_pair(entry) for entry in attributes)
+    return [(name, value) for name, value in pairs if name]
+
+
+def parse_amenities(item: dict) -> list[str] | None:
+    """Map known RU attribute names onto the ASCII tag vocabulary."""
+    tags: list[str] = []
+    for name, value in attribute_pairs(item):
+        normalized = _normalize_name(name)
+        if _normalize_name(value) in NEGATIVE_VALUES:
+            continue
+        for needle, tag in AMENITY_TAGS.items():
+            if needle in normalized and tag not in tags:
+                tags.append(tag)
+    return tags or None
+
+
+def parse_avg_check(item: dict) -> float | None:
+    """'Средний чек' -> midpoint of its range ('30–50 Br' -> 40.0)."""
+    text = ""
+    for name, value in attribute_pairs(item):
+        if _AVG_CHECK_NAME in _normalize_name(name):
+            text = value
+            break
+    if not text:
+        return None
+    numbers = []
+    for match in _AVG_CHECK_RE.findall(text):
+        try:
+            number = float(match.replace(",", "."))
+        except ValueError:
+            continue
+        if 0 < number <= MAX_AVG_CHECK:
+            numbers.append(number)
+    if not numbers:
+        return None
+    sample = numbers[:2]  # a "30–50" range contributes exactly two bounds
+    return round(sum(sample) / len(sample), 2)
+
+
+def price_level_for(avg_check: float | None) -> str | None:
+    """low < 25 BYN, medium < 60 BYN, high otherwise."""
+    if avg_check is None:
+        return None
+    if avg_check < 25:
+        return "low"
+    if avg_check < 60:
+        return "medium"
+    return "high"
+
+
+def parse_district(item: dict) -> str | None:
+    """adm_div district name (entries carry {"type": "district"|"city"|...})."""
+    entries = item.get("adm_div")
+    if not isinstance(entries, list):
+        return None
+    fallback = None
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        name = str(entry.get("name") or "").strip()
+        if not name:
+            continue
+        if str(entry.get("type") or "").casefold() == "district":
+            return name
+        fallback = name
+    return fallback
 
 
 def normalize_point(point: dict | None) -> tuple[float | None, float | None]:
@@ -199,6 +351,8 @@ class TwogisPlacesAdapter(SourceAdapter):
             elif isinstance(item["address"], str):
                 address = item["address"]
         address = str(address).strip() if address else None
+        hours, is_24_7 = normalize_schedule(item.get("schedule"))
+        avg_check = parse_avg_check(item)
         return VenueRow(
             source_id=str(item["id"]),
             name=name[:300],
@@ -207,9 +361,15 @@ class TwogisPlacesAdapter(SourceAdapter):
             city=settings.twogis_region or settings.default_city,
             latitude=latitude,
             longitude=longitude,
-            schedule=item.get("schedule") if isinstance(item.get("schedule"), dict) else None,
+            schedule=schedule_for_storage(item.get("schedule"), hours, is_24_7),
             rating=rating,
             review_count=review_count,
+            hours=hours,
+            is_24_7=is_24_7,
+            amenities=parse_amenities(item),
+            avg_check=avg_check,
+            price_level=price_level_for(avg_check),
+            district=parse_district(item),
             raw=item,
         )
 

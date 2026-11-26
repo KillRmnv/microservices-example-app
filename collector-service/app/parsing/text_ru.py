@@ -45,7 +45,13 @@ def parse_ru_datetime(text: str | None, now_utc: datetime) -> datetime | None:
     match = DAY_MONTH_RE.search(text)
     if match:
         day, month_name, time_text = int(match.group(1)), match.group(2).lower(), match.group(3)
-        candidate = _at(now_minsk.replace(month=MONTHS[month_name], day=day), time_text)
+        try:
+            candidate = _at(now_minsk.replace(month=MONTHS[month_name], day=day),
+                            time_text)
+        except ValueError:
+            # "31 февраля"/"31 апреля": a malformed date in the post is noise,
+            # not an event. Never abort the whole channel on it.
+            return None
         if candidate < now_minsk - timedelta(hours=12):
             return None  # announcements are for upcoming dates, not next year
         return candidate.astimezone(ZoneInfo("UTC"))

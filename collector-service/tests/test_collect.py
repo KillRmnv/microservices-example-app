@@ -40,7 +40,7 @@ def test_ticketpro_collects_first_page_only(conn):
 
     import asyncio
     stats = asyncio.run(TicketproAdapter().collect(make_ctx(handler)))
-    assert stats.parsed == 6  # 1 Minsk event x 6 listings
+    assert stats.parsed == 7  # 1 Minsk event x 7 listings (cinema included)
     # Same card URL in every listing -> upserted once (idempotent re-crawl).
     assert stats.rows_inserted == 1
     rows = conn.execute("SELECT title, category FROM collected_events").fetchall()

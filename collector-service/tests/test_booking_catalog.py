@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 from app.clients.kafka import BookingCatalogConsumer
 from app.core.config import Settings
-from app.models.catalog import CatalogEvent
+from app.models.catalog import CatalogEvent, RawEvent, dedup_key_for
 from app.repositories import store
 from app.clients.vector import MemoryStore, VectorPoint
 
@@ -28,6 +28,21 @@ def _event(**overrides) -> CatalogEvent:
     return CatalogEvent(**base)
 
 
+def _scraped(source_id="tp-77", **overrides) -> RawEvent:
+    base = dict(
+        source="ticketpro",
+        source_id=source_id,
+        source_url=f"https://ticketpro.by/event/{source_id}",
+        title="Симфонический вечер",
+        start_at=datetime(2026, 11, 5, 19, 0, tzinfo=timezone.utc),
+        venue_name="Minsk Arena",
+        category="concert",
+        city="Минск",
+    )
+    base.update(overrides)
+    return RawEvent(**base)
+
+
 def test_catalog_event_upsert_is_idempotent(conn):
     row_id = store.upsert_catalog_event(conn, _event())
     conn.commit()
@@ -43,7 +58,8 @@ def test_catalog_event_upsert_is_idempotent(conn):
     assert row["category"] == "concert"
     assert row["city_id"] is not None
     assert row["currency_code"] == "BYN"
-    assert row["dedup_key"] is None  # mirrored rows never join cross-source dedup
+    assert row["dedup_key"] == dedup_key_for(
+        "Симфонический вечер", _event().starts_at, "Minsk Arena")
 
     # Republishing the same payload must not rewrite the row.
     assert store.upsert_catalog_event(conn, _event()) is None
@@ -58,6 +74,69 @@ def test_catalog_event_upsert_is_idempotent(conn):
         (row_id,)).fetchone()
     assert refreshed["title"] == "Новое название"
     assert refreshed["embedded_at"] is None
+
+
+def test_scraped_event_merges_into_existing_booking_mirror(conn):
+    """Booking first: the scrape collapses into the bookable row."""
+    row_id = store.upsert_catalog_event(conn, _event())
+    conn.commit()
+
+    stats = store.upsert_events(conn, [_scraped()])
+    conn.commit()
+
+    assert stats.duplicates == 1
+    rows = conn.execute(
+        "SELECT id, source, source_id, booking_event_id"
+        " FROM collected_events").fetchall()
+    assert len(rows) == 1
+    assert rows[0]["id"] == row_id
+    assert rows[0]["source"] == "booking"      # identity is untouched
+    assert rows[0]["source_id"] == "42"
+    assert rows[0]["booking_event_id"] == 42   # bookable id survives
+    sources = conn.execute(
+        "SELECT source, is_primary FROM event_sources ORDER BY source").fetchall()
+    assert [row["source"] for row in sources] == ["ticketpro"]
+
+
+def test_booking_mirror_adopts_existing_scraped_row(conn):
+    """Scraper first: the mirror adopts the row instead of duplicating it."""
+    store.upsert_events(conn, [_scraped()])
+    conn.commit()
+    original = conn.execute(
+        "SELECT id, source, source_id, dedup_key FROM collected_events").fetchone()
+    conn.execute("UPDATE collected_events SET embedded_at = now()")
+    conn.commit()
+
+    adopted = store.upsert_catalog_event(conn, _event(id=77))
+    conn.commit()
+
+    assert adopted == original["id"]
+    rows = conn.execute(
+        "SELECT id, source, source_id, booking_event_id, dedup_key, embedded_at"
+        " FROM collected_events").fetchall()
+    assert len(rows) == 1
+    assert rows[0]["source"] == "ticketpro"    # identity is untouched
+    assert rows[0]["source_id"] == "tp-77"
+    assert rows[0]["booking_event_id"] == 77   # bookable id lands on survivor
+    assert rows[0]["dedup_key"] == original["dedup_key"]
+    assert rows[0]["embedded_at"] is None      # payload gains the bookable id
+    # Republishing the same booking event is a no-op.
+    assert store.upsert_catalog_event(conn, _event(id=77)) is None
+
+
+def test_booking_tombstone_clears_adopted_id_but_keeps_row(conn):
+    store.upsert_events(conn, [_scraped()])
+    store.upsert_catalog_event(conn, _event(id=77))
+    conn.commit()
+
+    assert store.delete_catalog_event(conn, 77) is None  # no point to delete
+    conn.commit()
+    row = conn.execute(
+        "SELECT source, booking_event_id, embedded_at"
+        " FROM collected_events").fetchone()
+    assert row["source"] == "ticketpro"
+    assert row["booking_event_id"] is None
+    assert row["embedded_at"] is None
 
 
 def test_catalog_event_delete_returns_point_id(conn):

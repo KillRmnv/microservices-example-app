@@ -123,3 +123,87 @@ def test_jsonld_image_object_and_relative_url():
     )
     assert event is not None
     assert event.image_url == "https://ticketpro.by/media/poster.png"
+
+
+def _jsonld(**overrides):
+    data = {
+        "name": "Концерт",
+        "startDate": "2026-12-01T19:00:00+03:00",
+        "location": {"address": {"addressLocality": "Минск"}},
+        "offers": {"price": "45-90", "priceCurrency": "BYN"},
+    }
+    data.update(overrides)
+    return normalize_jsonld("ticketpro", "id", "http://x/1", "concert",
+                            data, NOW)
+
+
+def test_parse_availability_tokens():
+    from app.parsing.normalize import parse_availability
+
+    assert parse_availability("https://schema.org/InStock") == "in_stock"
+    assert parse_availability("InStock") == "in_stock"
+    assert parse_availability("LimitedAvailability") == "limited"
+    assert parse_availability("https://schema.org/SoldOut") == "sold_out"
+    assert parse_availability("OutOfStock") == "sold_out"
+    assert parse_availability("PreOrder") == "unknown"
+    assert parse_availability("SomethingNew") == "unknown"
+    assert parse_availability(None) is None
+    assert parse_availability("") is None
+
+
+def test_parse_capacity_bounds():
+    from app.parsing.normalize import parse_capacity
+
+    assert parse_capacity("500") == 500
+    assert parse_capacity("12.7") == 12
+    assert parse_capacity(0) == 0
+    assert parse_capacity(-1) is None
+    assert parse_capacity(10_000_001) is None
+    assert parse_capacity("abc") is None
+    assert parse_capacity(True) is None
+    assert parse_capacity(None) is None
+
+
+def test_sold_out_offer_sets_status_and_capacity():
+    event = _jsonld(
+        offers={"price": "45", "availability": "https://schema.org/SoldOut"},
+        maximumAttendeeCapacity=500,
+        remainingAttendeeCapacity=0,
+    )
+    assert event is not None
+    assert event.availability == "sold_out"
+    assert event.status == "sold_out"
+    assert (event.capacity, event.seats_left) == (500, 0)
+
+
+def test_cancelled_and_postponed_event_status():
+    cancelled = _jsonld(eventStatus="https://schema.org/EventCancelled")
+    assert cancelled is not None and cancelled.status == "cancelled"
+    assert cancelled.availability is None
+    postponed = _jsonld(eventStatus="https://schema.org/EventPostponed")
+    assert postponed is not None and postponed.status == "scheduled"
+
+
+def test_inconsistent_capacity_keeps_capacity_only():
+    event = _jsonld(maximumAttendeeCapacity=100,
+                    remainingAttendeeCapacity=500)
+    assert event is not None
+    assert event.capacity == 100
+    assert event.seats_left is None
+
+
+def test_absent_availability_fields_keep_defaults():
+    event = _jsonld()
+    assert event is not None
+    assert event.availability is None
+    assert event.capacity is None
+    assert event.seats_left is None
+    assert event.status == "scheduled"
+
+
+def test_in_stock_offer_stays_scheduled():
+    event = _jsonld(offers={"price": "45",
+                            "availability": "https://schema.org/InStock"})
+    assert event is not None
+    assert event.availability == "in_stock"
+    assert event.status == "scheduled"

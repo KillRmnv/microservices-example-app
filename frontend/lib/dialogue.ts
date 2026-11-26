@@ -21,7 +21,7 @@ const CATEGORY_KEYWORDS: Array<[RegExp, string]> = [
   [/концерт|музык|джаз|рок|выступлен/i, 'concert'],
   [/спектакл|балет|опера|пьес/i, 'theatre'],
   [/выставк/i, 'exhibition'],
-  [/кино(?!театр)|фильм/i, 'film'],
+  [/кино(?!театр)|фильм|кинопоказ|сеанс|что\s+посмотреть/i, 'film'],
   [/спорт(?!зал)|матч|стадион|футбол|хоккей/i, 'sport'],
   [/детск|для детей|ребен|ребён/i, 'kids'],
 ]
@@ -43,7 +43,7 @@ const EVENT_INTENT_KEYWORDS: Array<[RegExp, string]> = [
   [/концерт|джаз|рок|музык|выступлен/i, 'find_event_concert'],
   [/спектакл|балет|опера|пьес/i, 'find_event_theatre'],
   [/выставк/i, 'find_event_exhibition'],
-  [/кино(?!театр)|фильм/i, 'find_event_film'],
+  [/кино(?!театр)|фильм|кинопоказ|сеанс|что\s+посмотреть/i, 'find_event_film'],
   [/спорт(?!зал)|матч|стадион|футбол|хоккей/i, 'find_event_sport'],
   [/детск|для детей|ребен|ребён/i, 'find_event_kids'],
 ]
@@ -51,8 +51,14 @@ const EVENT_INTENT_KEYWORDS: Array<[RegExp, string]> = [
 const PLAN_INTENT = /план|маршрут|составь план|собери план/i
 const WEATHER_INTENT = /погод|прогноз|дожд|снег|температур/i
 const BOOKING_INTENT = /забронир|бронь|купить билет/i
+// Plan length: "два события" / "пара мероприятий" / "несколько событий".
+const EVENT_COUNT_WORDS: Record<string, number> = {
+  два: 2, две: 2, пара: 2, пару: 2, три: 3, несколько: 3, четыре: 4, пять: 5,
+}
+const EVENT_COUNT_PATTERN =
+  /(?:^|[^а-яёa-z])(\d{1,2}|два|две|пар[ау]|три|четыре|пять|несколько)\s+(?:событи|концерт|мероприят|точк|шаг|спектакл|выставк)/
 // An explicit "anything goes" request: generic, but not a signal-less turn.
-const GENERIC_INTENT = /что-нибудь|что-то|куда сходить|что есть|погулять|чем заняться/i
+const GENERIC_INTENT = /что-нибудь|что-то|что\s+угодно|куда сходить|что есть|погулять|чем заняться/i
 
 function firstIntentMatch(text: string,
                           table: Array<[RegExp, string]>): string | undefined {
@@ -98,6 +104,12 @@ export interface ParsedQuery {
   category: string[]
   partySize: number
   maxPrice?: number
+  /** Whole-party cap when the wording names a party ("на двоих до 80"). */
+  budgetTotal?: number
+  /** Budget cap scope: absent means the existing per-person convention. */
+  budgetBasis?: 'per_person' | 'total'
+  /** Place amenities parsed from this turn (e.g. terrace). */
+  amenities: string[]
   excludeTags: string[]
   vectorQuery: string
   /** True when the user actually named a date (not an inherited one). */
@@ -118,6 +130,8 @@ export interface ParsedQuery {
   partyAny: boolean
   /** True when the user actually named the party size. */
   partyExplicit: boolean
+  /** Explicit plan length ("два события"), 2..5; absent means the server decides. */
+  eventCount?: number
 }
 
 function pad(value: number): string {
@@ -149,7 +163,10 @@ export function parseQuery(text: string, now = new Date()): ParsedQuery {
     rawExpression: text.trim().slice(0, 200),
     intent: detectIntent(text),
     category: [],
-    partySize: 2,
+    // Mirrors the server default (ASSISTANT_DEFAULT_PARTY_SIZE=1): a turn
+    // without an explicit party is a solo search, not an assumed pair.
+    partySize: 1,
+    amenities: [],
     excludeTags: [],
     vectorQuery: '',
     dateExplicit: false,
@@ -168,12 +185,13 @@ export function parseQuery(text: string, now = new Date()): ParsedQuery {
   const timeMatch = lowered.match(/(\d{1,2})[:.](\d{2})/)
   if (timeMatch) time = `${pad(Number(timeMatch[1]))}:${timeMatch[2]}`
   // A bare "не важно" answers whatever the server asked about; it is not an
-  // "any date" instruction on its own, so keep it in a separate flag.
-  result.bareAny = /^(?:не\s+важно|неважно|все\s+равно|любой\s+вариант|без\s+разницы|как\s+угодно)[.!?]*$/.test(lowered)
-  result.dateAny = /любая\s+дата|без\s+даты|дата\s+не\s+(?:важна|имеет\s+значения)/.test(lowered)
-  result.cityAny = /любой\s+город|без\s+разницы\s+где|не\s+важно\s+где|город\s+не\s+важен/.test(lowered)
-  result.budgetAny = /без\s+бюджета|цена\s*не\s*важна|цена\s+неважна|любая\s+цена|деньги\s+не\s+важны|бюджет\s+не\s+важен|бюджет\s+любой/.test(lowered)
-  result.partyAny = /компания\s+любая|сколько\s+угодно\s+человек|нас\s+любое|число\s+человек\s+не\s+важно|компания\s+не\s+важна/.test(lowered)
+  // "any date" instruction on its own, so keep it in a separate flag. The
+  // lexicon is broad: readers answer slot questions with many vague phrases.
+  result.bareAny = /^(?:не\s+важно|неважно|все\s+равно|всё\s+равно|мне\s+все\s+равно|мне\s+всё\s+равно|любой\s+вариант|без\s+разницы|как\s+угодно|как\s+хочешь|как\s+скажешь|на\s+твой\s+вкус|на\s+ваше\s+усмотрение|пофиг|не\s+принципиально|не\s+имеет\s+значения|не\s+критично|необязательно|что\s+угодно|что-нибудь|сам\s+реши|сам\s+решай|решай\s+сам|на\s+выбор|без\s+предпочтений|не\s+суть|любой|любая|любое|любые)[.!?]*$/.test(lowered)
+  result.dateAny = /любая\s+дата|без\s+даты|дата\s+не\s+(?:важна|имеет\s+значения)|когда\s+угодно|в\s+любой\s+день|не\s+важно\s+когда/.test(lowered)
+  result.cityAny = /любой\s+город|в\s+любом\s+городе|где\s+угодно|без\s+разницы\s+где|не\s+важно\s+где|город\s+не\s+важен/.test(lowered)
+  result.budgetAny = /без\s+бюджета|без\s+ограничений|цена\s*не\s*важна|цена\s+неважна|любая\s+цена|деньги\s+не\s+важны|бюджет\s+не\s+важен|бюджет\s+любой|любой\s+бюджет|не\s+важно\s+сколько/.test(lowered)
+  result.partyAny = /компания\s+любая|любая\s+компания|сколько\s+угодно|нас\s+любое|число\s+человек\s+не\s+важно|сколько\s+человек\s+не\s+важно|компания\s+не\s+важна/.test(lowered)
   const numericRange = lowered.match(/(\d{1,2})[./](\d{1,2})\s*[-–—]\s*(\d{1,2})[./](\d{1,2})/)
   const namedRange = lowered.match(/(?:с\s+)?(\d{1,2})\s*(?:[-–—]|по)\s*(\d{1,2})\s+(января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)/)
   const tomorrowRange = /завтра\s*[-–—]\s*послезавтра/.test(lowered)
@@ -250,6 +268,19 @@ export function parseQuery(text: string, now = new Date()): ParsedQuery {
     if (pattern.test(lowered)) result.category.push(category)
   }
 
+  // --- amenities (place features) ---
+  if (/веранд|террас|на\s+улице|открыт[а-яё]*\s+площадк|летн[а-яё]*\s+площадк/i.test(lowered)) {
+    result.amenities.push('terrace')
+  }
+
+  // --- plan length ("два события", "пара мероприятий") ---
+  const eventCountMatch = lowered.match(EVENT_COUNT_PATTERN)
+  if (eventCountMatch) {
+    const raw = eventCountMatch[1]
+    const count = /^\d+$/.test(raw) ? Number(raw) : EVENT_COUNT_WORDS[raw]
+    if (count >= 2 && count <= 5) result.eventCount = count
+  }
+
   // --- party size ---
   const partyRange = lowered.match(/(\d{1,2})\s*[-–—]\s*(\d{1,2})\s+человек/)
   if (partyRange) {
@@ -267,9 +298,18 @@ export function parseQuery(text: string, now = new Date()): ParsedQuery {
   // --- budget ---
   const budget = lowered.match(/(?:до|не дороже|бюджет)\s+(\d[\d\s]*)\s*(?:руб|р\b|byn)?/)
   if (budget) {
-    const perPerson = lowered.match(/на\s+(двоих|двух|каждого|человека)/)
-    const total = Number(budget[1].replace(/\s+/g, ''))
-    result.maxPrice = perPerson && /двоих|двух/.test(perPerson[0]) ? Math.floor(total / 2) : total
+    // "на двоих"/"на троих" (before or after the amount) caps the whole party:
+    // keep the total in its own field; "на человека"/"на каждого" is per person.
+    const totalParty = lowered.match(/на\s+(?:двоих|двух|троих|трёх|трех|четверых|четырёх|четырех|пятерых|пяти|\d{1,2}\s+человек)/)
+    const perPerson = lowered.match(/на\s+(?:каждого|человека|одного)|с\s+человека/)
+    const amount = Number(budget[1].replace(/\s+/g, ''))
+    if (totalParty) {
+      result.budgetTotal = amount
+      result.budgetBasis = 'total'
+    } else {
+      result.maxPrice = amount
+      if (perPerson) result.budgetBasis = 'per_person'
+    }
   }
 
   // --- negative filters ---
@@ -294,13 +334,65 @@ export function parseQuery(text: string, now = new Date()): ParsedQuery {
     .replace(/\s+/g, ' ')
     .trim()
     .replace(/^(?:на|из)\s+|\s+(?:на|из)$/g, '')
-  const followUpOnly = /^(?:а\s+)?(?:ещё|еще|подешевле|дешевле|подороже|дороже|другие|другой|варианты|что-нибудь|что-то|а\s+есть\s+ещё)[\s?.!]*$/
   // A bare "не важно" answers a slot question; it is not a semantic topic.
-  result.vectorQuery = result.bareAny || followUpOnly.test(semantic) || semantic.length <= 2
+  result.vectorQuery = result.bareAny || FOLLOW_UP_ONLY.test(semantic) || semantic.length <= 2
     ? ''
     : semantic.slice(0, 300)
 
   return result
+}
+
+/** Accumulated ids are bounded: the contract travels on every turn. */
+export const SHOWN_IDS_LIMIT = 100
+
+/**
+ * A bare "а ещё?" turn carries no new query: it reuses the previous contract
+ * (plus the ids already shown) instead of going through the LLM stage.
+ */
+const FOLLOW_UP_ONLY = /^(?:а\s+)?(?:ещё|еще|подешевле|дешевле|подороже|дороже|другие|другой|варианты|что-нибудь|что-то|а\s+есть\s+ещё)[\s?.!]*$/
+
+export function isFollowUpOnly(text: string): boolean {
+  return FOLLOW_UP_ONLY.test(text.trim().toLowerCase())
+}
+
+/** Append card ids shown this turn to the previous list (dedupe, cap). */
+export function accumulateShownIds(
+  previous: string[] | undefined,
+  results: Array<{ detail_id?: string }> | undefined,
+): string[] {
+  const shown: string[] = []
+  const push = (id: string | undefined) => {
+    const value = id?.trim()
+    if (value && !shown.includes(value) && shown.length < SHOWN_IDS_LIMIT) {
+      shown.push(value)
+    }
+  }
+  for (const id of previous ?? []) push(id)
+  for (const result of results ?? []) push(result?.detail_id)
+  return shown
+}
+
+/**
+ * A turn that names a new topic or any explicit filter starts a fresh result
+ * page: ids shown for the old query must not hide results for the new one.
+ */
+export function resetsShownIds(parsed: ParsedQuery, previous?: StateContract): boolean {
+  if (parsed.intent && previous?.intent && parsed.intent !== previous.intent) {
+    return true
+  }
+  return Boolean(
+    parsed.category.length
+    || parsed.excludeTags.length
+    || parsed.amenities.length
+    || parsed.dateExplicit
+    || parsed.dateAny
+    || parsed.budgetAny
+    || parsed.maxPrice !== undefined
+    || parsed.budgetTotal !== undefined
+    || parsed.partyExplicit
+    || parsed.partyAny
+    || parsed.eventCount !== undefined,
+  )
 }
 
 export function contractFromParsed(parsed: ParsedQuery, previous?: StateContract): StateContract {
@@ -323,7 +415,7 @@ export function contractFromParsed(parsed: ParsedQuery, previous?: StateContract
   const contract: StateContract = {
     dialogue_action: 'search',
     intent,
-    clarify_missing: previous?.clarify_missing ?? true,
+    clarify_missing: previous?.clarify_missing ?? false,
     needs_clarification: false,
     clarification_prompt: null,
     hard_filters: {
@@ -337,7 +429,17 @@ export function contractFromParsed(parsed: ParsedQuery, previous?: StateContract
         : parsed.partyExplicit
           ? parsed.partySize
           : previousHard?.party_size,
-      amenities_required: previousHard?.amenities_required ?? [],
+      amenities_required: Array.from(new Set([
+        ...(previousHard?.amenities_required ?? []),
+        ...parsed.amenities,
+      ])),
+      ...(previousHard?.age_max != null ? { age_max: previousHard.age_max } : {}),
+      ...(previousHard?.min_rating != null ? { min_rating: previousHard.min_rating } : {}),
+      ...(parsed.eventCount !== undefined
+        ? { event_count: parsed.eventCount }
+        : previousHard?.event_count != null
+          ? { event_count: previousHard.event_count }
+          : {}),
     },
     negative_filters: {
       exclude_tags: excludeTags,
@@ -351,6 +453,11 @@ export function contractFromParsed(parsed: ParsedQuery, previous?: StateContract
     context_state: {
       turn_count: previousTurn,
       session_id: previous?.context_state.session_id ?? `web_${Date.now()}`,
+      // "а ещё?" continues the same result page; an explicit filter starts over.
+      ...(previous?.context_state.shown_ids?.length
+        && !resetsShownIds(parsed, previous)
+        ? { shown_ids: [...previous.context_state.shown_ids] }
+        : {}),
     },
   }
   if (parsed.start) {
@@ -376,8 +483,13 @@ export function contractFromParsed(parsed: ParsedQuery, previous?: StateContract
   else if (!isEventIntent) contract.hard_filters.category = []
   if (parsed.budgetAny || asksFor('budget')) {
     contract.hard_filters.budget = { any: true }
+  } else if (parsed.budgetTotal !== undefined) {
+    contract.hard_filters.budget = { total: parsed.budgetTotal, basis: 'total' }
   } else if (parsed.maxPrice !== undefined) {
-    contract.hard_filters.budget = { max_price_per_person: parsed.maxPrice }
+    contract.hard_filters.budget = {
+      max_price_per_person: parsed.maxPrice,
+      ...(parsed.budgetBasis ? { basis: parsed.budgetBasis } : {}),
+    }
   } else if (previousHard?.budget) {
     contract.hard_filters.budget = previousHard.budget
   }
@@ -407,11 +519,16 @@ export function mergeContracts(
   const localDateWins = parsed
     ? parsed.dateExplicit || (parsed.bareAny && asked.includes('datetime'))
     : Boolean(local.hard_filters.datetime?.start)
-  const localBudgetWins = parsed
+  // A party total the user stated ("на двоих до 120") outranks a remote
+  // per-person cap: the explicit wording wins.
+  const localTotalBudget = local.hard_filters.budget?.basis === 'total'
+    && local.hard_filters.budget?.total != null
+  const localBudgetWins = localTotalBudget || (parsed
     ? parsed.maxPrice !== undefined
+      || parsed.budgetTotal !== undefined
       || parsed.budgetAny
       || (parsed.bareAny && asked.includes('budget'))
-    : local.hard_filters.budget !== undefined
+    : local.hard_filters.budget !== undefined)
   const localPartyWins = parsed
     ? parsed.partyExplicit
       || parsed.partyAny
@@ -480,9 +597,21 @@ export function mergeContracts(
         : local.hard_filters.budget?.any
           ? { any: true }
           : remote.hard_filters.budget ?? local.hard_filters.budget,
-      amenities_required: remote.hard_filters.amenities_required?.length
-        ? remote.hard_filters.amenities_required
-        : local.hard_filters.amenities_required,
+      amenities_required: Array.from(new Set([
+        ...(local.hard_filters.amenities_required ?? []),
+        ...(remote.hard_filters.amenities_required ?? []),
+      ])),
+      // Review thresholds are model-owned: keep them across turns and let the
+      // model update them, the local parser never guesses them.
+      ...(remote.hard_filters.age_max != null || local.hard_filters.age_max != null
+        ? { age_max: remote.hard_filters.age_max ?? local.hard_filters.age_max }
+        : {}),
+      ...(remote.hard_filters.min_rating != null || local.hard_filters.min_rating != null
+        ? { min_rating: remote.hard_filters.min_rating ?? local.hard_filters.min_rating }
+        : {}),
+      ...(remote.hard_filters.event_count != null || local.hard_filters.event_count != null
+        ? { event_count: local.hard_filters.event_count ?? remote.hard_filters.event_count }
+        : {}),
     },
     negative_filters: {
       exclude_tags: Array.from(new Set([

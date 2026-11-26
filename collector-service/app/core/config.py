@@ -39,8 +39,35 @@ class Settings(BaseSettings):
 
     # Telegram: verify channels against the Mininform list before adding!
     telegram_channels: str = "minsk_kuda,kuda_shodit_by"
+    # Added to `telegram_channels`; deduped case-insensitively. Channels that
+    # fail the content-quality gate stay in `telegram_observe_channels`.
+    telegram_channels_extra: str = (
+        "Minsk_kudaGo,adpachinak,mafia_meets,"
+        "paci_hub_minsk,eventsforstudents,minsk_detskiy,deti_minsk,"
+        "skyline_by,cinemascopeby")
     telegram_max_pages: int = 5
     telegram_llm_fallback: bool = False
+    # Per-channel page caps: "minsk_kuda:2,deti_minsk:3".
+    telegram_channel_pages: str = (
+        "minsk_kuda:2,Minsk_kudaGo:2,deti_minsk:3,skyline_by:2,cinemascopeby:2")
+    # Per-channel relevance policy, flags joined by "+":
+    # "adpachinak:no_housing,merkzy_kokobay:strict_event".
+    telegram_channel_rules: str = (
+        "adpachinak:no_housing,eventsforstudents:no_jobs,"
+        "merkzy_kokobay:strict_event,paci_hub_minsk:no_companion_search,"
+        "skyline_by:no_housing+no_jobs+no_ad,"
+        "cinemascopeby:no_housing+no_jobs+no_ad")
+    # Channels where an event + venue without a date is acceptable.
+    telegram_undated_ok: str = "mafia_meets,minsk_detskiy,deti_minsk"
+    # Default category per channel; keyword/hashtag detection still overrides.
+    telegram_channel_categories: str = (
+        "minsk_detskiy:kids,deti_minsk:kids,"
+        "skyline_by:film,cinemascopeby:film")
+    # Classify + count but never write to collected_events. Channels below the
+    # 40% keep gate live here. Dead/private previews (ominske, cityminsk,
+    # merkzy_kokobay) were removed: they only produced fetch errors.
+    telegram_observe_channels: str = (
+        "adpachinak,mafia_meets")
 
     # Scheduler (APScheduler, intervals in seconds: "source:seconds,...").
     scheduler_enabled: bool = True
@@ -62,6 +89,10 @@ class Settings(BaseSettings):
     # booking-service town names are English in the demo seed; map them onto
     # the default catalog city vocabulary (configurable, not hardcoded).
     booking_city_map: str = "Minsk:Минск,Grodno:Гродно,Brest:Брест"
+
+    # ByCard film metadata: one listing + one page per matched film, kept
+    # inside the 1–2 s politeness window (robots allows /afisha/*).
+    film_metadata_interval_s: float = 1.5
 
     # Ops alerting: POST degraded sources here (ntfy/Slack/healthchecks).
     ops_webhook_url: str = ""
@@ -124,6 +155,56 @@ class Settings(BaseSettings):
                 except ValueError:
                     break
         return self.default_min_interval_s
+
+    # ---------------------------------------------------------- telegram
+    @staticmethod
+    def _handles(value: str) -> list[str]:
+        handles, seen = [], set()
+        for raw in value.split(","):
+            handle = raw.strip().lstrip("@")
+            key = handle.casefold()
+            if handle and key not in seen:
+                seen.add(key)
+                handles.append(handle)
+        return handles
+
+    def telegram_channel_list(self) -> list[str]:
+        """`telegram_channels` + `telegram_channels_extra`, deduped."""
+        return self._handles(
+            f"{self.telegram_channels},{self.telegram_channels_extra}")
+
+    @staticmethod
+    def _channel_map(value: str) -> dict[str, str]:
+        result = {}
+        for chunk in value.split(","):
+            name, _, mapped = chunk.partition(":")
+            name = name.strip().lstrip("@")
+            if name and mapped.strip():
+                result[name.casefold()] = mapped.strip()
+        return result
+
+    def telegram_pages_for(self, channel: str) -> int | None:
+        value = self._channel_map(self.telegram_channel_pages).get(
+            channel.casefold())
+        try:
+            return max(1, int(value)) if value else None
+        except ValueError:
+            return None
+
+    def telegram_category_for(self, channel: str) -> str | None:
+        return self._channel_map(self.telegram_channel_categories).get(
+            channel.casefold())
+
+    def telegram_rule_flags(self, channel: str) -> set[str]:
+        value = self._channel_map(self.telegram_channel_rules).get(
+            channel.casefold(), "")
+        return {flag.strip() for flag in value.split("+") if flag.strip()}
+
+    def telegram_undated_ok_set(self) -> set[str]:
+        return {handle.casefold() for handle in self._handles(self.telegram_undated_ok)}
+
+    def telegram_observe_set(self) -> set[str]:
+        return {handle.casefold() for handle in self._handles(self.telegram_observe_channels)}
 
     # OpenAPI/Swagger: disable in production (docs_enabled=false hides
     # /docs, /redoc and /openapi.json entirely).

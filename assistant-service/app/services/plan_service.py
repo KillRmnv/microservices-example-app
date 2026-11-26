@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from datetime import datetime, timedelta
 
 from ..api.schemas.contract import StateContract, sanitize
 from ..api.schemas.dialogue import ChatMessage, DialogResponse
@@ -26,14 +27,20 @@ PROMPT = """Ты — составитель плана досуга. Снача�
   {{"candidate": 1, "time": "19:00", "title": "...", "detail": "место · цена", "source": "..."}}]}}
 Правила: 2–4 шага; candidate — номер кандидата из списка. Окно плана:
 {window_start} — {window_end}; все шаги должны быть внутри него. Кандидаты
-собраны из всей беседы: [event] — событие, [venue] — место. Если среди
-кандидатов есть событие из предыдущей темы, обязательно включи хотя бы одно
-событие в план, а места добавь вокруг него. Если у события end_at позже
+собраны из всей беседы: [event] — событие, [venue] — место.
+Если у кандидата есть next_session — это ближайший точный сеанс из источника:
+время шага бери из него, не выдумывай другое. Если у события end_at позже
 start_at, оно идёт несколько дней: дата плана внутри периода значит, что
 событие доступно, не исключай его из-за даты начала. Время одиночного
-события бери из start_at; для многодневного не используй start_at как время
-визита — поставь время внутри окна и отметь "сеанс уточняется". Если времени
-нет — пиши "уточняется", не выдумывай.
+события бери из start_at; для многодневного без next_session не используй
+start_at как время визита — поставь время внутри окна и отметь
+"сеанс уточняется". Если времени нет — пиши "уточняется", не выдумывай.
+Жёсткое правило: в плане не более {event_cap_text}, если пользователь
+явно не попросил больше (event_count). Остальные шаги — места. Если среди
+кандидатов есть событие из предыдущей темы, обязательно включи хотя бы одно
+событие в план, а места добавь вокруг него.
+Если у кандидата есть rating или hours — это факты источника: можешь
+указать рейтинг и часы работы в detail, но не выдумывай их и не меняй.
 Для места без времени можно предложить время внутри окна. Название заведения
 не превращай в активность: "Гуляем в ГУМе" — это кафе, а не прогулка.
 Порядок хронологический; уложись в бюджет {budget}; город {city};
@@ -127,16 +134,36 @@ class PlanService:
         raise last_error
 
     @staticmethod
-    def _fallback_steps(cards: list) -> list[dict]:
-        """Deterministic itinerary from the best cards (no invented places)."""
-        return [{"candidate": index + 1, "time": "—", "title": card.title,
-                 "detail": " · ".join(part for part in (card.meta, card.price)
-                                      if part),
-                 "source": card.source or "assistant"}
-                for index, card in enumerate(cards[:3])]
+    def _card_detail(card, *base: str) -> str:
+        """Detail line from card fields; never invents values.
 
-    @staticmethod
-    def _attach_cards(plan: list[dict], cards: list) -> list[dict]:
+        Rating/hours come from the source payload; skip them when `meta`
+        already carries the same text so a card is not repeated.
+        """
+        parts = [part for part in base if part]
+        joined = " · ".join(parts)
+        if card.hours and card.hours not in joined:
+            parts.append(card.hours)
+        if card.rating is not None:
+            rating = f"★{card.rating:.1f}"
+            if rating not in joined:
+                parts.append(rating)
+        return " · ".join(parts)
+
+    @classmethod
+    def _fallback_steps(cls, cards: list) -> list[dict]:
+        """Deterministic itinerary from the best cards (no invented places).
+
+        `cards` is already grouped/capped per context, so this preserves one
+        event per context by default while adding venues around them.
+        """
+        return [{"candidate": index + 1, "time": "—", "title": card.title,
+                 "detail": cls._card_detail(card, card.meta, card.price),
+                 "source": card.source or "assistant"}
+                for index, card in enumerate(cards[:4])]
+
+    @classmethod
+    def _attach_cards(cls, plan: list[dict], cards: list) -> list[dict]:
         """Map model steps back to real cards; never trust bare titles.
 
         A step that matches neither a candidate id nor a card title is
@@ -167,6 +194,9 @@ class PlanService:
                                  and card.event_id.isdigit()),
                 "title": card.title,
                 "source": card.source or "assistant",
+                # Rating/hours are source facts; keep them in the step detail
+                # instead of letting the model paraphrase or drop them.
+                "detail": cls._card_detail(card, str(step.get("detail") or "")),
             })
             step.pop("candidate", None)
             attached.append(step)
@@ -176,8 +206,15 @@ class PlanService:
 
     @staticmethod
     def _contract_key(contract: StateContract) -> tuple:
+        """Everything that can change a search result must split the queue.
+
+        Comparing only intent/topic would reuse the no-budget search for
+        "потом покушать до 40", silently dropping a constraint.
+        """
         hard = contract.hard_filters
         dt = hard.datetime
+        budget = hard.budget
+        negative = contract.negative_filters
         return (
             contract.intent,
             tuple(hard.category),
@@ -187,6 +224,19 @@ class PlanService:
             dt.any if dt else False,
             hard.location.city,
             hard.party_size,
+            budget.basis if budget else None,
+            budget.total if budget else None,
+            budget.max_price_per_person if budget else None,
+            bool(budget.any) if budget else False,
+            hard.age_max,
+            hard.min_rating,
+            hard.event_count,
+            tuple(negative.exclude_categories),
+            tuple(negative.exclude_tags),
+            tuple(negative.exclude_districts),
+            tuple(hard.amenities_required),
+            # An explicit collection changes which index is searched.
+            contract.semantic_payload.target_collection,
         )
 
     @staticmethod
@@ -201,27 +251,115 @@ class PlanService:
             unique.append(card)
         return unique
 
-    @staticmethod
-    def _balanced(cards: list, limit: int) -> list:
-        """Keep events and places represented when both are in the chat."""
-        events = [card for card in cards if card.kind == "event"]
-        venues = [card for card in cards if card.kind == "venue"]
-        mixed: list = []
-        while len(mixed) < limit and (events or venues):
-            if events:
-                mixed.append(events.pop(0))
-            if len(mixed) < limit and venues:
-                mixed.append(venues.pop(0))
-        return mixed
+    @classmethod
+    def _select_candidates(cls, groups: list[tuple]) -> tuple[list, list]:
+        """Per context, keep `event_count or 1` events and up to 2 venues.
+
+        Cards stay grouped by iteration: a chat about animals plus a dinner
+        request must not let the animal search contribute three events to
+        one plan. Venues are not capped by `event_count`; two around the
+        event are enough for stops.
+        """
+        events_all: list = []
+        venues_all: list = []
+        contexts: list[tuple[int, list]] = []
+        for ruled, cards in groups:
+            cap = ruled.hard_filters.event_count or 1
+            events = [card for card in cards if card.kind == "event"][:cap]
+            venues = [card for card in cards if card.kind == "venue"][:2]
+            events_all.extend(events)
+            venues_all.extend(venues)
+            contexts.append((cap, events))
+        # Events come first so the candidate numbering the model sees starts
+        # with the reason for the evening, not an incidental stop.
+        selected = (cls._dedupe_cards(events_all)
+                    + cls._dedupe_cards(venues_all))
+        if len(selected) > MAX_CANDIDATES:
+            # Events win the prompt window: a venue is a stop, an event is
+            # the reason for the evening.
+            events = [card for card in selected if card.kind == "event"]
+            events = events[:MAX_CANDIDATES]
+            venues = [card for card in selected if card.kind == "venue"]
+            selected = events + venues[:MAX_CANDIDATES - len(events)]
+        selected_ids = {cls._card_key(card) for card in selected}
+        contexts = [(cap, [card for card in cards
+                           if cls._card_key(card) in selected_ids])
+                    for cap, cards in contexts]
+        return selected, contexts
 
     @staticmethod
-    def _event_step(card) -> dict:
+    def _card_key(card) -> str:
+        return card.detail_id or card.event_id or card.title
+
+    @staticmethod
+    def _step_key(step: dict) -> str:
+        return (step.get("detail_id") or step.get("event_id")
+                or step.get("title") or "")
+
+    @classmethod
+    def _apply_event_caps(cls, plan: list[dict],
+                          contexts: list[tuple[int, list]]) -> list[dict]:
+        """Keep at most `cap` events per context; never trust the model.
+
+        Also re-anchors a context whose event the model silently dropped, so
+        a two-topic chat still gets one event per iteration.
+        """
+        owners: dict[str, list[int]] = {}
+        for index, (_, cards) in enumerate(contexts):
+            for card in cards:
+                owners.setdefault(cls._card_key(card), []).append(index)
+        counts = [0] * len(contexts)
+        kept: list[dict] = []
+        for step in plan:
+            if step.get("kind") != "event":
+                kept.append(step)
+                continue
+            matched = owners.get(cls._step_key(step), [])
+            if not matched:
+                kept.append(step)
+                continue
+            if any(counts[index] < contexts[index][0]
+                   for index in matched):
+                kept.append(step)
+                for index in matched:
+                    counts[index] += 1
+            else:
+                log.info("plan event step dropped by per-context cap")
+        present = {cls._step_key(step) for step in kept}
+        for index, (cap, cards) in enumerate(contexts):
+            if counts[index] > 0 or not cards:
+                continue
+            top = cards[0]
+            key = cls._card_key(top)
+            if key in present:
+                continue
+            kept.extend(cls._attach_cards([cls._event_step(top)], [top]))
+            present.add(key)
+            counts[index] += 1
+        return kept
+
+    @classmethod
+    def _event_step(cls, card) -> dict:
         time = "уточняется"
-        if len(card.start_at) >= 16 and "T" in card.start_at:
+        session = cls._session_time(card.next_session_at)
+        if session:
+            time = session
+        elif len(card.start_at) >= 16 and "T" in card.start_at:
             time = card.start_at[11:16]
-        detail = " · ".join(part for part in (card.meta, card.price) if part)
+        detail = cls._card_detail(card, card.meta, card.price)
         return {"time": time, "title": card.title, "detail": detail,
                 "source": card.source or "assistant"}
+
+    @staticmethod
+    def _session_time(value: str) -> str:
+        """HH:MM of the nearest exact show, or "" when it is unknown."""
+        if not value:
+            return ""
+        try:
+            moment = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except ValueError:
+            return ""
+        return moment.strftime("%H:%M")
 
     @staticmethod
     def _period(card) -> str:
@@ -239,6 +377,27 @@ class PlanService:
         return bool(end_day > start_day and start_day < plan_day <= end_day)
 
     @staticmethod
+    def _is_multi_day(card) -> bool:
+        """True for a cinema run interval, not one showtime."""
+        try:
+            start = datetime.fromisoformat(
+                str(card.start_at).replace("Z", "+00:00"))
+            end = datetime.fromisoformat(
+                str(card.end_at).replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            return False
+        return end - start > timedelta(days=1)
+
+    @staticmethod
+    def _is_film_run(card) -> bool:
+        """Film rows carry the film extras or the card's run/session meta."""
+        meta = str(card.meta or "").casefold()
+        return bool(card.film_genre or card.film_duration_min is not None
+                    or card.next_session_at
+                    or "прокат до" in meta
+                    or "in cinemas until" in meta)
+
+    @staticmethod
     def _sort_plan(plan: list[dict]) -> list[dict]:
         def key(step: dict) -> tuple[int, int]:
             value = str(step.get("time") or "")
@@ -249,6 +408,22 @@ class PlanService:
                     pass
             return 99, 99
         return sorted(plan, key=key)
+
+    @staticmethod
+    def _budget_text(contract: StateContract) -> str:
+        """Prompt budget phrase; a total keeps both numbers visible."""
+        budget = contract.hard_filters.budget
+        if budget is None or budget.any:
+            return "без ограничений"
+        if budget.basis == "total" and budget.total is not None:
+            total = f"{budget.total:g}"
+            per_person = budget.max_price_per_person
+            if per_person is not None:
+                return f"до {total} на всех (~{per_person:g}/чел.)"
+            return f"до {total} на всех"
+        if budget.max_price_per_person is not None:
+            return f"до {budget.max_price_per_person:g} на человека"
+        return "без ограничений"
 
     async def _cards_for(self, contract: StateContract) -> tuple:
         clean = sanitize(contract)
@@ -289,7 +464,7 @@ class PlanService:
             seen.add(key)
             queue.append(ctx)
         responses = []
-        cards: list = []
+        groups: list[tuple] = []
         primary = None
         for ctx in queue:
             ctx_ruled, found = await self._cards_for(ctx)
@@ -299,9 +474,8 @@ class PlanService:
             responses.append(response)
             if primary is None:
                 primary = response
-            cards.extend(ctx_cards)
-        cards = self._dedupe_cards(cards)
-        if not cards:
+            groups.append((ctx_ruled, self._dedupe_cards(ctx_cards)))
+        if not groups:
             if primary is not None:
                 return primary
             return DialogResponse(
@@ -314,8 +488,7 @@ class PlanService:
         response = primary or responses[0]
         weather = next((message.text for message in response.messages
                         if message.kind == "weather"), "нет данных")
-        budget = (ruled.hard_filters.budget.max_price_per_person
-                  if ruled.hard_filters.budget else None)
+        budget_text = self._budget_text(ruled)
         date_filter = ruled.hard_filters.datetime
         if date_filter is not None and not date_filter.any:
             window_start = date_filter.start or "не задано"
@@ -328,7 +501,20 @@ class PlanService:
         window_time = (window_start[11:16]
                        if len(window_start) >= 16 and "T" in window_start
                        else None)
-        selected = self._balanced(cards, MAX_CANDIDATES)
+        selected, contexts = self._select_candidates(groups)
+        if not selected:
+            if primary is not None:
+                return primary
+            return DialogResponse(
+                contract=ruled,
+                messages=[ChatMessage(
+                    kind="assistant",
+                    text="По этим условиям ничего не нашлось — смягчите фильтры "
+                         "или уточните дату.")],
+            )
+        event_cap = max((cap for cap, _ in contexts), default=1)
+        event_cap_text = ("одного события" if event_cap == 1
+                          else f"{event_cap} событий")
         # Untrusted catalog rows go in as data with stable ids, never as
         # free-form instructions the model could act on.
         candidates = json.dumps([
@@ -337,15 +523,19 @@ class PlanService:
              "title": card.title,
              "meta": card.meta,
              "price": card.price,
-             "period": self._period(card)}
+             "rating": card.rating,
+             "hours": card.hours,
+             "period": self._period(card),
+             "next_session": card.next_session_at or None}
             for index, card in enumerate(selected)
         ], ensure_ascii=False)
         system = PROMPT.format(
-            budget=(f"до {budget}" if budget else "без ограничений"),
+            budget=budget_text,
             city=ruled.hard_filters.location.city or self._settings.default_city,
             weather=weather,
             window_start=window_start,
-            window_end=window_end)
+            window_end=window_end,
+            event_cap_text=event_cap_text)
         summary = "Готовый план досуга — проверьте шаги и подтвердите."
         try:
             plan, summary = await self._model_plan(system, candidates)
@@ -357,18 +547,26 @@ class PlanService:
                        "Время и наличие уточните на странице события.")
         if not plan:
             raise UpstreamError("LLM вернула план без шагов")
-        events = [card for card in selected if card.kind == "event"]
-        if (len(queue) > 1 and events
-                and not any(step.get("kind") == "event" for step in plan)):
-            # The model followed only the latest "покушать" request; keep the
-            # earlier event as the anchor of the evening.
-            extra = self._attach_cards([self._event_step(events[0])], selected)
-            plan = [*plan, *extra][:4]
+        plan = self._apply_event_caps(plan, contexts)
         by_detail = {card.detail_id: card for card in selected}
         for step in plan:
             card = by_detail.get(step.get("detail_id") or "")
-            if card is not None and self._is_spanning(card, plan_day):
-                step["time"] = window_time or "уточняется"
+            if card is None:
+                continue
+            session = self._session_time(card.next_session_at)
+            if session:
+                # The source exposed an exact nearest show: use it, never
+                # invent a different one for the evening.
+                step["time"] = session
+                detail = str(step.get("detail") or "")
+                cleaned = detail.replace(" · сеанс уточняется", "")
+                cleaned = cleaned.replace("сеанс уточняется", "")
+                step["detail"] = cleaned.strip(" ·")
+                continue
+            if self._is_spanning(card, plan_day) or (
+                    self._is_film_run(card) and self._is_multi_day(card)):
+                step["time"] = ("уточняется" if self._is_film_run(card)
+                                else window_time or "уточняется")
                 suffix = "сеанс уточняется"
                 if suffix not in step.get("detail", ""):
                     detail = " · ".join(part for part in

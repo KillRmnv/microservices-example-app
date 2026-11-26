@@ -88,3 +88,73 @@ def build_weather_cache(url: str | None) -> WeatherCache:
     if not url:
         return NullWeatherCache()
     return RedisWeatherCache(url)
+
+
+# --- availability cache ----------------------------------------------------
+#
+# `check_availability` is called once per rendered event card, and the answer
+# changes on a scale of minutes, not milliseconds. The cache only stores known
+# statuses (an `unknown` answer is usually a transient upstream miss and must
+# be retried next turn). Keys are `availability:{event_id}:{party or 0}`.
+
+
+class AvailabilityCache(Protocol):
+    async def get(self, key: str) -> dict | None: ...
+
+    async def set(self, key: str, value: dict, ttl_s: int) -> None: ...
+
+    async def close(self) -> None: ...
+
+
+class NullAvailabilityCache:
+    """Disabled cache: always a miss, never fails."""
+
+    async def get(self, key: str) -> dict | None:
+        return None
+
+    async def set(self, key: str, value: dict, ttl_s: int) -> None:
+        return None
+
+    async def close(self) -> None:
+        return None
+
+
+class RedisAvailabilityCache:
+    def __init__(self, url: str, *, prefix: str = "assistant:") -> None:
+        from redis.asyncio import Redis
+
+        self._client = Redis.from_url(url, decode_responses=True)
+        self._prefix = prefix
+
+    async def get(self, key: str) -> dict | None:
+        try:
+            raw = await self._client.get(self._prefix + key)
+        except Exception as exc:  # noqa: BLE001 — cache must not break a turn
+            log.warning("availability cache read failed: %s", exc)
+            return None
+        if raw is None:
+            return None
+        try:
+            value = json.loads(raw)
+        except ValueError:
+            return None
+        return value if isinstance(value, dict) else None
+
+    async def set(self, key: str, value: dict, ttl_s: int) -> None:
+        try:
+            await self._client.set(self._prefix + key, json.dumps(value),
+                                   ex=max(1, int(ttl_s)))
+        except Exception as exc:  # noqa: BLE001 — ignored by design
+            log.warning("availability cache write failed: %s", exc)
+
+    async def close(self) -> None:
+        try:
+            await self._client.aclose()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def build_availability_cache(url: str | None) -> AvailabilityCache:
+    if not url:
+        return NullAvailabilityCache()
+    return RedisAvailabilityCache(url)

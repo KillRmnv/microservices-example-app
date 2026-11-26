@@ -37,8 +37,12 @@ def register_exception_handlers(app: FastAPI) -> None:
                       exc_info=True)
         else:
             log.info("domain error on %s: %s", request.url.path, exc)
-        return problem_response(request, status=exc.status_code, code=exc.code,
-                                detail=exc.message)
+        response = problem_response(request, status=exc.status_code,
+                                    code=exc.code, detail=exc.message)
+        retry_after = getattr(exc, "retry_after_s", None)
+        if retry_after is not None:
+            response.headers["Retry-After"] = str(max(1, int(retry_after)))
+        return response
 
     @app.exception_handler(RequestValidationError)
     async def validation_error_handler(request: Request,

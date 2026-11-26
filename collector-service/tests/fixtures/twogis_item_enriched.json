@@ -1,0 +1,62 @@
+{
+  "_note": "Live 2GIS 3.0 /3.0/items sample (cafe rubric, 2026-11-26). id, name and address are redacted; schedule/reviews/rubrics/point shapes are verbatim. Requested items.attribute_groups / items.attributes / items.adm_div came back null (absent) even though they are listed in FIELDS.",
+  "meta": {"api_version": "3.0.22125", "code": 200, "issue_date": "20261125"},
+  "result": {
+    "items": [
+      {
+        "address_comment": null,
+        "address_name": "улица Примерная, 1",
+        "full_address_name": "Минск, улица Примерная, 1",
+        "id": "70000001000000099",
+        "name": "Кафе (пример из live 2GIS)",
+        "name_ex": {
+          "extension": "кафе",
+          "primary": "Кафе (пример из live 2GIS)"
+        },
+        "point": {"lat": 53.905097, "lon": 27.546375},
+        "reviews": {
+          "general_rating": 4.9,
+          "general_review_count": 81,
+          "general_review_count_with_stars": 143,
+          "is_reviewable": false,
+          "is_reviewable_on_flamp": true,
+          "items": [
+            {"is_reviewable": true, "tag": "2gis_reviews"}
+          ],
+          "org_rating": 4.8,
+          "org_review_count": 81,
+          "org_review_count_with_stars": 143
+        },
+        "rubrics": [
+          {
+            "alias": "kafe",
+            "id": "161",
+            "kind": "primary",
+            "name": "Кафе",
+            "parent_id": "2",
+            "short_id": 161
+          },
+          {
+            "alias": "bary",
+            "id": "159",
+            "kind": "additional",
+            "name": "Бары",
+            "parent_id": "2",
+            "short_id": 159
+          }
+        ],
+        "schedule": {
+          "Fri": {"working_hours": [{"from": "11:00", "to": "22:00"}]},
+          "Mon": {"working_hours": [{"from": "11:00", "to": "22:00"}]},
+          "Sat": {"working_hours": [{"from": "11:00", "to": "22:00"}]},
+          "Sun": {"working_hours": [{"from": "11:00", "to": "22:00"}]},
+          "Thu": {"working_hours": [{"from": "11:00", "to": "22:00"}]},
+          "Tue": {"working_hours": [{"from": "11:00", "to": "22:00"}]},
+          "Wed": {"working_hours": [{"from": "11:00", "to": "22:00"}]}
+        },
+        "type": "branch"
+      }
+    ],
+    "total": 1
+  }
+}

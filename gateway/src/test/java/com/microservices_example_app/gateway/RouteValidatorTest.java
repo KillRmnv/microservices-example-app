@@ -15,6 +15,7 @@ class RouteValidatorTest {
     void publicCatalogReadsAreOpen() {
         assertThat(isSecure(HttpMethod.GET, "/catalog/events")).isFalse();
         assertThat(isSecure(HttpMethod.GET, "/booking/events")).isFalse();
+        assertThat(isSecure(HttpMethod.GET, "/booking/events/5/availability")).isFalse();
         assertThat(isSecure(HttpMethod.GET, "/booking/venues/search")).isFalse();
         assertThat(isSecure(HttpMethod.GET, "/booking/tickets/search")).isFalse();
     }

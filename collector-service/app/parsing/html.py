@@ -5,6 +5,7 @@ No JS evaluation, no anti-bot circumvention.
 """
 from __future__ import annotations
 
+import html as html_std
 import json
 import logging
 import re
@@ -120,6 +121,43 @@ def extract_microdata_event(html: str) -> dict | None:
         "tags": tags,
         "image": attr(image, "src"),
     }
+
+
+META_DESCRIPTION_SELECTORS = (
+    'meta[name="description"]',
+    'meta[property="og:description"]',
+)
+
+
+def _plain_description(value) -> str | None:
+    """JSON-LD/meta text -> plain single-line text (tags and entities gone)."""
+    if not isinstance(value, str):
+        return None
+    text = html_std.unescape(value)
+    text = re.sub(r"<[^>]+>", " ", text)
+    return clean_text(text)
+
+
+def extract_event_description(html: str) -> str | None:
+    """Description from JSON-LD Event, then meta description, then microdata."""
+    for event in extract_json_ld_events(html):
+        description = _plain_description(event.get("description"))
+        if description:
+            return description
+    tree = LexborHTMLParser(html)
+    for selector in META_DESCRIPTION_SELECTORS:
+        node = tree.css_first(selector)
+        if node is not None:
+            description = _plain_description(node.attributes.get("content"))
+            if description:
+                return description
+    node = tree.css_first('[itemprop="description"]')
+    if node is not None:
+        description = _plain_description(
+            node.attributes.get("content") or node.text(strip=True))
+        if description:
+            return description
+    return None
 
 
 def clean_text(value: str | None) -> str | None:

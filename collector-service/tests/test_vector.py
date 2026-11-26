@@ -29,6 +29,43 @@ def test_search_text_is_a_text_payload_index():
     assert PAYLOAD_INDEXES["search_text"] == "text"
 
 
+def test_availability_and_enrichment_payload_indexes():
+    expected = {
+        "status": "keyword",
+        "age_limit": "integer",
+        "capacity": "integer",
+        "seats_left": "integer",
+        "lat": "float",
+        "lon": "float",
+        "venue_rating": "float",
+        "rating": "float",
+        "amenities": "keyword",
+        "avg_check": "float",
+        "is_24_7": "bool",
+        "atmosphere": "keyword",
+    }
+    assert {key: PAYLOAD_INDEXES[key] for key in expected} == expected
+
+
+def test_new_payload_index_schema_types():
+    client = FakeIndexClient()
+
+    asyncio.run(fake_store(client)._ensure_payload_indexes())
+
+    assert client.calls["status"][1] == models.PayloadSchemaType.KEYWORD
+    assert client.calls["age_limit"][1] == models.PayloadSchemaType.INTEGER
+    assert client.calls["capacity"][1] == models.PayloadSchemaType.INTEGER
+    assert client.calls["seats_left"][1] == models.PayloadSchemaType.INTEGER
+    # Flat lat/lon floats: a GeoIndex needs {"lon","lat"} objects.
+    assert client.calls["lat"][1] == models.PayloadSchemaType.FLOAT
+    assert client.calls["lon"][1] == models.PayloadSchemaType.FLOAT
+    assert client.calls["venue_rating"][1] == models.PayloadSchemaType.FLOAT
+    assert client.calls["amenities"][1] == models.PayloadSchemaType.KEYWORD
+    assert client.calls["avg_check"][1] == models.PayloadSchemaType.FLOAT
+    assert client.calls["is_24_7"][1] == models.PayloadSchemaType.BOOL
+    assert client.calls["atmosphere"][1] == models.PayloadSchemaType.KEYWORD
+
+
 def test_payload_index_schema_builds_bm25_text_params():
     client = FakeIndexClient()
 

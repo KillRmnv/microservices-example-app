@@ -7,6 +7,7 @@ from app.sources.telegram import (
     TelegramAdapter,
     extract_messages,
     first_meaningful_line,
+    scan_venue,
     split_sections,
 )
 from app.parsing.text_ru import parse_ru_datetime
@@ -47,6 +48,13 @@ def test_parse_ru_datetime_day_month():
 
 def test_parse_ru_datetime_past_returns_none():
     assert parse_ru_datetime("9 октября (пт), в 19:00", NOW) is None
+
+
+def test_parse_ru_datetime_invalid_day_is_none():
+    # "31 февраля" is malformed, not an event: must not raise (a channel run
+    # used to die with "day is out of range for month").
+    assert parse_ru_datetime("31 февраля в 19:00", NOW) is None
+    assert parse_ru_datetime("31 апреля, 20:00", NOW) is None
 
 
 def test_parse_ru_datetime_relative():
@@ -128,3 +136,83 @@ def test_telegram_extracts_video_thumb_when_no_photo():
     """
     assert extract_messages(html)[0]["image"] == (
         "https://cdn4.telesco.pe/file/thumb.jpg")
+
+
+def test_venue_section_is_trimmed_to_the_first_line():
+    message = {
+        "id": 9,
+        "text": (
+            "Кино и анимация в Гастросквере\n"
+            "25 декабря в 12:00\n"
+            "📍 Гастросквер «Манифест», ул. Кульман, 1/8\n"
+            "вход свободный\n"
+            "Для детей: мультфильм и шоу\n"
+            "#киноминск #бесплатно\n"
+            "Телефон: +375 17 000-00-00"),
+        "posted_at": None,
+    }
+    event = TelegramAdapter(channels=["x"]).normalize(
+        "x", message, datetime(2026, 11, 26, 10, 0, tzinfo=timezone.utc))
+    assert event is not None
+    assert event.venue_name == "Гастросквер «Манифест», ул. Кульман, 1/8"
+
+
+def test_scan_venue_skips_hashtags_and_links():
+    assert scan_venue("#киноминск\nПодробнее: https://t.me/x") is None
+
+
+def test_link_preview_image_is_extracted():
+    html = """
+    <div class="tgme_widget_message_wrap">
+      <div class="tgme_widget_message text_not_supported_wrap js-widget_message"
+           data-post="minsk_detskiy/1876">
+        <div class="tgme_widget_message_text">Выставка «Кот и осень»</div>
+        <a class="tgme_widget_message_link_preview" href="https://example.com">
+          <img src="https://cdn4.telesco.pe/file/link-preview.jpg" />
+        </a>
+        <a class="tgme_widget_message_date" href="https://t.me/minsk_detskiy/1876">
+          <time datetime="2026-11-20T10:00:00+00:00"></time>
+        </a>
+      </div>
+    </div>
+    """
+    messages = extract_messages(html)
+    assert messages[0]["image"] == "https://cdn4.telesco.pe/file/link-preview.jpg"
+
+
+def test_link_preview_background_image_is_extracted():
+    html = """
+    <div class="tgme_widget_message_wrap">
+      <div class="tgme_widget_message" data-post="ch/2">
+        <div class="tgme_widget_message_text">Событие</div>
+        <a class="tgme_widget_message_link_preview">
+          <div class="tgme_widget_message_link_preview_image"
+               style="background-image:url('https://cdn4.telesco.pe/file/bg.jpg')"></div>
+        </a>
+      </div>
+    </div>
+    """
+    assert extract_messages(html)[0]["image"] == "https://cdn4.telesco.pe/file/bg.jpg"
+
+
+def test_text_not_supported_image_and_photo_priority():
+    text_only = """
+    <div class="tgme_widget_message_wrap">
+      <div class="tgme_widget_message text_not_supported_wrap" data-post="ch/3">
+        <img src="https://cdn4.telesco.pe/file/fallback.jpg" />
+        <div class="tgme_widget_message_text">Пост</div>
+      </div>
+    </div>
+    """
+    assert extract_messages(text_only)[0]["image"] == "https://cdn4.telesco.pe/file/fallback.jpg"
+    photo_and_preview = """
+    <div class="tgme_widget_message_wrap">
+      <div class="tgme_widget_message" data-post="ch/4">
+        <a class="tgme_widget_message_photo_wrap"
+           style="background-image:url('https://cdn4.telesco.pe/file/photo.jpg')"></a>
+        <a class="tgme_widget_message_link_preview"><img src="https://x/preview.jpg" /></a>
+        <div class="tgme_widget_message_text">Пост</div>
+      </div>
+    </div>
+    """
+    assert extract_messages(photo_and_preview)[0]["image"].endswith("photo.jpg")

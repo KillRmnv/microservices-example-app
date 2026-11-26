@@ -5,6 +5,7 @@ import asyncio
 import json
 import logging
 import re
+from collections.abc import Iterable
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -14,6 +15,7 @@ from ..core.config import Settings
 from ..errors import UpstreamError
 from ..models import intent as intents
 from ..models.vocabulary import EVENT_CATEGORY_SET as KNOWN_CATEGORIES
+from . import vague
 from .query_complexity import classify
 from .rules import required_slots
 
@@ -45,7 +47,10 @@ PROMPT = """Ты — классификатор и парсер запросов
     "category": ["concert"],
     "themes": ["classical"],
     "party_size": null,
-    "budget": null
+    "budget": null,
+    "age_max": null,
+    "min_rating": null,
+    "event_count": null
   }},
   "negative_filters": {{
     "exclude_categories": [],
@@ -66,6 +71,21 @@ concert, theatre, exhibition, film, sport, kids, other. Для классики 
 только если сумма названа; vector_query — только тема, жанр или атмосфера.
 Не включай в vector_query дату, цену, город, размер компании и служебные
 слова ("найди", "что-нибудь", "на компанию"); если темы нет — "".
+Бюджет: "до 40 рублей", "не дороже 40" — цена НА ЧЕЛОВЕКА:
+budget={{"max_price_per_person": 40}}. "40 рублей на двоих", "на всех",
+"за двоих", "на компанию" — сумма за всю компанию:
+budget={{"total": 40, "basis": "total"}} и max_price_per_person=null.
+Если бюджет не назван — budget=null.
+Возраст: age_max заполняй только когда просят избежать взрослого контента:
+"для детей", "с детьми" — age_max=12; "без 18+", "не 18+" — age_max=17;
+иначе age_max=null (упоминание "18+" само по себе age_max не задаёт).
+Рейтинг: "хорошее место", "с высоким рейтингом" — min_rating=4.5;
+"не ниже 4.2" — min_rating=4.2; иначе min_rating=null.
+Количество событий в плане: "два события", "два концерта", "пара
+мероприятий", "несколько событий" — event_count (2 для "пара"/"несколько",
+названное число иначе); иначе event_count=null, не выдумывай.
+Если themes непустой, а vector_query пустой — заполни vector_query темами
+через запятую.
 Все запреты — "без X", "кроме X", "только не X", "не хочу X" — идут
 ТОЛЬКО в negative_filters, никогда в hard_filters и никогда в vector_query:
 exclude_categories — категории из списка concert, theatre, exhibition, film,
@@ -73,12 +93,17 @@ sport, kids, other (например, "без спорта" — ["sport"]); excl
 короткие нормализованные слова или фразы в нижнем регистре без предлогов:
 "без кальяна" — ["кальян"], "без громкой музыки" — ["loud_music"].
 Если запретов нет — оба списка пустые.
+Не задавай уточняющих вопросов. Для поисковых интентов всегда
+dialogue_action=search. Не названный слот — null, не выдумывай.
+Исключение — подтверждение бронирования: для confirm_booking сохраняй
+dialogue_action=confirm_booking.
 
 intent — главное решение, выбери ровно одно:
 - find_events — пользователь ищет мероприятия без явной категории;
 - find_event_concert, find_event_theatre, find_event_exhibition,
   find_event_film, find_event_sport, find_event_kids, find_event_other —
-  если категория названа явно;
+  если категория названа явно; "фильм", "кино", "кинопоказ", "сеанс",
+  "что посмотреть" — это find_event_film с category ["film"];
 - find_venues — пользователь ищет место/заведение без явной рубрики;
 - find_venue_bar, find_venue_cafe, find_venue_restaurant,
   find_venue_cinema, find_venue_theatre, find_venue_exhibition,
@@ -177,7 +202,36 @@ def _normalise(data: dict, settings: Settings) -> dict:
     datetime_filter = hard.get("datetime")
     hard["datetime"] = datetime_filter if isinstance(datetime_filter, dict) else None
     budget = hard.get("budget")
-    hard["budget"] = budget if isinstance(budget, dict) else None
+    if isinstance(budget, dict):
+        basis = str(budget.get("basis") or "per_person").strip().lower()
+        budget["basis"] = (basis if basis in ("per_person", "total")
+                           else "per_person")
+        for key in ("max_price_per_person", "total"):
+            value = budget.get(key)
+            try:
+                budget[key] = float(value) if value is not None else None
+            except (TypeError, ValueError):
+                budget[key] = None
+        hard["budget"] = budget
+    else:
+        hard["budget"] = None
+    try:
+        raw_age = hard.get("age_max")
+        hard["age_max"] = int(raw_age) if raw_age is not None else None
+    except (TypeError, ValueError):
+        hard["age_max"] = None
+    try:
+        raw_rating = hard.get("min_rating")
+        hard["min_rating"] = (float(raw_rating)
+                              if raw_rating is not None else None)
+    except (TypeError, ValueError):
+        hard["min_rating"] = None
+    try:
+        raw_count = hard.get("event_count")
+        hard["event_count"] = (int(raw_count) if raw_count is not None
+                               else None)
+    except (TypeError, ValueError):
+        hard["event_count"] = None
     category = hard.get("category")
     if isinstance(category, str):
         category = [category]
@@ -231,6 +285,10 @@ def _normalise(data: dict, settings: Settings) -> dict:
         payload = {}
     if not isinstance(payload.get("vector_query"), str):
         payload["vector_query"] = ""
+    # A model that found themes but left the semantic query empty must not
+    # lose the topic: the search embeds `vector_query`.
+    if not payload["vector_query"].strip() and hard.get("themes"):
+        payload["vector_query"] = ", ".join(hard["themes"])
     data["semantic_payload"] = payload
     context = data.get("context_state")
     data["context_state"] = context if isinstance(context, dict) else {}
@@ -284,60 +342,50 @@ def _clamp_party(value: object) -> int | None:
     return min(20, max(1, number))
 
 
-def _set_any_slot(hard: dict, slot: str) -> None:
-    if slot == "datetime":
-        hard["datetime"] = {"any": True, "start": None, "end": None}
-    elif slot == "city":
-        hard["location"] = {**(hard.get("location") or {}),
-                            "city": None, "any": True}
-    elif slot == "budget":
-        hard["budget"] = {"any": True, "max_price_per_person": None}
-    elif slot == "party":
-        hard["party_size"] = 0
-
-
 def _fallback_clarification(text: str, previous: StateContract,
                             slots: list[str], settings: Settings) -> StateContract:
     """Last-resort slot fill when the model cannot produce valid JSON."""
     data = previous.model_dump()
     hard = data["hard_filters"]
     lowered = text.casefold()
-    filled: set[str] = set()
     city = settings.default_city
     if city and city.casefold() in lowered and "city" in slots:
         hard["location"] = {**hard.get("location", {}),
                             "city": city, "any": False}
-        filled.add("city")
     party_range = re.search(r"(\d{1,2})\s*[-–—]\s*(\d{1,2})\s*человек",
                             lowered)
     if party_range and "party" in slots:
         hard["party_size"] = _clamp_party(party_range.group(2))
-        filled.add("party")
     else:
         party = re.search(r"нас\s+(\d{1,2})|(\d{1,2})\s+человек", lowered)
         if party and "party" in slots:
             value = party.group(1) or party.group(2)
             hard["party_size"] = _clamp_party(value)
-            filled.add("party")
         elif re.search(r"вдво[её]м|двое", lowered) and "party" in slots:
             hard["party_size"] = 2
-            filled.add("party")
         elif re.search(r"втро[её]м", lowered) and "party" in slots:
             hard["party_size"] = 3
-            filled.add("party")
     budget_max = re.search(
         r"(?:до|не\s+дороже|бюджет)\s+(\d[\d\s]*)", lowered)
     if budget_max and "budget" in slots:
         hard["budget"] = {"max_price_per_person": float(
             budget_max.group(1).replace(" ", ""))}
-        filled.add("budget")
-    if re.search(r"не\s+важн|все\s+равно|любой|без\s+разницы", lowered):
-        for slot in slots:
-            if slot not in filled:
-                _set_any_slot(hard, slot)
+    # Vague answers use the shared deterministic module, not a second regex.
+    vague.apply(hard, vague.any_slots(text, slots))
     data["dialogue_action"] = "search"
     data["needs_clarification"] = False
     data["clarification_slots"] = []
+    return StateContract.model_validate(data)
+
+
+def _overlay_vague(contract: StateContract,
+                   slots: Iterable[str]) -> StateContract:
+    """Apply deterministic "any" fills on top of a parsed contract."""
+    selected = set(slots)
+    if not selected:
+        return contract
+    data = contract.model_dump()
+    vague.apply(data["hard_filters"], selected)
     return StateContract.model_validate(data)
 
 
@@ -458,12 +506,29 @@ class QueryStructureService:
         # it must never replace the topic with the wording of the answer.
         if (previous is not None and previous.needs_clarification
                 and (previous.clarification_slots
-                     or required_slots(previous, self._settings))):
+                     or required_slots(previous, self._settings,
+                                       clarify_required_slots=True))):
             slots = [slot for slot in
                      (previous.clarification_slots
-                      or required_slots(previous, self._settings))
+                      or required_slots(previous, self._settings,
+                                        clarify_required_slots=True))
                      if slot in SLOT_LABELS]
             if slots:
+                # Vague replies are unambiguous enough to resolve without a
+                # model. This also fixes the repeat-question loop where the
+                # model returned datetime.any=false for "как хочешь".
+                covered = vague.any_slots(query, slots)
+                if covered == set(slots):
+                    contract = _overlay_vague(
+                        _apply_clarification({}, previous, slots), covered)
+                    if contract is not None:
+                        contract.context_state.session_id = (
+                            session_id or ANONYMOUS_SESSION)
+                        contract.context_state.turn_count = 1
+                        contract.semantic_payload.language = language
+                        log.info("clarification deterministic any: %s",
+                                 sorted(covered))
+                        return sanitize(contract), False, complexity.complex
                 system = CLARIFICATION_PROMPT.format(
                     slots=", ".join(SLOT_LABELS[slot] for slot in slots),
                     today=today, timezone=validate)
@@ -478,6 +543,10 @@ class QueryStructureService:
                     contract = _fallback_clarification(
                         query, previous, slots, self._settings)
                 if contract is not None:
+                    # A partial answer ("дата не важна, город Минск") still
+                    # goes through the model, but the deterministic any for
+                    # the date must never be lost to a bad model answer.
+                    contract = _overlay_vague(contract, covered)
                     contract.context_state.session_id = (
                         session_id or ANONYMOUS_SESSION)
                     contract.context_state.turn_count = 1

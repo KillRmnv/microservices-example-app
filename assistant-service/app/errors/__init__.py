@@ -8,6 +8,7 @@ from .base import (
     NotEnoughSeats,
     NotFoundError,
     PriceMismatch,
+    RateLimited,
     UpstreamError,
     ValidationError,
 )
@@ -22,6 +23,7 @@ __all__ = [
     "NotEnoughSeats",
     "NotFoundError",
     "PriceMismatch",
+    "RateLimited",
     "UpstreamError",
     "ValidationError",
 ]

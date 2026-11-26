@@ -22,6 +22,21 @@ class ResultCard(BaseModel):
     source: str = ""
     start_at: str = ""
     end_at: str = ""
+    # Structured extras (added for party/rating/hours aware cards); `meta`
+    # stays the human-readable fallback so older clients keep working.
+    rating: float | None = None
+    review_count: int | None = None
+    address: str = ""
+    hours: str = ""
+    seats_left: int | None = None
+    fits_party: bool | None = None
+    status: str = ""
+    # Film-only extras (optional: scraped cinema rows may omit them, and
+    # older sources never send them). `meta` stays the short human fallback.
+    next_session_at: str = ""
+    cinema: str = ""
+    film_genre: list[str] | None = None
+    film_duration_min: int | None = None
 
 
 class PlanStep(BaseModel):

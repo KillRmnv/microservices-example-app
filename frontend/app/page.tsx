@@ -12,7 +12,6 @@ import {
   Filter,
   Heart,
   MapPin,
-  MessageSquareText,
   Music,
   PartyPopper,
   SlidersHorizontal,
@@ -55,7 +54,6 @@ export default function Page() {
   const [activeCategory, setActiveCategory] = useState('Все')
   const [activeDistrict, setActiveDistrict] = useState<string[]>([])
   const [maxBudget, setMaxBudget] = useState(100)
-  const [atmosphere, setAtmosphere] = useState('')
   const [view, setView] = useState<'grid' | 'map'>('grid')
   const [liked, setLiked] = useState<string[]>([])
   const { city } = useCity()
@@ -153,16 +151,14 @@ export default function Page() {
     if (activeCategory !== 'Все') count += 1
     count += activeDistrict.length
     if (maxBudget < 100) count += 1
-    if (atmosphere.trim()) count += 1
     return count
-  }, [activeDay, customDate, activeCategory, activeDistrict, maxBudget, atmosphere])
+  }, [activeDay, customDate, activeCategory, activeDistrict, maxBudget])
 
   const resetFilters = () => {
     setActiveDay('За всё время')
     setActiveCategory('Все')
     setActiveDistrict([])
     setMaxBudget(100)
-    setAtmosphere('')
     setCustomDate('')
   }
 
@@ -322,7 +318,7 @@ export default function Page() {
                 </button>
               ))}
             </div>
-            <p className="side-hint">Отбор по категориям уточнятся, когда появится ассистент. Даты и бюджет уже работают.</p>
+            <p className="side-hint">Категория сужает афишу: выберите её вместе с датой и бюджетом.</p>
           </div>
           <div className="side-section">
             <label>РАЙОН</label>
@@ -337,21 +333,12 @@ export default function Page() {
             <label>БЮДЖЕТ <span className="label-value">{maxBudget < 100 ? `до ${maxBudget} руб.` : 'любой'}</span></label>
             <input type="range" min="10" max="100" step="5" value={maxBudget} onChange={(e) => setMaxBudget(Number(e.target.value))} data-testid="filters-budget" />
           </div>
-          <div className="side-section">
-            <label>АТМОСФЕРА</label>
-            <textarea placeholder="Например: уютно, живая музыка, без толпы…" rows={3} value={atmosphere} onChange={(e) => setAtmosphere(e.target.value)} data-testid="filters-atmosphere" />
-          </div>
           <button className="apply-button" onClick={() => setView('grid')} data-testid="apply-filters">Показать подборку <ArrowRight size={15} /></button>
           <button className="reset-button" onClick={resetFilters} data-testid="reset-filters">Сбросить всё</button>
           <div className="ad-note">
             <span>МЕСТО ПОД ОБЪЯВЛЕНИЕ</span>
             <p>Ваше событие может быть здесь</p>
             <button>Узнать больше</button>
-          </div>
-          <div className="ad-note editorial-note">
-            <MessageSquareText size={16} />
-            <span>ОПЫТ ГЕНЕРАЦИИ</span>
-            <p>Фронтенд-приложение сгенерировано и доработано ассистентом.</p>
           </div>
         </aside>
       </div>

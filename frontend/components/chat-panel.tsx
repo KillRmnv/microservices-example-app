@@ -2,10 +2,10 @@
 
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { ArrowRight, CheckCircle2, CloudRain, HelpCircle, MessageCircle, MessageSquare, Plus, RefreshCcw, Sun, Trash2, X } from 'lucide-react'
+import { ArrowRight, CheckCircle2, CloudRain, HelpCircle, MessageCircle, MessageSquare, Plus, RefreshCcw, Star, Sun, Trash2, X } from 'lucide-react'
 import type { StateContract } from '@/lib/types'
 import { api, ApiError, tokenStore } from '@/lib/api'
-import { sourceLabel } from '@/lib/catalog'
+import { filmFacts, filmSessionLabel, filmSessionTime, sourceLabel } from '@/lib/catalog'
 import {
   createHold,
   isMockMode,
@@ -14,7 +14,8 @@ import {
   structureQuery,
   type DialogMessage,
 } from '@/lib/assistant'
-import { contractFromParsed, mergeContracts, parseQuery } from '@/lib/dialogue'
+import { accumulateShownIds, contractFromParsed, isFollowUpOnly, mergeContracts, parseQuery } from '@/lib/dialogue'
+import { RATE_LIMIT_MESSAGE, isRateLimited } from '@/lib/errors'
 import {
   type Chat,
   type ChatMessage,
@@ -35,6 +36,40 @@ function isBookable(eventId: string | undefined): eventId is string {
 /** Catalog detail pages are keyed by the Qdrant UUID, not by numeric booking ids. */
 function isDetailId(value: string | undefined): value is string {
   return !!value && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
+}
+
+function plural(count: number, forms: [string, string, string]): string {
+  const mod10 = count % 10
+  const mod100 = count % 100
+  if (mod10 === 1 && mod100 !== 11) return forms[0]
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return forms[1]
+  return forms[2]
+}
+
+function ratingValue(rating: number | null | undefined): number | null {
+  return typeof rating === 'number' && Number.isFinite(rating) ? rating : null
+}
+
+/** Only the states that block "Выбрать" get a badge. */
+function statusLabel(status: string | null | undefined): string | null {
+  if (status === 'sold_out') return 'нет билетов'
+  if (status === 'cancelled') return 'отменено'
+  return null
+}
+
+/** age_max 17+ means "adults only", 12 and below means "kids welcome". */
+function ageLabel(ageMax: number): string {
+  if (ageMax >= 17) return 'без 18+'
+  if (ageMax <= 12) return 'можно с детьми'
+  return `возраст: до ${ageMax}+`
+}
+
+/** 0 means "any party size" in the contract; a hold needs a concrete count,
+ * so it falls back to 1 — the safest default, matching the server's
+ * ASSISTANT_DEFAULT_PARTY_SIZE. */
+function holdPartySize(contract?: StateContract | null): number {
+  const size = contract?.hard_filters.party_size
+  return typeof size === 'number' && size > 0 ? size : 1
 }
 
 const CITIES = 'Минск'
@@ -93,7 +128,8 @@ function baseContract(): StateContract {
     clarification_prompt: null,
     hard_filters: {
       location: { city: CITIES },
-      party_size: 2,
+      // Same default as the server: one guest unless the user says otherwise.
+      party_size: 1,
     },
     negative_filters: {},
     semantic_payload: { vector_query: '', language: 'ru' },
@@ -197,8 +233,15 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
   const [busy, setBusy] = useState(false)
   const [thinking, setThinking] = useState<number | null>(null)
   const [planThinking, setPlanThinking] = useState<number | null>(null)
-  const [clarifyMissing, setClarifyMissing] = useState(true)
+  const [clarifyMissing, setClarifyMissing] = useState(false)
   const endRef = useRef<HTMLDivElement | null>(null)
+  // Chat list is a panel mode, not an overlay: keep the dialogue mounted state
+  // (messages + scroll) while it is open.
+  const listToggleRef = useRef<HTMLButtonElement | null>(null)
+  const listRef = useRef<HTMLDivElement | null>(null)
+  const bodyRef = useRef<HTMLDivElement | null>(null)
+  const savedScroll = useRef(0)
+  const listWasOpen = useRef(false)
   // One degraded-mode notice per chat, no matter how many turns fall back.
   const degradedNotices = useRef<Set<string>>(new Set())
   const mock = isMockMode()
@@ -233,6 +276,36 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
   }, [messages, activeChatId, thinking, planThinking])
+
+  // Focus follows the mode: first chat row on open, toggle on close.
+  useEffect(() => {
+    if (listOpen) {
+      listRef.current?.querySelector<HTMLElement>('[data-testid="chat-list-item"]')?.focus()
+    } else if (listWasOpen.current) {
+      listToggleRef.current?.focus()
+    }
+    listWasOpen.current = listOpen
+  }, [listOpen])
+
+  // Escape leaves the list without closing the whole assistant.
+  useEffect(() => {
+    if (!listOpen) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.stopPropagation()
+        setListOpen(false)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [listOpen])
+
+  // The body unmounts while the list is open: restore its scroll position.
+  useEffect(() => {
+    if (!listOpen && bodyRef.current) {
+      bodyRef.current.scrollTop = savedScroll.current
+    }
+  }, [listOpen])
 
   const nextId = () => Date.now() + Math.floor(Math.random() * 1000)
 
@@ -277,6 +350,12 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
     appendToChat(chatId, [{ id: nextId(), kind: 'assistant', text, error: true }])
   }
 
+  // A throttle is temporary and says nothing about the assistant's health:
+  // one plain notice, no error styling and no degraded banner.
+  const pushRateLimited = (chatId: string) => {
+    appendToChat(chatId, [{ id: nextId(), kind: 'assistant', text: RATE_LIMIT_MESSAGE }])
+  }
+
   // Holds are secured by the gateway: anonymous clicks must not reach the API.
   const LOGIN_PROMPT = 'Войдите в аккаунт, чтобы оформить бронь — /login'
 
@@ -316,7 +395,12 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
     if (chatId === activeChatId) setActiveChatId(rest[0].id)
   }
 
-  const openChatList = () => setListOpen((value) => !value)
+  const openChatList = () => {
+    if (!listOpen) savedScroll.current = bodyRef.current?.scrollTop ?? 0
+    setListOpen(!listOpen)
+  }
+
+  const closeChatList = () => setListOpen(false)
 
   const sendLive = async (chatId: string, text: string,
                           previous?: StateContract | null) => {
@@ -332,33 +416,54 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
       const parsed = parseQuery(text)
       let contract = contractFromParsed(parsed, previous ?? undefined)
       contract.clarify_missing = clarifyMissing
-      try {
-        // Model fills semantic slots; deterministic parser keeps RU dates.
-        const remote = await structureQuery(text, contract.semantic_payload.language || 'ru',
-          previous?.context_state.session_id, undefined, previous ?? undefined)
-        if (remote.supported === false) {
-          appendToChat(chatId, [{
-            id: nextId(),
-            kind: 'assistant',
-            text: remote.reply || 'Я помогаю с событиями, местами и планом вечера в Минске. Спросите, например: «джаз завтра».',
-          }])
-          return
-        }
-        contract = mergeContracts(remote.contract, contract, parsed, previous ?? undefined)
-      } catch {
-        // The model stage is optional: keep the deterministic contract and
-        // continue to /dialogue/v2 instead of failing the turn. One neutral
-        // notice per chat keeps the degraded mode visible but quiet.
-        if (!degradedNotices.current.has(chatId)) {
-          degradedNotices.current.add(chatId)
-          appendToChat(chatId, [{
-            id: nextId(),
-            kind: 'assistant',
-            text: 'Модель недоступна — ищу по локальным правилам.',
-          }])
+      // "а ещё?" reuses the previous contract + shown ids: no LLM call and no
+      // fresh structuring, the backend simply pages past what was already shown.
+      const followUp = isFollowUpOnly(text) && Boolean(previous)
+      if (!followUp) {
+        try {
+          // Model fills semantic slots; deterministic parser keeps RU dates.
+          const remote = await structureQuery(text, contract.semantic_payload.language || 'ru',
+            previous?.context_state.session_id, undefined, previous ?? undefined)
+          if (remote.supported === false) {
+            appendToChat(chatId, [{
+              id: nextId(),
+              kind: 'assistant',
+              text: remote.reply || 'Я помогаю с событиями, местами и планом вечера в Минске. Спросите, например: «джаз завтра».',
+            }])
+            return
+          }
+          contract = mergeContracts(remote.contract, contract, parsed, previous ?? undefined)
+        } catch (e) {
+          // A throttle is not a model outage: say it plainly once and stop —
+          // the dialogue call would only be throttled again. No degraded notice.
+          if (isRateLimited(e)) {
+            pushRateLimited(chatId)
+            return
+          }
+          // The model stage is optional: keep the deterministic contract and
+          // continue to /dialogue/v2 instead of failing the turn. One neutral
+          // notice per chat keeps the degraded mode visible but quiet.
+          if (!degradedNotices.current.has(chatId)) {
+            degradedNotices.current.add(chatId)
+            appendToChat(chatId, [{
+              id: nextId(),
+              kind: 'assistant',
+              text: 'Модель недоступна — ищу по локальным правилам.',
+            }])
+          }
         }
       }
       const response = await sendDialogue(contract)
+      const shownCards = response.messages.flatMap((message: DialogMessage) =>
+        message.kind === 'results' ? message.results ?? [] : [])
+      const shownIds = accumulateShownIds(contract.context_state.shown_ids, shownCards)
+      const nextContract: StateContract = {
+        ...response.contract,
+        context_state: {
+          ...response.contract.context_state,
+          ...(shownIds.length ? { shown_ids: shownIds } : {}),
+        },
+      }
       const incoming = response.messages.length
         ? response.messages.map((message: DialogMessage, index: number) => ({
             id: nextId() + index,
@@ -367,20 +472,26 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
             results: message.results,
             weather: message.weather,
             plan: message.plan,
-            filters: message.kind === 'filters' ? response.contract : undefined,
+            filters: message.kind === 'filters' ? nextContract : undefined,
           }))
         : [{
             id: nextId(),
             kind: 'assistant' as const,
-            text: response.contract.clarification_prompt
-              || 'Уточните запрос — например, дату и время.',
+            text: followUp
+              ? response.contract.clarification_prompt || 'Больше вариантов нет — измените условия поиска.'
+              : response.contract.clarification_prompt
+                || 'Уточните запрос — например, дату и время.',
           }]
       updateChat(chatId, (chat) => ({
         ...chat,
-        contract: response.contract,
+        contract: nextContract,
         messages: [...chat.messages, ...incoming],
       }))
     } catch (e) {
+      if (isRateLimited(e)) {
+        pushRateLimited(chatId)
+        return
+      }
       pushError(e instanceof Error ? `Не получилось связаться с ассистентом: ${e.message}` : 'Не получилось связаться с ассистентом.', chatId)
     } finally {
       window.clearInterval(timer)
@@ -429,6 +540,10 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
         messages: [...chat.messages, ...incoming],
       }))
     } catch (e) {
+      if (isRateLimited(e)) {
+        pushRateLimited(activeChat.id)
+        return
+      }
       pushError(e instanceof Error ? `Не получилось собрать план: ${e.message}` : 'Не получилось собрать план.', activeChat.id)
     } finally {
       window.clearInterval(timer)
@@ -445,7 +560,7 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
     const contract = chat?.contract
     const sessionId = contract?.context_state.session_id ?? `web_${Date.now()}`
     // 0 means "any party size" in the contract; a hold needs a concrete count.
-    const partySize = contract?.hard_filters.party_size || 2
+    const partySize = holdPartySize(contract)
     setBusy(true)
     try {
       const tickets = await api.getTickets(Number(result.event_id))
@@ -491,7 +606,7 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
     const chat = chats.find((item) => item.id === chatId)
     const contract = chat?.contract
     const sessionId = contract?.context_state.session_id ?? `web_${Date.now()}`
-    const partySize = contract?.hard_filters.party_size || 2
+    const partySize = holdPartySize(contract)
     setBusy(true)
     const booked: string[] = []
     const failed: string[] = []
@@ -598,7 +713,14 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
             <h2>Ваш помощник</h2>
           </div>
           <div className="chat-header-actions">
-            <button onClick={openChatList} aria-label="Чаты" data-testid="chat-list-toggle"><MessageSquare size={18} /></button>
+            <button
+              ref={listToggleRef}
+              onClick={openChatList}
+              aria-label="Чаты"
+              aria-expanded={listOpen}
+              aria-controls="chat-list-panel"
+              data-testid="chat-list-toggle"
+            ><MessageSquare size={18} /></button>
             <button
               onClick={toggleClarify}
               aria-label={clarifyMissing ? 'Отключить уточнения' : 'Включить уточнения'}
@@ -612,9 +734,10 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
             <button onClick={onClose} aria-label="Закрыть" data-testid="chat-close"><X size={19} /></button>
           </div>
         </header>
-        {listOpen && (
-          <div className="chat-list" data-testid="chat-list">
+        {listOpen ? (
+          <div className="chat-list-view" id="chat-list-panel" data-testid="chat-list" ref={listRef}>
             <div className="chat-list-head">
+              <button onClick={closeChatList} aria-label="Назад к диалогу" data-testid="chat-list-back">← Назад</button>
               <span>ЧАТЫ · {chats.length}</span>
               <button onClick={() => { startNewChat() }} data-testid="chat-list-new"><Plus size={14} /> Новый</button>
             </div>
@@ -628,11 +751,12 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
               </div>
             ))}
           </div>
-        )}
+        ) : (
+          <>
         <div className="chat-summary" data-testid="chat-summary">
           СВОДКА № {chatNumber} · {summaryDate.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })} · {timeOfDay(summaryDate)}
         </div>
-        <div className="chat-body">
+        <div className="chat-body" ref={bodyRef}>
           {messages.map((message) => {
             if (message.kind === 'user') {
               return <div className="user-message" key={message.id} data-testid="chat-user-message">{message.text}</div>
@@ -648,32 +772,76 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
             }
             if (message.kind === 'filters' && message.filters) {
               const contract = message.filters
+              const budget = contract.hard_filters.budget
+              // A party total lives in `total`; older responses only carry the
+              // per-person figure.
+              const budgetAmount = budget?.basis === 'total'
+                ? budget.total ?? budget.max_price_per_person
+                : budget?.max_price_per_person
+              const when = formatWhen(contract.hard_filters.datetime)
+              const partySize = contract.hard_filters.party_size
+              const hasParty = typeof partySize === 'number'
+              const categories = contract.hard_filters.category ?? []
+              const location = contract.hard_filters.location
+              const negative = contract.negative_filters
+              const hasExceptions = Boolean(
+                negative?.exclude_tags?.length
+                || negative?.exclude_categories?.length
+                || negative?.exclude_districts?.length,
+              )
+              const eventCount = contract.hard_filters.event_count
               return (
                 <div className="assistant-message" key={message.id} data-testid="chat-filters">
                   <span className="message-number">КОНТРАКТ ДИАЛОГА · ШАГ {contract.context_state.turn_count}</span>
                   <p>{message.text}</p>
                   <div className="filter-chips" data-testid="chat-hard-filters">
-                    {formatWhen(contract.hard_filters.datetime) && (
-                      <span className="chip chip-dark">
-                        когда: {formatWhen(contract.hard_filters.datetime)}
-                      </span>
-                    )}
-                    {contract.hard_filters.location?.any
+                    {when
+                      ? <span className="chip chip-dark">когда: {when}</span>
+                      : <span className="chip chip-muted" title="по умолчанию">когда: ближайшие</span>}
+                    {location?.any
                       ? <span className="chip chip-dark">где: любой город</span>
-                      : contract.hard_filters.location?.city && <span className="chip chip-dark">где: {contract.hard_filters.location.city}</span>}
-                    {contract.hard_filters.category?.map((cat) => <span className="chip chip-dark" key={cat}>тип: {cat}</span>)}
+                      : location?.city
+                        ? <span className="chip chip-dark">где: {location.city}</span>
+                        : <span className="chip chip-muted" title="по умолчанию">где: {CITIES}</span>}
+                    {categories.length
+                      ? categories.map((cat) => <span className="chip chip-dark" key={cat}>тип: {cat}</span>)
+                      : <span className="chip chip-muted" title="по умолчанию">тип: любые</span>}
                     {contract.hard_filters.themes?.map((theme) => <span className="chip chip-dark" key={theme}>тема: {THEME_LABELS[theme] ?? theme}</span>)}
                     {contract.intent?.startsWith('find_venue') && <span className="chip chip-dark">раздел: места</span>}
                     {contract.intent === 'both' && <span className="chip chip-dark">раздел: события и места</span>}
-                    {contract.hard_filters.party_size === 0
+                    {partySize === 0
                       ? <span className="chip chip-dark">нас: любое</span>
-                      : contract.hard_filters.party_size && <span className="chip chip-dark">нас: {contract.hard_filters.party_size}</span>}
-                    {contract.hard_filters.budget?.any
+                      : hasParty
+                        ? <span className="chip chip-dark">нас: {partySize}</span>
+                        : <span className="chip chip-muted" title="по умолчанию">нас: не указано</span>}
+                    {budget?.any
                       ? <span className="chip chip-dark">цена: любая</span>
-                      : contract.hard_filters.budget?.max_price_per_person != null
-                        && <span className="chip chip-dark">до {contract.hard_filters.budget.max_price_per_person} руб.</span>}
-                    {contract.negative_filters?.exclude_tags?.map((tag) => <span className="chip chip-neg" key={tag}>без {tag}</span>)}
-                    {contract.negative_filters?.exclude_categories?.map((cat) => <span className="chip chip-neg" key={cat}>кроме {cat}</span>)}
+                      : budgetAmount != null
+                        ? (
+                          <span className="chip chip-dark">
+                            до {budgetAmount} руб.
+                            {budget?.basis === 'total' ? ' на всех' : ''}
+                          </span>
+                        )
+                        : <span className="chip chip-muted" title="по умолчанию">цена: без ограничений</span>}
+                    {contract.hard_filters.min_rating != null
+                      ? <span className="chip chip-dark">рейтинг: от {contract.hard_filters.min_rating}</span>
+                      : <span className="chip chip-muted" title="по умолчанию">рейтинг: любой</span>}
+                    {contract.hard_filters.age_max != null
+                      ? <span className="chip chip-dark">{ageLabel(contract.hard_filters.age_max)}</span>
+                      : <span className="chip chip-muted" title="по умолчанию">возраст: любой</span>}
+                    {eventCount != null && (
+                      <span className="chip chip-dark">событий в плане: {eventCount}</span>
+                    )}
+                    {hasExceptions ? (
+                      <>
+                        {negative?.exclude_tags?.map((tag) => <span className="chip chip-neg" key={tag}>без {tag}</span>)}
+                        {negative?.exclude_categories?.map((cat) => <span className="chip chip-neg" key={cat}>кроме {cat}</span>)}
+                        {negative?.exclude_districts?.map((district) => <span className="chip chip-neg" key={district}>не {district}</span>)}
+                      </>
+                    ) : (
+                      <span className="chip chip-muted" title="по умолчанию">исключений нет</span>
+                    )}
                   </div>
                 </div>
               )
@@ -688,10 +856,52 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
                       const detailHref = result.kind === 'venue'
                         ? `/places/detail?id=${encodeURIComponent(result.detail_id ?? '')}`
                         : `/events/detail?id=${encodeURIComponent(result.detail_id ?? '')}`
+                      const rating = ratingValue(result.rating)
+                      const reviews = typeof result.review_count === 'number' ? result.review_count : null
+                      const statusText = statusLabel(result.status)
+                      const seats = typeof result.seats_left === 'number' ? result.seats_left : null
+                      const partySize = activeChat?.contract?.hard_filters.party_size
+                      const noSeats = result.fits_party === false && partySize && partySize > 0
+                        ? `на ${partySize} ${plural(partySize, ['человека', 'человек', 'человек'])} нет мест`
+                        : null
+                      // The backend already puts the run/showtime into `meta`;
+                      // structured film fields only fill what it omitted.
+                      const sessionTime = filmSessionTime(result)
+                      const showSession = Boolean(sessionTime) && !result.meta.includes(sessionTime)
+                      const facts = filmFacts(result).filter((fact) => !result.meta.includes(fact))
                       const card = (
                         <>
+                          {(rating !== null || statusText) && (
+                            <div className="result-badges">
+                              {rating !== null && (
+                                <span className="place-rating"><Star size={13} /> {rating.toFixed(1)}</span>
+                              )}
+                              {rating !== null && reviews !== null && (
+                                <span className="result-reviews">
+                                  {reviews} {plural(reviews, ['отзыв', 'отзыва', 'отзывов'])}
+                                </span>
+                              )}
+                              {statusText && <span className="chip chip-neg">{statusText}</span>}
+                            </div>
+                          )}
                           <h3>{result.title}</h3>
                           <p>{result.meta}</p>
+                          {showSession && (
+                            <p className="result-film" data-testid="chat-result-film-session">
+                              {filmSessionLabel(result)}
+                            </p>
+                          )}
+                          {facts.length > 0 && (
+                            <p className="result-film" data-testid="chat-result-film-facts">
+                              {facts.join(' · ')}
+                            </p>
+                          )}
+                          {result.address && <p>{result.address}</p>}
+                          {result.hours && <p>Часы: {result.hours}</p>}
+                          {noSeats && <p className="result-availability">{noSeats}</p>}
+                          {!noSeats && seats !== null && (
+                            <p className="result-availability">мест: {seats}</p>
+                          )}
                           {result.price && <strong>{result.price}</strong>}
                           {result.source && (
                             <span className="result-source">Источник: {sourceLabel(result.source)}</span>
@@ -714,9 +924,10 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
                           {isBookable(result.event_id) && (
                             <button
                               className="apply-button"
-                              disabled={busy}
+                              disabled={busy || !!statusText}
                               onClick={() => void selectResult(activeChat?.id ?? '', result)}
                               data-testid="chat-result-select"
+                              title={statusText ?? undefined}
                             >
                               Выбрать
                             </button>
@@ -741,10 +952,20 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
                           ? `/places/detail?id=${encodeURIComponent(step.detail_id)}`
                           : `/events/detail?id=${encodeURIComponent(step.detail_id)}`)
                         : null
+                      const rating = ratingValue(step.rating)
+                      const statusText = statusLabel(step.status)
                       return (
                         <li key={`${step.time}-${step.title}`} data-testid="chat-plan-step">
                           <strong>{step.time}</strong>
                           <div>
+                            {(rating !== null || statusText) && (
+                              <div className="result-badges">
+                                {rating !== null && (
+                                  <span className="place-rating"><Star size={12} /> {rating.toFixed(1)}</span>
+                                )}
+                                {statusText && <span className="chip chip-neg">{statusText}</span>}
+                              </div>
+                            )}
                             <h3>
                               {href ? <Link href={href}>{step.title}</Link> : step.title}
                             </h3>
@@ -836,6 +1057,8 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
           />
           <button aria-label="Отправить" type="submit" disabled={busy} data-testid="chat-send"><ArrowRight size={18} /></button>
         </form>
+          </>
+        )}
       </section>
     </div>
   )

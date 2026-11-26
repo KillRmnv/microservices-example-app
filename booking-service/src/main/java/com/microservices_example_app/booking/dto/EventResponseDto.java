@@ -23,6 +23,7 @@ public class EventResponseDto implements Serializable {
     private LocalDateTime endsAt;
     private Long venueId;
     private String venuePlace;
+    private Integer venueCapacity;
     private String category;
     private EventAdmissionMode admissionMode;
 }

@@ -7,7 +7,8 @@ import httpx
 
 from ..core import db
 from ..core.config import Settings
-from ..repositories import runs
+from ..repositories import queries, runs
+from .embed_service import PAYLOAD_VERSION, payload_version_info
 
 log = logging.getLogger(__name__)
 
@@ -65,7 +66,21 @@ class OpsService:
     def collect_health(self) -> dict:
         with db.get_conn(self._db_url) as conn:
             health = runs.health(conn, self._settings.ops_alert_window)
-        return {"sources": health, "degraded": degraded_sources(health)}
+            venue_link = queries.venue_link_coverage(conn)
+            telegram_channels = queries.telegram_channel_stats(conn)
+        return {"sources": health, "degraded": degraded_sources(health),
+                "venue_link": venue_link,
+                "telegram_channels": telegram_channels,
+                "payload_version": self.payload_version()}
+
+    def payload_version(self) -> dict:
+        """Applied/expected Qdrant payload contract version (additive)."""
+        try:
+            return payload_version_info(self._db_url)
+        except Exception as exc:  # noqa: BLE001 — health must stay available
+            log.debug("payload version read failed: %s", exc)
+            return {"applied": None, "expected": PAYLOAD_VERSION,
+                    "mismatch": True, "error": str(exc)}
 
     async def alert_check(self) -> dict:
         health = self.collect_health()

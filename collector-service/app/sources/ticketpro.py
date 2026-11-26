@@ -19,17 +19,22 @@ log = logging.getLogger(__name__)
 
 BASE = "https://www.ticketpro.by"
 
-# Listing path -> our category.
+# Listing path -> our category. Cinema cards are film *runs* (startTime..endTime
+# intervals per cinema), not exact showtimes; one row per film+cinema+interval
+# keeps date search useful without multiplying every screening.
 LISTINGS = {
     "/bilety-na-koncert/": "concert",
     "/bilety-v-teatr/": "theatre",
     "/bilety-na-shou/": "other",
     "/festivali/": "concert",
     "/detskie-meropriyatiya/": "kids",
+    "/bilety-v-kino/": "film",
     "/bilety-na-sportivnye-meropriyatiya/": "sport",
 }
 
 MAX_PAGES = 20
+# A cinema catalogue is long and low-yield per page: cap it separately.
+LISTING_PAGE_CAPS = {"/bilety-v-kino/": 5}
 
 
 class TicketproAdapter(SourceAdapter):
@@ -52,7 +57,8 @@ class TicketproAdapter(SourceAdapter):
 
     async def _collect_listing(self, ctx, conn, stats, now, path, category) -> None:
         page = 1
-        while page <= MAX_PAGES:
+        max_pages = LISTING_PAGE_CAPS.get(path, MAX_PAGES)
+        while page <= max_pages:
             url = f"{BASE}{path}" + (f"?page={page}" if page > 1 else "")
             response = await ctx.http.get(self.name, url)
             stats.fetched += 1

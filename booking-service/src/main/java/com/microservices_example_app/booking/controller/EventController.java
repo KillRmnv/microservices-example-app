@@ -56,6 +56,15 @@ public class EventController {
         return eventService.searchByFilter(filter, page, size);
     }
 
+    @Operation(summary = "Get exact, party-aware availability for an event")
+    @GetMapping("/{id}/availability")
+    public EventAvailabilityResponseDto getAvailability(
+            @Parameter(description = "Event id") @PathVariable Long id,
+            @Parameter(description = "Party size, 0 = any") @RequestParam(defaultValue = "0") int party) {
+        log.info("Fetching availability for event {} and party {}", id, party);
+        return eventService.availability(id, party);
+    }
+
     @Operation(summary = "Update an event")
     @PutMapping("/{id}")
     public EventResponseDto updateById(@Parameter(description = "Event id") @PathVariable Long id,

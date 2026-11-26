@@ -21,6 +21,24 @@ PAYLOAD_INDEXES = {
     "category": "keyword",
     "rubric": "keyword",
     "price_min": "float",
+    # Availability/capacity filters (events).
+    "status": "keyword",
+    "age_limit": "integer",
+    "capacity": "integer",
+    "seats_left": "integer",
+    # Coordinates are flat floats in the payload (`lat`/`lon`), not the
+    # {"lon","lat"} object a Qdrant GeoIndex needs, so they get float indexes
+    # (range/bbox post-filters work; the client does support GEO, the payload
+    # contract just is not shaped for it).
+    "lat": "float",
+    "lon": "float",
+    "venue_rating": "float",
+    # Venue enrichment filters (venues; harmless on events).
+    "rating": "float",
+    "amenities": "keyword",
+    "avg_check": "float",
+    "is_24_7": "bool",
+    "atmosphere": "keyword",
     # BM25 full-text index (Qdrant 1.20+). `search_text` carries the same
     # string that produced the embedding, so dense and lexical halves agree.
     "search_text": "text",
@@ -116,6 +134,8 @@ class QdrantStore(VectorStore):
         models = self._models
         schema = {"keyword": models.PayloadSchemaType.KEYWORD,
                   "float": models.PayloadSchemaType.FLOAT,
+                  "integer": models.PayloadSchemaType.INTEGER,
+                  "bool": models.PayloadSchemaType.BOOL,
                   "text": _bm25_text_index(models)}
         for field_name, kind in PAYLOAD_INDEXES.items():
             try:

@@ -100,6 +100,45 @@ def test_store_keeps_same_title_on_different_days(conn):
     assert len(rows) == 2
 
 
+def test_recrawl_resets_embedded_at(conn):
+    from app.repositories.store import upsert_events
+
+    start = datetime(2026, 12, 16, 16, tzinfo=timezone.utc)
+    upsert_events(conn, [_raw("ticketpro", "tp-embed", "Концерт «Кипелов»", start)])
+    conn.execute("UPDATE collected_events SET embedded_at = now()")
+    conn.commit()
+
+    stats = upsert_events(conn, [
+        _raw("ticketpro", "tp-embed", "Концерт «Кипелов»", start)])
+    conn.commit()
+
+    assert stats.rows_updated == 1
+    row = conn.execute(
+        "SELECT embedded_at, last_seen_at, fetched_at"
+        " FROM collected_events").fetchone()
+    assert row["embedded_at"] is None  # payload/BM25 rebuild on every refresh
+    assert row["last_seen_at"] is not None and row["fetched_at"] is not None
+
+
+def test_sold_out_source_row_persists_status(conn):
+    from app.repositories.store import upsert_events
+
+    start = datetime(2026, 12, 16, 16, tzinfo=timezone.utc)
+    event = RawEvent(source="ticketpro", source_id="tp-sold",
+                     source_url="https://example.com/tp-sold",
+                     title="Аншлаг", start_at=start, venue_name="Дворец",
+                     category="concert", city="Минск",
+                     availability="sold_out", capacity=100, seats_left=0)
+    upsert_events(conn, [event])
+    conn.commit()
+
+    row = conn.execute(
+        "SELECT status, availability, capacity, seats_left"
+        " FROM collected_events").fetchone()
+    assert row == {"status": "sold_out", "availability": "sold_out",
+                   "capacity": 100, "seats_left": 0}
+
+
 def test_different_opponents_at_same_venue_do_not_merge():
     first = datetime(2026, 12, 4, 16, tzinfo=timezone.utc)
     second = datetime(2026, 12, 6, 14, tzinfo=timezone.utc)

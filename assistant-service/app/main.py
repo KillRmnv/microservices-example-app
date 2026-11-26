@@ -22,13 +22,13 @@ async def lifespan(app: FastAPI):
     applied = db.run_migrations(settings.require_migration_database_url())
     if applied:
         log.info("applied migrations: %s", applied)
-    get_components = deps.get_components()
+    deps.get_components()
     start_scheduler(app)
     try:
         yield
     finally:
         stop_scheduler(app)
-        await get_components.cache.close()
+        await deps.close_components()
         db.close_pools()
 
 

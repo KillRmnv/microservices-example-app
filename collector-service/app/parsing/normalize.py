@@ -25,6 +25,17 @@ NON_PRICE = re.compile(r"уточняйте|договорная|бесплат�
 # concatenated digits), not a price. Keeps NUMERIC(12,2) safe.
 MAX_PRICE = 1_000_000.0
 MAX_AGE = 21
+# Capacity above this is a scraped number glued to something else.
+MAX_CAPACITY = 10_000_000
+# schema.org availability tokens (bare or as a schema.org URL) -> our vocabulary.
+AVAILABILITY_MAP = {
+    "instock": "in_stock",
+    "limitedavailability": "limited",
+    "soldout": "sold_out",
+    "outofstock": "sold_out",
+    "preorder": "unknown",
+}
+CANCELLED_RE = re.compile(r"eventcancelled", re.I)
 TICKETPRO_CDN = "https://cdn.ticketpro.by"
 
 
@@ -77,6 +88,45 @@ def parse_age(text: str | None) -> int | None:
         return None
     age = int(match.group(1))
     return age if 0 <= age <= MAX_AGE else None
+
+
+def parse_availability(value) -> str | None:
+    """schema.org InStock/LimitedAvailability/SoldOut/PreOrder -> our values.
+
+    Absent -> None; a present but unrecognised token -> "unknown" so callers
+    can tell "no claim" from "a claim we cannot map".
+    """
+    if not isinstance(value, str) or not value.strip():
+        return None
+    token = re.sub(r"[^a-z]", "", value.rsplit("/", 1)[-1].casefold())
+    if not token:
+        return None
+    return AVAILABILITY_MAP.get(token, "unknown")
+
+
+def parse_capacity(value) -> int | None:
+    """maximumAttendeeCapacity / remainingAttendeeCapacity with sanity bounds."""
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        number = int(float(str(value).strip()))
+    except (TypeError, ValueError):
+        return None
+    return number if 0 <= number <= MAX_CAPACITY else None
+
+
+def availability_for(data: dict, offers: dict | None = None
+                     ) -> tuple[str | None, int | None, int | None, str]:
+    """(availability, capacity, seats_left, status) from schema.org fields."""
+    offers = offers or _offers(data.get("offers"))
+    availability = parse_availability(offers.get("availability"))
+    capacity = parse_capacity(data.get("maximumAttendeeCapacity"))
+    seats_left = parse_capacity(data.get("remainingAttendeeCapacity"))
+    if capacity is not None and seats_left is not None and seats_left > capacity:
+        seats_left = None  # inconsistent pair: keep the capacity only
+    status = "cancelled" if CANCELLED_RE.search(
+        str(data.get("eventStatus") or "")) else "scheduled"
+    return availability, capacity, seats_left, status
 
 
 def _location_strings(location) -> str:
@@ -201,6 +251,7 @@ def normalize_jsonld(source: str, source_id: str, source_url: str, category: str
     image_url = _first_image(data.get("image"))
     if image_url and image_url.startswith("/"):
         image_url = urljoin(data.get("url") or source_url, image_url)
+    availability, capacity, seats_left, status = availability_for(data, offers)
     return RawEvent(
         source=source,
         source_id=source_id,
@@ -221,5 +272,9 @@ def normalize_jsonld(source: str, source_id: str, source_url: str, category: str
         image_url=image_url,
         organizer=(data.get("organizer") or {}).get("name")
         if isinstance(data.get("organizer"), dict) else None,
+        status=status,
+        availability=availability,
+        capacity=capacity,
+        seats_left=seats_left,
         raw=data,
     )

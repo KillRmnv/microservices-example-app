@@ -204,6 +204,17 @@ async def test_prompt_documents_negative_filters():
 
 
 @pytest.mark.asyncio
+async def test_prompt_routes_film_words_to_find_event_film():
+    provider = FakeProvider(contract_json())
+    await QueryStructureService(provider, Settings()).parse(
+        "что посмотреть в кино")
+    system = provider.calls[0]["system"]
+    assert "find_event_film" in system
+    for word in ("кинопоказ", "сеанс", "что посмотреть"):
+        assert word in system
+
+
+@pytest.mark.asyncio
 async def test_simple_request_uses_fast_provider():
     service, fast, reasoning = make_service(contract_json(), contract_json())
     contract, reasoning_used, complex = await service.parse_meta("джаз завтра")
@@ -423,3 +434,192 @@ async def test_structure_wraps_user_query_as_data():
     assert len(user) <= 500 + len("<user_query></user_query>")
     assert provider.calls[0]["json_mode"] is True
     assert "данные" in provider.calls[0]["system"]
+
+
+@pytest.mark.asyncio
+async def test_structure_fills_vector_query_from_themes():
+    data = json.loads(contract_json())
+    data["hard_filters"]["themes"] = ["classical"]
+    data["semantic_payload"]["vector_query"] = ""
+    service = QueryStructureService(
+        FakeProvider(json.dumps(data, ensure_ascii=False)), Settings())
+    contract = await service.parse("классика")
+    assert contract.hard_filters.themes == ["classical"]
+    assert contract.semantic_payload.vector_query == "classical"
+
+
+@pytest.mark.asyncio
+async def test_structure_normalises_budget_basis_age_and_rating():
+    data = json.loads(contract_json())
+    data["hard_filters"]["party_size"] = 2
+    data["hard_filters"]["budget"] = {"total": "40", "basis": "TOTAL"}
+    data["hard_filters"]["age_max"] = "12"
+    data["hard_filters"]["min_rating"] = "4.5"
+    service = QueryStructureService(
+        FakeProvider(json.dumps(data, ensure_ascii=False)), Settings())
+    contract = await service.parse("на двоих до 40, для детей, рейтинг 4.5")
+    budget = contract.hard_filters.budget
+    assert budget.basis == "total"
+    assert budget.total == 40.0
+    assert budget.max_price_per_person == 20.0
+    assert contract.hard_filters.age_max == 12
+    assert contract.hard_filters.min_rating == 4.5
+
+
+# --- no search clarifications / plan event count ------------------------
+
+
+@pytest.mark.asyncio
+async def test_prompt_forbids_clarification_for_search_intents():
+    provider = FakeProvider(contract_json())
+    await QueryStructureService(provider, Settings()).parse("джаз")
+    system = provider.calls[0]["system"]
+    assert "Не задавай уточняющих вопросов" in system
+    assert "dialogue_action=search" in system
+    assert "confirm_booking" in system
+
+
+@pytest.mark.asyncio
+async def test_structure_parses_and_clamps_plan_event_count():
+    data = json.loads(contract_json())
+    data["hard_filters"]["event_count"] = "2"
+    service = QueryStructureService(
+        FakeProvider(json.dumps(data, ensure_ascii=False)), Settings())
+    contract = await service.parse("два события")
+    assert contract.hard_filters.event_count == 2
+
+    data["hard_filters"]["event_count"] = 9
+    service = QueryStructureService(
+        FakeProvider(json.dumps(data, ensure_ascii=False)), Settings())
+    contract = await service.parse("девять событий")
+    assert contract.hard_filters.event_count == 5
+
+
+# --- deterministic vague clarifications ---------------------------------
+
+BARE_VAGUE = (
+    "не важно", "неважно", "не важен", "всё равно", "все равно",
+    "любой", "любая", "любое", "любые", "без разницы", "как хочешь",
+    "как скажешь", "на твой вкус", "на ваше усмотрение", "пофиг",
+    "не принципиально", "не имеет значения", "не критично",
+    "необязательно", "что угодно", "что-нибудь", "сам реши",
+    "сам решай", "решай сам", "на выбор", "мне всё равно",
+    "без предпочтений", "не суть", "как угодно",
+)
+
+SLOT_VAGUE = {
+    "datetime": ("когда угодно", "в любой день", "дата не важна",
+                 "не важно когда", "без даты"),
+    "city": ("где угодно", "в любом городе", "город не важен",
+             "не важно где"),
+    "budget": ("без ограничений", "не важно сколько", "любой бюджет",
+               "деньги не важны"),
+    "party": ("сколько угодно", "любая компания", "компания не важна",
+              "сколько человек не важно"),
+}
+
+
+def test_vague_bare_phrases_cover_every_asked_slot():
+    from app.services.vague import any_slots
+
+    asked = ["datetime", "city", "budget", "party"]
+    for phrase in BARE_VAGUE:
+        assert any_slots(phrase, asked) == set(asked), phrase
+
+
+def test_vague_per_slot_phrases_fill_only_their_slot():
+    from app.services.vague import any_slots
+
+    asked = ["datetime", "city", "budget", "party"]
+    for slot, phrases in SLOT_VAGUE.items():
+        for phrase in phrases:
+            assert any_slots(phrase, asked) == {slot}, phrase
+
+
+def test_vague_normalises_no_space_and_punctuation():
+    from app.services.vague import any_slots
+
+    asked = ["datetime", "city"]
+    assert any_slots("Неважно!", asked) == set(asked)
+    assert any_slots("без разницы.", asked) == set(asked)
+
+
+def events_clarification(**overrides) -> StateContract:
+    data = {
+        "dialogue_action": "ask_clarification",
+        "intent": "find_events",
+        "needs_clarification": True,
+        "clarification_slots": ["datetime"],
+        "clarify_missing": True,
+        "hard_filters": {"location": {"city": "Минск"}},
+        "semantic_payload": {"vector_query": "джаз", "language": "ru"},
+    }
+    data.update(overrides)
+    return StateContract.model_validate(data)
+
+
+@pytest.mark.asyncio
+async def test_vague_answer_resolves_without_an_llm_call():
+    provider = FakeProvider(json.dumps({"datetime_any": False}))
+    service = QueryStructureService(provider, Settings())
+    contract = await service.parse("как хочешь",
+                                   previous=events_clarification())
+    assert provider.calls == []
+    assert contract.dialogue_action == "search"
+    assert contract.needs_clarification is False
+    assert contract.clarification_slots == []
+    assert contract.hard_filters.datetime.any is True
+    assert contract.hard_filters.datetime.start is None
+
+
+@pytest.mark.asyncio
+async def test_vague_answer_never_repeats_the_clarification():
+    from app.services.rules import required_slots
+
+    service = QueryStructureService(FakeProvider("не json"), Settings())
+    previous = events_clarification()
+    contract = await service.parse("неважно", previous=previous)
+    assert contract.needs_clarification is False
+    assert contract.clarification_slots == []
+    assert contract.hard_filters.datetime.any is True
+    # The slot is now resolved, so it is not a required slot again.
+    assert required_slots(contract, Settings(),
+                          clarify_required_slots=True) == []
+
+
+@pytest.mark.asyncio
+async def test_partial_vague_answer_overlays_only_its_slot():
+    payload = json.dumps({"city": "Минск"}, ensure_ascii=False)
+    service = QueryStructureService(FakeProvider(payload), Settings())
+    previous = events_clarification(
+        clarification_slots=["datetime", "city"],
+        hard_filters={})
+    contract = await service.parse("дата не важна, город Минск",
+                                   previous=previous)
+    assert contract.hard_filters.datetime.any is True
+    assert contract.hard_filters.location.city == "Минск"
+
+
+@pytest.mark.asyncio
+async def test_partial_vague_answer_survives_a_bad_model_answer():
+    service = QueryStructureService(FakeProvider("{}"), Settings())
+    previous = events_clarification(
+        clarification_slots=["datetime", "city"],
+        hard_filters={"location": {"city": "Минск"}})
+    contract = await service.parse("дата не важна", previous=previous)
+    assert contract.hard_filters.datetime.any is True
+    assert contract.hard_filters.location.city == "Минск"
+
+
+@pytest.mark.asyncio
+async def test_vague_answer_falls_back_when_the_llm_is_unavailable():
+    service = QueryStructureService(BrokenProvider(), Settings())
+    previous = events_clarification(
+        clarification_slots=["datetime", "city"],
+        hard_filters={})
+    contract = await service.parse("дата не важна, город Минск",
+                                   previous=previous)
+    assert contract.dialogue_action == "search"
+    assert contract.needs_clarification is False
+    assert contract.hard_filters.datetime.any is True
+    assert contract.hard_filters.location.city == "Минск"

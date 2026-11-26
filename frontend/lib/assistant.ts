@@ -6,6 +6,8 @@
 import { ApiError, tokenStore } from './api'
 import type { StateContract } from './types'
 
+// Enrichment is optional: older assistant responses omit these fields and
+// must keep rendering exactly as before.
 export interface DialogResultCard {
   event_id: string
   kind?: 'event' | 'venue'
@@ -14,6 +16,36 @@ export interface DialogResultCard {
   meta: string
   price: string
   source?: string
+  rating?: number | null
+  review_count?: number | null
+  address?: string
+  hours?: string
+  seats_left?: number | null
+  fits_party?: boolean | null
+  status?: string
+  /** Film-only extras: present only for cinema rows. */
+  next_session_at?: string | null
+  cinema?: string | null
+  film_genre?: string[] | null
+  film_duration_min?: number | null
+}
+
+export interface DialogPlanStep {
+  time: string
+  title: string
+  detail: string
+  source: string
+  kind?: 'event' | 'venue'
+  detail_id?: string
+  event_id?: string
+  bookable?: boolean
+  rating?: number | null
+  review_count?: number | null
+  address?: string
+  hours?: string
+  seats_left?: number | null
+  fits_party?: boolean | null
+  status?: string
 }
 
 export interface DialogMessage {
@@ -21,7 +53,7 @@ export interface DialogMessage {
   text: string
   results?: DialogResultCard[]
   weather?: string
-  plan?: Array<{ time: string; title: string; detail: string; source: string; kind?: 'event' | 'venue'; detail_id?: string; event_id?: string; bookable?: boolean }>
+  plan?: DialogPlanStep[]
 }
 
 export interface DialogResponse {

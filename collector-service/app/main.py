@@ -1,8 +1,9 @@
 """Collector service entrypoint: wiring only, no business logic."""
 from __future__ import annotations
 
+import asyncio
 import logging
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
 
@@ -16,10 +17,14 @@ from .errors.handlers import register_exception_handlers
 from .clients.http import PoliteClient
 from .repositories import queries
 from .scheduler import start_scheduler, stop_scheduler
+from .services.atmosphere_service import AtmosphereService
 from .services.catalog_service import CatalogService
 from .services.collect_service import CollectService
 from .services.embed_service import EmbedService
+from .services.film_metadata_service import FilmMetadataService
 from .services.ops_service import OpsService
+from .services.telegram_service import TelegramService
+from .services.ticketpro_details_service import TicketproDetailsService
 from .clients.vector import QdrantStore
 
 log = logging.getLogger(__name__)
@@ -55,18 +60,41 @@ async def lifespan(app: FastAPI):
     app.state.catalog = CatalogService(db_url)
     app.state.collect = CollectService(http, db_url)
     app.state.embed = EmbedService(db_url, embedder, vector, vector_venues,
-                                   settings)
+                                   settings,
+                                   lock_db_url=settings.require_lock_database_url())
     app.state.ops = OpsService(db_url, settings)
+    app.state.atmosphere = AtmosphereService(db_url)
+    app.state.ticketpro_details = TicketproDetailsService(http, db_url)
+    app.state.telegram = TelegramService(http, db_url)
+    app.state.film_metadata = FilmMetadataService(http, db_url)
     catalog_consumer = BookingCatalogConsumer(db_url, vector, settings)
     await catalog_consumer.start()
     start_scheduler(app)
+    # Non-blocking: a payload-version mismatch triggers one hybrid reindex in
+    # the background, so readiness never waits for Qdrant/Postgres scans.
+    payload_sync = asyncio.create_task(app.state.embed.ensure_payload_version())
+    payload_sync.add_done_callback(_log_payload_sync)
     try:
         yield
     finally:
+        if not payload_sync.done():
+            payload_sync.cancel()
+            with suppress(asyncio.CancelledError):
+                await payload_sync
         stop_scheduler(app)
         await catalog_consumer.stop()
         await http.aclose()
         db.close_pools()
+
+
+def _log_payload_sync(task: asyncio.Task) -> None:
+    if task.cancelled():
+        return
+    error = task.exception()
+    if error is not None:
+        log.warning("payload version check crashed: %s", error)
+    else:
+        log.info("payload version check: %s", task.result())
 
 
 def create_app() -> FastAPI:

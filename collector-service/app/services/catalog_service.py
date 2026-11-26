@@ -29,23 +29,27 @@ class CatalogService:
 
     def list_events(self, *, city=None, category=None, source=None,
                     categories=None, date_from=None, date_to=None, q=None,
-                    ids=None, limit=40, offset=0) -> dict:
+                    ids=None, include_cancelled=False,
+                    limit=40, offset=0) -> dict:
         with db.get_conn(self._db_url) as conn:
             rows, total = queries.list_events(
                 conn, city=city, category=category, source=source,
                 date_from=date_from, date_to=date_to, q=q,
                 ids=ids or None, categories=categories or None,
+                include_cancelled=include_cancelled,
                 limit=_limit(limit, 200), offset=_offset(offset))
         return {"events": rows, "total": total, "limit": limit,
                 "offset": offset}
 
     def search_events(self, *, q, city=None, category=None, categories=None,
-                      date_from=None, date_to=None, limit=20) -> dict:
+                      date_from=None, date_to=None, include_cancelled=False,
+                      limit=20) -> dict:
         with db.get_conn(self._db_url) as conn:
             rows = queries.search_events(
                 conn, q, city, category, _limit(limit, 100),
                 date_from=date_from, date_to=date_to,
-                categories=categories or None)
+                categories=categories or None,
+                include_cancelled=include_cancelled)
         return {"events": rows}
 
     def event(self, event_id: str) -> dict:

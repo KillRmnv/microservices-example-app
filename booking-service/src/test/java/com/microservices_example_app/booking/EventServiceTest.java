@@ -131,6 +131,7 @@ class EventServiceTest {
         Venue venue = Venue.builder()
                 .id(10L)
                 .place("Main Hall")
+                .capacity(150)
                 .build();
 
         Event event = Event.builder()
@@ -149,6 +150,7 @@ class EventServiceTest {
         assertThat(result.getId()).isEqualTo(100);
         assertThat(result.getTitle()).isEqualTo("Rock Concert");
         assertThat(result.getVenueId()).isEqualTo(10);
+        assertThat(result.getVenueCapacity()).isEqualTo(150);
         assertThat(result.getAdmissionMode()).isEqualTo(EventAdmissionMode.GENERAL);
     }
 

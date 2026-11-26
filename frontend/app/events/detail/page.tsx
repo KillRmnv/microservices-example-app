@@ -3,13 +3,13 @@
 import Link from 'next/link'
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { ExternalLink, MapPin } from 'lucide-react'
+import { ExternalLink, MapPin, Star } from 'lucide-react'
 import { DetailPageHeader, ErrorView, LoadingView, PageHeader, RuleTitle, VenueLocationBlock } from '@/components/secondary-page'
 import { MapView } from '@/components/map-view'
 import { EventImage } from '@/components/event-image'
 import { useAuth } from '@/lib/auth'
 import { api } from '@/lib/api'
-import { categoryLabel, eventImage, eventPlace, eventPrice, isBookable, sourceLabel } from '@/lib/catalog'
+import { categoryLabel, eventImage, eventPlace, eventPrice, eventTicketUrl, filmFacts, filmRunUntil, filmSessionLabel, filmSessionTime, isBookable, isFilmEvent, reviewsLabel, sourceLabel } from '@/lib/catalog'
 import { admissionLabel, formatDateTime, formatEventDuration, formatMoney, summarizeZones } from '@/lib/format'
 import { formatDescription } from '@/lib/format-text'
 import type { CatalogEvent, Event, Seat, Ticket, ZonedPrice } from '@/lib/types'
@@ -99,6 +99,21 @@ function EventDetails() {
     : null
   const startsAt = event?.startsAt ?? catalog.start_at ?? undefined
   const endsAt = event?.endsAt ?? catalog.end_at ?? undefined
+  const venueRating = typeof catalog.venue_rating === 'number'
+    && Number.isFinite(catalog.venue_rating)
+    ? catalog.venue_rating
+    : null
+  const venue = catalog.venue_ref?.trim() || catalog.venue_name?.trim() || venueName || 'Площадка'
+  const film = isFilmEvent(catalog)
+  const filmDuration = catalog.film_duration_min != null && catalog.film_duration_min > 0
+    ? `${catalog.film_duration_min} мин`
+    : ''
+  // Duration already has its own row below; chips keep only the genre.
+  const filmChips = filmFacts(catalog).filter((fact) => fact !== filmDuration)
+  const runUntil = film ? filmRunUntil(catalog) : ''
+  const sessionLabel = film ? filmSessionLabel(catalog) : ''
+  const sessionTime = film ? filmSessionTime(catalog) : ''
+  const ticketUrl = film ? eventTicketUrl(catalog) : ''
 
   return (
     <div className="detail-page" data-testid="event-detail-page">
@@ -124,11 +139,38 @@ function EventDetails() {
 
           <div className="detail-section">
             <RuleTitle>Общая информация</RuleTitle>
+            {filmChips.length > 0 && (
+              <div className="film-facts" data-testid="event-film-facts">
+                {filmChips.map((fact) => (
+                  <span className="chip chip-muted" key={fact}>{fact}</span>
+                ))}
+              </div>
+            )}
             <div className="detail-rows">
               <div className="detail-row"><span>Начало</span><strong>{formatDateTime(startsAt)}</strong></div>
-              <div className="detail-row"><span>Продолжительность</span><strong>{formatEventDuration(startsAt, endsAt)}</strong></div>
+              {runUntil && (
+                <div className="detail-row" data-testid="event-film-run">
+                  <span>Прокат до</span><strong>{runUntil}</strong>
+                </div>
+              )}
+              {sessionTime && (
+                <div className="detail-row" data-testid="event-film-session">
+                  <span>Ближайший сеанс</span>
+                  <strong>{sessionLabel.replace(/^Ближайший сеанс /, '')}</strong>
+                </div>
+              )}
+              <div className="detail-row"><span>Продолжительность</span><strong>{filmDuration || formatEventDuration(startsAt, endsAt)}</strong></div>
               <div className="detail-row"><span>Формат</span><strong>{bookable ? admissionLabel(event?.admissionMode) : sourceLabel(catalog.source)}</strong></div>
               <div className="detail-row"><span>Категория</span><strong>{categoryLabel(catalog.category)}</strong></div>
+              {venueRating !== null && (
+                <div className="detail-row" data-testid="event-venue-rating">
+                  <span>Рейтинг площадки</span>
+                  <strong className="place-rating">
+                    <Star size={13} /> {venueRating.toFixed(1)} · 2ГИС
+                    {catalog.venue_review_count != null ? ` · ${reviewsLabel(catalog.venue_review_count)}` : ''}
+                  </strong>
+                </div>
+              )}
               {venueCapacity > 0 && <div className="detail-row"><span>Вместимость площадки</span><strong>{venueCapacity}</strong></div>}
               <div className="detail-row">
                 <span>Цена</span>
@@ -137,16 +179,36 @@ function EventDetails() {
             </div>
           </div>
 
-          {catalog.description && (
-            <div className="detail-section">
-              <RuleTitle>Описание</RuleTitle>
+          <div className="detail-section">
+            <RuleTitle>Описание</RuleTitle>
+            {catalog.description ? (
               <div className="detail-description" data-testid="event-description">
                 {description.map((paragraph, index) => (
                   <p key={`${index}-${paragraph.slice(0, 24)}`}>{paragraph}</p>
                 ))}
               </div>
-            </div>
-          )}
+            ) : (
+              <div className="event-summary" data-testid="event-summary">
+                <p className="side-hint">Краткая сводка по данным афиши — расширенного описания у источника нет.</p>
+                <div className="detail-rows">
+                  <div className="detail-row"><span>Когда</span><strong>{formatDateTime(startsAt)}</strong></div>
+                  <div className="detail-row"><span>Где</span><strong>{catalog.address ? `${venue} · ${catalog.address}` : venue}</strong></div>
+                  <div className="detail-row"><span>Цена</span><strong>{eventPrice(catalog)}</strong></div>
+                  {catalog.age_limit != null && (
+                    <div className="detail-row"><span>Возраст</span><strong>{catalog.age_limit}+</strong></div>
+                  )}
+                </div>
+                {catalog.source_url && (
+                  <p className="side-hint event-summary-source">
+                    Описание у источника:{' '}
+                    <a href={catalog.source_url} target="_blank" rel="noreferrer" data-testid="event-summary-source-link">
+                      {sourceLabel(catalog.source)} <ExternalLink size={12} />
+                    </a>
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
 
           <div className="detail-section">
             <RuleTitle>Как добраться</RuleTitle>
@@ -210,7 +272,12 @@ function EventDetails() {
             <div className="price-list">
               <RuleTitle>Билеты</RuleTitle>
               <p className="side-hint">Это событие собрано из открытой афиши. Наличие и цену уточняйте у источника.</p>
-              {catalog.source_url && (
+              {film && ticketUrl && (
+                <a className="apply-button" href={ticketUrl} target="_blank" rel="noreferrer" data-testid="event-ticket-link">
+                  Билеты <ExternalLink size={14} />
+                </a>
+              )}
+              {catalog.source_url && (!film || catalog.source_url !== ticketUrl) && (
                 <a className="apply-button" href={catalog.source_url} target="_blank" rel="noreferrer" data-testid="event-source-link">
                   Открыть на источнике <ExternalLink size={14} />
                 </a>

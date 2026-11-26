@@ -8,13 +8,12 @@ import com.microservices_example_app.booking.model.Event;
 import com.microservices_example_app.booking.model.Ticket;
 import com.microservices_example_app.booking.model.Venue;
 import com.microservices_example_app.booking.producers.BookingCatalogProducer;
-import com.microservices_example_app.booking.producers.NotificationKafkaBookingProducer;
 import com.microservices_example_app.booking.producers.NotificationKafkaUserProducer;
 import com.microservices_example_app.booking.repository.EventRepository;
 import com.microservices_example_app.booking.repository.TicketRepository;
 import com.microservices_example_app.booking.repository.VenueRepository;
+import com.microservices_example_app.booking.repository.ZoneAvailabilityProjection;
 import com.microservices_example_app.booking.specification.EventSpecification;
-import com.microservices_example_app.booking.utils.JwtRequestUserExtractor;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import jakarta.transaction.Transactional;
@@ -30,7 +29,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 
@@ -38,6 +37,11 @@ import java.util.Objects;
 @RequiredArgsConstructor
 @Slf4j
 public class EventService {
+
+    /** Below this many active seats an event is reported as few_left. */
+    private static final int FEW_LEFT_THRESHOLD = 10;
+    /** Upper bound for the requested party size. */
+    private static final int MAX_PARTY = 999;
 
     private final EventRepository eventRepository;
     private final VenueRepository venueRepository;
@@ -243,6 +247,65 @@ public class EventService {
         return toResponseDto(toSave);
     }
 
+    /**
+     * Exact, party-aware availability for a single event.
+     *
+     * <p>Uses aggregate SQL only, so no ticket entities are loaded. {@code party}
+     * is clamped to {@code 0..999}; {@code 0} means "any party size". A missing
+     * event raises {@link NotFoundException} (HTTP 404) — consumers treat that
+     * as {@code unknown} rather than a status value.</p>
+     */
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
+    public EventAvailabilityResponseDto availability(Long eventId, int party) {
+        int requestedParty = Math.max(0, Math.min(party, MAX_PARTY));
+        log.debug("Fetching availability for event {} and party {}", eventId, requestedParty);
+
+        Event event = eventRepository.findById(eventId)
+                .orElseThrow(() -> new NotFoundException("Event not found"));
+
+        List<ZoneAvailabilityDto> zones = ticketRepository.aggregateActiveByZone(eventId).stream()
+                .map(this::toZoneAvailabilityDto)
+                .sorted(Comparator.comparing(ZoneAvailabilityDto::getMinPrice,
+                                Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(ZoneAvailabilityDto::getZone))
+                .toList();
+
+        long totalSeats = zones.stream().mapToLong(ZoneAvailabilityDto::getSeatsLeft).sum();
+        Integer capacity = event.getVenue() != null ? event.getVenue().getCapacity() : null;
+
+        return EventAvailabilityResponseDto.builder().
+                eventId(event.getId()).
+                status(resolveAvailabilityStatus(zones, totalSeats, requestedParty)).
+                capacity(capacity).
+                zones(zones).
+                build();
+    }
+
+    private ZoneAvailabilityDto toZoneAvailabilityDto(ZoneAvailabilityProjection projection) {
+        return ZoneAvailabilityDto.builder().
+                zone(projection.getZone()).
+                seatsLeft(projection.getSeatsLeft() != null ? projection.getSeatsLeft() : 0L).
+                minPrice(projection.getMinPrice()).
+                build();
+    }
+
+    private AvailabilityStatus resolveAvailabilityStatus(List<ZoneAvailabilityDto> zones, long totalSeats, int party) {
+        if (totalSeats == 0) {
+            return AvailabilityStatus.SOLD_OUT;
+        }
+        if (party >= 1 && zones.stream().noneMatch(zone -> zone.getSeatsLeft() >= party)) {
+            return AvailabilityStatus.INSUFFICIENT;
+        }
+        if (totalSeats < FEW_LEFT_THRESHOLD) {
+            return AvailabilityStatus.FEW_LEFT;
+        }
+        long perZoneBar = Math.max(FEW_LEFT_THRESHOLD, (long) party * 3);
+        if (zones.stream().allMatch(zone -> zone.getSeatsLeft() < perZoneBar)) {
+            return AvailabilityStatus.FEW_LEFT;
+        }
+        return AvailabilityStatus.AVAILABLE;
+    }
+
     private EventResponseDto toResponseDto(Event event) {
         return EventResponseDto.builder().
                 id(event.getId()).
@@ -251,6 +314,7 @@ public class EventService {
                 endsAt(event.getEndsAt()).
                 venueId(event.getVenue().getId()).
                 venuePlace(event.getVenue().getPlace()).
+                venueCapacity(event.getVenue().getCapacity()).
                 category(event.getCategory()).
                 admissionMode(event.getAdmissionMode()).
                 build();

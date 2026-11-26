@@ -32,7 +32,9 @@ class Settings(BaseSettings):
     default_language: str = "ru"
     default_latitude: float = 53.9056
     default_longitude: float = 27.5539
-    default_party_size: int = 2
+    # A party is unknown until the user names it; one person is the neutral
+    # assumption for deriving a per-person budget, not a guess about company.
+    default_party_size: int = 1
     # Semantic query used for broad "что-нибудь" requests without a topic.
     default_search_query: str = "события"
     # Same for places: a venue search with no topic/rubric must not embed the
@@ -103,11 +105,53 @@ class Settings(BaseSettings):
     # bm25 (dense+sparse+full-text, compose default) | sparse | lexical.
     # Code default stays `sparse` so unit tests never need the text index.
     hybrid_mode: str = "sparse"
+    # Per-retriever RRF weights (dense:1,sparse:1,bm25:1 = plain RRF, fused
+    # server-side). Unequal weights make the store fuse client-side.
+    hybrid_weights: str = "dense:1,sparse:1,bm25:1"
     # Dense hits below this cosine score are noise ("jazz" -> random pop).
     search_dense_min_score: float = 0.45
     # Places are sparse and semantically broad; keep a lower relevance floor.
     search_venue_min_score: float = 0.30
     max_results: int = 5
+    # Rating is a TIE-BREAK only: `score + boost * (rating / 5)` with a
+    # near-zero epsilon, so the fused ranking still decides and an unrated
+    # hit is never lifted above a scored one (no rating -> no boost).
+    search_rating_boost: float = 0.002
+    # Freshness is another near-zero tie-break for events: closer start_at
+    # gets a larger share of the boost (1.0 today -> 0 at the horizon).
+    # 0.0 keeps the fused order untouched.
+    search_freshness_boost: float = 0.0
+    search_freshness_horizon_days: int = 30
+    # Optional reranker hook (no model wired in); off by default.
+    rerank_enabled: bool = False
+    # Group relevance for venues: no capacity math, only a better query and
+    # a near-zero amenity tie-break at/above this party size.
+    venue_group_party_min: int = 6
+    venue_group_query_terms: str = (
+        "большая компания, просторный зал, длинный стол, банкет")
+    venue_group_amenities: str = "banquet,deposit,long_tables,kids_room"
+    venue_group_boost: float = 0.002
+    # Venue budget mapping when a venue has no `avg_check`: low/medium/high
+    # are the 2GIS price tiers, rendered as an approximate per-person check.
+    venue_price_levels: str = "low:25,medium:60,high:150"
+    # A party at or above this many free seats is "available", below it
+    # "few left" (mirrors the booking-service availability statuses).
+    availability_few_left: int = 10
+    # Scraped inventory (`seats_left`/`capacity`/`sold_out`) is only trusted
+    # while the collector fetched it within this window; older or missing
+    # `availability_at` counts as unknown and never hides a hit.
+    availability_ttl_h: int = 48
+    # Rain probability (%) from which terrace/outdoor options are excluded.
+    weather_rain_probability_threshold: int = 60
+
+    # Rate limiting for the LLM endpoints (Redis fixed window, fail-open).
+    # Identity is the request's session_id (falling back to the client IP).
+    rate_limit_enabled: bool = True
+    rate_limit_query_per_min: int = 30
+    rate_limit_plan_per_min: int = 10
+    # booking-service availability answers change slowly; a short cache keeps
+    # a chat turn from probing the same event once per card render.
+    availability_cache_ttl_s: int = 30
 
     # OpenAPI/Swagger: disable in production (docs_enabled=false hides
     # /docs, /redoc and /openapi.json entirely).
@@ -133,6 +177,51 @@ class Settings(BaseSettings):
 
     def require_migration_database_url(self) -> str:
         return self.migration_database_url.strip() or self.require_database_url()
+
+    def venue_price_level_map(self) -> dict[str, float]:
+        """Parse ``low:25,medium:60,high:150`` into a price-level map."""
+        parsed: dict[str, float] = {}
+        for chunk in self.venue_price_levels.split(","):
+            name, _, value = chunk.partition(":")
+            name = name.strip().casefold()
+            try:
+                price = float(value.strip())
+            except ValueError:
+                continue
+            if name and price > 0:
+                parsed[name] = price
+        return parsed
+
+    def hybrid_weight_map(self) -> dict[str, float]:
+        """Parse ``dense:1,sparse:1,bm25:1`` into per-retriever weights.
+
+        Names outside dense/sparse/bm25 are ignored; a missing or malformed
+        weight keeps the neutral 1.0, so a typo can never silence a retriever.
+        """
+        parsed = {"dense": 1.0, "sparse": 1.0, "bm25": 1.0}
+        for chunk in self.hybrid_weights.split(","):
+            name, _, value = chunk.partition(":")
+            name = name.strip().casefold()
+            if name not in parsed:
+                continue
+            try:
+                weight = float(value.strip())
+            except ValueError:
+                continue
+            if weight >= 0:
+                parsed[name] = weight
+        return parsed
+
+    def venue_group_term_list(self) -> list[str]:
+        """Comma-separated group phrases for the venue semantic query."""
+        return [part.strip() for part in self.venue_group_query_terms.split(",")
+                if part.strip()]
+
+    def venue_group_amenity_list(self) -> list[str]:
+        """Comma-separated amenity tags that suit a big company."""
+        return [part.strip().casefold()
+                for part in self.venue_group_amenities.split(",")
+                if part.strip()]
 
 
 def _normalize_backend(name: str) -> str:

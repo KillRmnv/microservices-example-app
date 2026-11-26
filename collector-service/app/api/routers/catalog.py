@@ -17,6 +17,7 @@ def events(service: CatalogService = Depends(get_catalog_service),
            source: str | None = None, categories: str | None = None,
            date_from: str | None = None, date_to: str | None = None,
            q: str | None = None, ids: str | None = None,
+           include_cancelled: bool = False,
            limit: int = 40, offset: int = 0) -> dict:
     id_list = [value for value in (ids or "").split(",") if value.strip()]
     selected = [item.strip() for item in (categories or "").split(",")
@@ -24,7 +25,8 @@ def events(service: CatalogService = Depends(get_catalog_service),
     return service.list_events(
         city=city, category=category, source=source,
         categories=selected, date_from=date_from, date_to=date_to, q=q,
-        ids=id_list, limit=limit, offset=offset)
+        ids=id_list, include_cancelled=include_cancelled,
+        limit=limit, offset=offset)
 
 
 @router.get("/events/search", response_model=EventsResponse)
@@ -33,12 +35,14 @@ def events_search(q: str,
                   city: str | None = None,
                   category: str | None = None, categories: str | None = None,
                   date_from: str | None = None, date_to: str | None = None,
+                  include_cancelled: bool = False,
                   limit: int = 20) -> dict:
     selected = [item.strip() for item in (categories or "").split(",")
                 if item.strip()]
     return service.search_events(
         q=q, city=city, category=category, categories=selected,
-        date_from=date_from, date_to=date_to, limit=limit)
+        date_from=date_from, date_to=date_to,
+        include_cancelled=include_cancelled, limit=limit)
 
 
 @router.get("/events/{event_id}")
