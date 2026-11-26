@@ -6,6 +6,7 @@ import com.microservices_example_app.booking.event.SuccessfulBookingEvent;
 import com.microservices_example_app.booking.event.SuccessfulTicketRefundEvent;
 import com.microservices_example_app.booking.exceptions.NotFoundException;
 import com.microservices_example_app.booking.model.Event;
+import com.microservices_example_app.booking.model.EventAdmissionMode;
 import com.microservices_example_app.booking.model.Ticket;
 import com.microservices_example_app.booking.producers.NotificationKafkaBookingProducer;
 import com.microservices_example_app.booking.producers.NotificationKafkaUserProducer;
@@ -13,6 +14,7 @@ import com.microservices_example_app.booking.repository.EventRepository;
 import com.microservices_example_app.booking.repository.TicketRepository;
 import com.microservices_example_app.booking.specification.TicketSpecification;
 import com.microservices_example_app.booking.utils.JwtRequestUserExtractor;
+import com.microservices_example_app.booking.util.SensitiveMask;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -20,7 +22,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 
@@ -41,10 +45,20 @@ public class TicketService {
     public TicketResponseDto create(TicketCreateRequestDto requestDto) {
         log.info("Creating ticket for event id: {}", requestDto.getEventId());
 
-        Event event = eventRepository.findById(requestDto.getEventId())
+        Event event = eventRepository.findByIdForUpdate(requestDto.getEventId())
                 .orElseThrow(() -> new NotFoundException("Event not found"));
 
-        Integer currentUserId = jwtRequestUserExtractor.extractUserId();
+        if (event.getAdmissionMode() == EventAdmissionMode.GENERAL
+                && event.getVenue() != null
+                && event.getVenue().getCapacity() != null) {
+            long active = ticketRepository.countByEventIdAndActiveTrue(event.getId());
+            if (active >= event.getVenue().getCapacity()) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        "Venue capacity is exhausted for this event");
+            }
+        }
+
+        Long currentUserId = jwtRequestUserExtractor.extractUserId();
         String email = jwtRequestUserExtractor.extractEmail();
         String username = jwtRequestUserExtractor.extractUsername();
 
@@ -66,13 +80,13 @@ public class TicketService {
         );
 
         notificationKafkaBookingProducer.sendSuccessfulBookingEvent(bookingEvent);
-        log.info("Successful booking event sent for ticket id={}, email={}", saved.getId(), email);
+        log.info("Successful booking event sent for ticket id={}, email={}", saved.getId(), SensitiveMask.maskEmail(email));
 
         return toResponseDto(saved);
     }
 
     @Transactional
-    public TicketResponseDto getById(Integer id) {
+    public TicketResponseDto getById(Long id) {
         log.info("Fetching ticket with id: {}", id);
 
         Ticket ticket = ticketRepository.findById(id)
@@ -110,7 +124,7 @@ public class TicketService {
     }
 
     @Transactional
-    public void deleteById(Integer id) {
+    public void deleteById(Long id) {
         if (id == null || id < 1) {
             throw new IllegalArgumentException("Ticket id must be positive");
         }
@@ -118,7 +132,7 @@ public class TicketService {
         Ticket ticket = ticketRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("Ticket not found"));
 
-        Integer currentUserId = jwtRequestUserExtractor.extractUserId();
+        Long currentUserId = jwtRequestUserExtractor.extractUserId();
         String email = jwtRequestUserExtractor.extractEmail();
         String username = jwtRequestUserExtractor.extractUsername();
 
@@ -138,7 +152,7 @@ public class TicketService {
         ticketRepository.delete(ticket);
 
         notificationKafkaBookingProducer.sendSuccessfulTicketRefundEvent(refundEvent);
-        log.info("Successful ticket refund event sent for ticket id={}, email={}", id, email);
+        log.info("Successful ticket refund event sent for ticket id={}, email={}", id, SensitiveMask.maskEmail(email));
     }
 
     @Transactional
@@ -178,11 +192,11 @@ public class TicketService {
         if (request.getId() == null || request.getId() < 1) {
             throw new IllegalArgumentException("Ticket id must be positive");
         }
-        Integer currentUserId = jwtRequestUserExtractor.extractUserId();
+        Long currentUserId = jwtRequestUserExtractor.extractUserId();
         Ticket ticket = ticketRepository.findById(request.getId())
                 .orElseThrow(() -> new NotFoundException("No ticket with id=" + request.getId()));
 
-        Integer previousUserId = ticket.getUserId();
+        Long previousUserId = ticket.getUserId();
         log.info("previous userid:{}",previousUserId);
         if (request.getEventId() != null) {
             Event event = eventRepository.findById(request.getEventId())
@@ -214,7 +228,7 @@ public class TicketService {
         return toResponseDto(saved);
     }
     @Transactional
-    public TicketResponseDto refund(Integer id) {
+    public TicketResponseDto refund(Long id) {
         if (id == null || id < 1) {
             throw new IllegalArgumentException("Ticket id must be positive");
         }
@@ -222,7 +236,7 @@ public class TicketService {
         Ticket ticket = ticketRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("Ticket not found"));
 
-        Integer currentUserId = jwtRequestUserExtractor.extractUserId();
+        Long currentUserId = jwtRequestUserExtractor.extractUserId();
         String email = jwtRequestUserExtractor.extractEmail();
         String username = jwtRequestUserExtractor.extractUsername();
 

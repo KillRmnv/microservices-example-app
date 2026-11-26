@@ -24,12 +24,23 @@ public class EventSpecification {
         };
     }
 
-    public static Specification<Event> hasVenueId(Integer venueId) {
+    public static Specification<Event> hasVenueId(Long venueId) {
         return new Specification<Event>() {
             @Override
             public @Nullable Predicate toPredicate(Root<Event> root, CriteriaQuery<?> query, CriteriaBuilder criteriaBuilder) {
                 if (venueId != null)
                     return criteriaBuilder.equal(root.get("venue").get("id"), venueId);
+                return null;
+            }
+        };
+    }
+
+    public static Specification<Event> hasCategory(String category) {
+        return new Specification<Event>() {
+            @Override
+            public @Nullable Predicate toPredicate(Root<Event> root, CriteriaQuery<?> query, CriteriaBuilder criteriaBuilder) {
+                if (category != null && !category.isBlank())
+                    return criteriaBuilder.equal(root.get("category"), category);
                 return null;
             }
         };

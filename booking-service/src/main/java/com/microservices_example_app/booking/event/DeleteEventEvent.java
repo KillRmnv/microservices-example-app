@@ -17,6 +17,6 @@ public class DeleteEventEvent {
     private List<String> events;
     @NotBlank(message = "Source service must not be blank")
     private String sourceService;
-    private List<Integer> userIds;
+    private List<Long> userIds;
 
 }

@@ -13,6 +13,21 @@ services:
       timeout: 5s
       retries: 5
 
+  # Creates the compacted catalog topic before producers/consumers start;
+  # otherwise broker auto-creation wins and the topic gets default configs.
+  kafka-init:
+    image: confluentinc/cp-kafka:7.5.0
+    depends_on:
+      kafka:
+        condition: service_healthy
+    command:
+      - bash
+      - -c
+      - >-
+        kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists
+        --topic booking.catalog --partitions 1 --replication-factor 1
+        --config cleanup.policy=compact --config retention.ms=-1
+
   kafka:
     image: confluentinc/cp-kafka:7.5.0
     depends_on:
@@ -43,18 +58,55 @@ services:
       timeout: 5s
       retries: 5
 
+  # Local SMTP catcher: docker compose --profile mail up -d mailhog
+  # UI: http://localhost:8025, SMTP: mailhog:1025 (no auth, no TLS).
+  mailhog:
+    image: mailhog/mailhog:latest
+    profiles: ["mail"]
+    ports:
+      - "8025:8025"
+      - "1025:1025"
+
   postgres:
     image: postgres:16
+    command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf"]
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: 1234
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
     ports:
       - "5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
       - ./init-postgres.sql:/docker-entrypoint-initdb.d/init-postgres.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    environment:
+      DATABASE_URLS: "postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/user_service,postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/booking_service,postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/collector_db,postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/assistant_db"
+      AUTH_TYPE: plain
+      POOL_MODE: transaction
+      LISTEN_PORT: 6432
+      MAX_CLIENT_CONN: 300
+      DEFAULT_POOL_SIZE: 20
+      MIN_POOL_SIZE: 2
+      RESERVE_POOL_SIZE: 5
+      RESERVE_POOL_TIMEOUT: 3
+      SERVER_IDLE_TIMEOUT: 60
+      SERVER_LIFETIME: 3600
+      QUERY_WAIT_TIMEOUT: 5
+      MAX_PREPARED_STATEMENTS: 100
+      IGNORE_STARTUP_PARAMETERS: extra_float_digits
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 6432 -U postgres"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -68,6 +120,8 @@ services:
       - ./user-service/.env
     depends_on:
       postgres:
+        condition: service_healthy
+      pgbouncer:
         condition: service_healthy
       kafka:
         condition: service_healthy
@@ -84,20 +138,24 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      pgbouncer:
+        condition: service_healthy
       redis:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     ports:
       - "${BOOKING_APPLICATION_PORT:-8082}"
 
-  notification-service:
+  notification-service-go:
     build:
       context: .
-      dockerfile: ./notification-service/Dockerfile
+      dockerfile: ./notification-service-go/Dockerfile
     env_file:
       - ./.env
-      - ./notification-service/.env
+      - ./notification-service-go/.env
     depends_on:
       kafka:
         condition: service_healthy
@@ -116,15 +174,116 @@ services:
         condition: service_started
       booking-service:
         condition: service_started
-      notification-service:
+      notification-service-go:
         condition: service_started
     ports:
-      - "${GATEWAY_PORT:-8080}:${GATEWAY_PORT:-8080}"
+      - "${GATEWAY_PORT:-8080}:8080"
 
+  frontend:
+    build:
+      context: .
+      dockerfile: ./frontend/Dockerfile
+      args:
+        NEXT_PUBLIC_2GIS_MAP_KEY: ${NEXT_PUBLIC_2GIS_MAP_KEY:-}
+    depends_on:
+      gateway:
+        condition: service_started
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+
+  collector-service:
+    build:
+      context: .
+      dockerfile: ./collector-service/Dockerfile
+    env_file:
+      - ./.env
+      - ./collector-service/.env
+    environment:
+      APP_ENV: ${APP_ENV:-local}
+      APP_VERSION: ${APP_VERSION:-dev}
+      COLLECTOR_KAFKA_BOOTSTRAP_SERVERS: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
+      COLLECTOR_BOOKING_CATALOG_ENABLED: "true"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      pgbouncer:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    ports:
+      - "${COLLECTOR_PORT:-8085}:8080"
+
+  assistant-service:
+    build:
+      context: .
+      dockerfile: ./assistant-service/Dockerfile
+    env_file:
+      - ./.env
+      - ./assistant-service/.env
+    environment:
+      APP_ENV: ${APP_ENV:-local}
+      APP_VERSION: ${APP_VERSION:-dev}
+      ASSISTANT_LLM_STAGES: ${ASSISTANT_LLM_STAGES:-structure:openrouter,plan:openrouter}
+      ASSISTANT_LLM_DISABLE_THINKING: "false"
+      ASSISTANT_LLM_MAX_TOKENS: 2048
+      ASSISTANT_LLM_PLAN_MAX_TOKENS: 3072
+      ASSISTANT_LLM_TIMEOUT_S: ${ASSISTANT_LLM_TIMEOUT_S:-120}
+      # bm25 = dense + sparse + full-text BM25 (needs the `search_text`
+      # index); sparse/lexical are the fallbacks while the re-embed runs.
+      ASSISTANT_HYBRID_MODE: ${ASSISTANT_HYBRID_MODE:-bm25}
+
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      pgbouncer:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    ports:
+      - "${ASSISTANT_PORT:-8084}:8080"
+
+  qdrant:
+    # 1.18 dropped RocksDB: 1.12 storage cannot be mounted by 1.20. The fresh
+    # volume `qdrant_data_v120` is populated by a re-embed; `qdrant_data` is
+    # kept untouched as the rollback path (restore tar + v1.12.4).
+    image: qdrant/qdrant:v1.20.2
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data_v120:/qdrant/storage
+
+  # Opt-in local embeddings (profile `llm`). Mounts the host models dir;
+  # services reach it as http://llama-embed:8088 (override LLAMA_EMBED_URL).
+  llama-embed:
+    profiles: ["llm"]
+    build:
+      context: .
+      dockerfile: ./llama-embed/Dockerfile
+    volumes:
+      - ${MODEL_DIR:-~/models}:/models:ro
+    environment:
+      LLAMA_MODEL_FILE: /models/${EMBED_MODEL_FILE:-bge-m3-q8_0.gguf}
+      LLAMA_CTX: 512
+      LLAMA_PORT: 8088
+      LLAMA_EXTRA_ARGS: "--embedding"
+    ports:
+      - "${LLAMA_EMBED_PORT:-8088}:8088"
+
+  # Chat/completions server for the assistant LLM stages (LFM3 is small enough
+  # to run next to bge-m3). Same image, chat mode.
   prometheus:
     image: prom/prometheus:latest
     ports:
-      - "9090:9090"
+      - "${PROMETHEUS_PORT:-9090}:9090"
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
       - prometheus_data:/prometheus
@@ -132,15 +291,15 @@ services:
       - gateway
       - user-service
       - booking-service
-      - notification-service
+      - notification-service-go
 
   grafana:
     image: grafana/grafana:latest
     ports:
-      - "3000:3000"
+      - "${GRAFANA_PORT:-3001}:3000"
     environment:
       GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in .env}
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning
       - ./grafana/dashboards:/var/lib/grafana/dashboards
@@ -152,3 +311,5 @@ volumes:
   postgres_data:
   prometheus_data:
   grafana_data:
+  qdrant_data:
+  qdrant_data_v120:

@@ -6,6 +6,7 @@ import com.microservices_example_app.users.event.SuccessfulRegistrationEmailEven
 import com.microservices_example_app.users.event.UserDeletedEvent;
 import com.microservices_example_app.users.event.UserUpdatedEvent;
 import com.microservices_example_app.users.exceptions.EmailForwardingException;
+import com.microservices_example_app.users.exceptions.UserAlreadyExistsException;
 import com.microservices_example_app.users.exceptions.UserNotFoundException;
 import com.microservices_example_app.users.model.Role;
 import com.microservices_example_app.users.model.User;
@@ -62,12 +63,12 @@ class UserServiceTest {
     @Test
     void register_shouldRegisterUserAndSendEmailEvent() {
         Role role = Role.builder()
-                .id(1)
+                .id(1L)
                 .name("CUSTOMER")
                 .build();
 
         User savedUser = User.builder()
-                .id(10)
+                .id(10L)
                 .username("alex")
                 .email("alex@test.com")
                 .passwordHash("hashed")
@@ -113,12 +114,12 @@ class UserServiceTest {
     @Test
     void register_shouldNotFailWhenEmailProducerThrows() {
         Role role = Role.builder()
-                .id(1)
+                .id(1L)
                 .name("CUSTOMER")
                 .build();
 
         User savedUser = User.builder()
-                .id(10)
+                .id(10L)
                 .username("alex")
                 .email("alex@test.com")
                 .passwordHash("hashed")
@@ -143,12 +144,12 @@ class UserServiceTest {
     @Test
     void login_shouldReturnTokenAndUserId() {
         Role role = Role.builder()
-                .id(1)
+                .id(1L)
                 .name("CUSTOMER")
                 .build();
 
         User user = User.builder()
-                .id(10)
+                .id(10L)
                 .username("alex")
                 .email("alex@test.com")
                 .passwordHash("hashed")
@@ -183,12 +184,12 @@ class UserServiceTest {
     @Test
     void login_shouldThrowWhenPasswordInvalid() {
         Role role = Role.builder()
-                .id(1)
+                .id(1L)
                 .name("CUSTOMER")
                 .build();
 
         User user = User.builder()
-                .id(10)
+                .id(10L)
                 .username("alex")
                 .email("alex@test.com")
                 .passwordHash("hashed")
@@ -205,9 +206,9 @@ class UserServiceTest {
 
     @Test
     void getByEmail_shouldReturnUser() {
-        Role role = Role.builder().id(1).name("CUSTOMER").build();
+        Role role = Role.builder().id(1L).name("CUSTOMER").build();
         User user = User.builder()
-                .id(10)
+                .id(10L)
                 .username("alex")
                 .email("alex@test.com")
                 .passwordHash("hashed")
@@ -235,9 +236,9 @@ class UserServiceTest {
 
     @Test
     void restorePassword_shouldSendEmailWhenUserExists() {
-        Role role = Role.builder().id(1).name("CUSTOMER").build();
+        Role role = Role.builder().id(1L).name("CUSTOMER").build();
         User user = User.builder()
-                .id(10)
+                .id(10L)
                 .username("alex")
                 .email("alex@test.com")
                 .passwordHash("hashed")
@@ -267,9 +268,9 @@ class UserServiceTest {
 
     @Test
     void restorePassword_shouldThrowEmailForwardingExceptionWhenProducerFails() {
-        Role role = Role.builder().id(1).name("CUSTOMER").build();
+        Role role = Role.builder().id(1L).name("CUSTOMER").build();
         User user = User.builder()
-                .id(10)
+                .id(10L)
                 .username("alex")
                 .email("alex@test.com")
                 .passwordHash("hashed")
@@ -293,10 +294,10 @@ class UserServiceTest {
 
     @Test
     void getAll_shouldReturnAllUsers() {
-        Role role = Role.builder().id(1).name("CUSTOMER").build();
+        Role role = Role.builder().id(1L).name("CUSTOMER").build();
 
-        User user1 = User.builder().id(1).username("u1").email("u1@test.com").passwordHash("h1").userRole(role).build();
-        User user2 = User.builder().id(2).username("u2").email("u2@test.com").passwordHash("h2").userRole(role).build();
+        User user1 = User.builder().id(1L).username("u1").email("u1@test.com").passwordHash("h1").userRole(role).build();
+        User user2 = User.builder().id(2L).username("u2").email("u2@test.com").passwordHash("h2").userRole(role).build();
 
         when(userDao.findAll()).thenReturn(List.of(user1, user2));
 
@@ -308,8 +309,8 @@ class UserServiceTest {
 
     @Test
     void getUsersByPage_shouldReturnPagedUsers() {
-        Role role = Role.builder().id(1).name("CUSTOMER").build();
-        User user = User.builder().id(1).username("u1").email("u1@test.com").passwordHash("h1").userRole(role).build();
+        Role role = Role.builder().id(1L).name("CUSTOMER").build();
+        User user = User.builder().id(1L).username("u1").email("u1@test.com").passwordHash("h1").userRole(role).build();
 
         when(userDao.findAll(any(Pageable.class))).thenReturn(new PageImpl<>(List.of(user)));
 
@@ -322,12 +323,12 @@ class UserServiceTest {
 
     @Test
     void getById_shouldReturnUser() {
-        Role role = Role.builder().id(1).name("CUSTOMER").build();
-        User user = User.builder().id(10).username("alex").email("alex@test.com").passwordHash("h").userRole(role).build();
+        Role role = Role.builder().id(1L).name("CUSTOMER").build();
+        User user = User.builder().id(10L).username("alex").email("alex@test.com").passwordHash("h").userRole(role).build();
 
-        when(userDao.findById(10)).thenReturn(Optional.of(user));
+        when(userDao.findById(10L)).thenReturn(Optional.of(user));
 
-        UserResponseDto result = userService.getById(10);
+        UserResponseDto result = userService.getById(10L);
 
         assertThat(result.getId()).isEqualTo(10);
         assertThat(result.getUsername()).isEqualTo("alex");
@@ -335,20 +336,20 @@ class UserServiceTest {
 
     @Test
     void getById_shouldThrowWhenUserNotFound() {
-        when(userDao.findById(10)).thenReturn(Optional.empty());
+        when(userDao.findById(10L)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> userService.getById(10))
+        assertThatThrownBy(() -> userService.getById(10L))
                 .isInstanceOf(UserNotFoundException.class)
                 .hasMessage("no such user");
     }
 
     @Test
     void updateUser_shouldSaveWhenUserExists() {
-        Role role = Role.builder().id(1).name("CUSTOMER").build();
-        User existing = User.builder().id(10).username("alex").email("alex@test.com").passwordHash("h").userRole(role).build();
-        User updated = User.builder().id(10).username("alex2").email("alex2@test.com").passwordHash("h2").userRole(role).build();
+        Role role = Role.builder().id(1L).name("CUSTOMER").build();
+        User existing = User.builder().id(10L).username("alex").email("alex@test.com").passwordHash("h").userRole(role).build();
+        User updated = User.builder().id(10L).username("alex2").email("alex2@test.com").passwordHash("h2").userRole(role).build();
 
-        when(userDao.findById(10)).thenReturn(Optional.of(existing));
+        when(userDao.findById(10L)).thenReturn(Optional.of(existing));
 
         userService.updateUser(updated);
 
@@ -357,10 +358,10 @@ class UserServiceTest {
 
     @Test
     void updateUser_shouldThrowWhenUserNotFound() {
-        Role role = Role.builder().id(1).name("CUSTOMER").build();
-        User updated = User.builder().id(10).username("alex2").email("alex2@test.com").passwordHash("h2").userRole(role).build();
+        Role role = Role.builder().id(1L).name("CUSTOMER").build();
+        User updated = User.builder().id(10L).username("alex2").email("alex2@test.com").passwordHash("h2").userRole(role).build();
 
-        when(userDao.findById(10)).thenReturn(Optional.empty());
+        when(userDao.findById(10L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> userService.updateUser(updated))
                 .isInstanceOf(UserNotFoundException.class)
@@ -372,30 +373,30 @@ class UserServiceTest {
     @Test
     void deleteUser_shouldDeleteWhenUserExists() {
         UserDeleteRequestDto request = new UserDeleteRequestDto();
-        request.setId(10);
+        request.setId(10L);
 
-        Role role = Role.builder().id(1).name("CUSTOMER").build();
-        User existing = User.builder().id(10).username("alex").email("alex@test.com").passwordHash("h").userRole(role).build();
+        Role role = Role.builder().id(1L).name("CUSTOMER").build();
+        User existing = User.builder().id(10L).username("alex").email("alex@test.com").passwordHash("h").userRole(role).build();
 
-        when(userDao.findById(10)).thenReturn(Optional.of(existing));
+        when(userDao.findById(10L)).thenReturn(Optional.of(existing));
 
         userService.deleteUser(request);
 
-        verify(userDao).deleteById(10);
+        verify(userDao).deleteById(10L);
     }
 
     @Test
     void deleteUser_shouldThrowWhenUserNotFound() {
         UserDeleteRequestDto request = new UserDeleteRequestDto();
-        request.setId(10);
+        request.setId(10L);
 
-        when(userDao.findById(10)).thenReturn(Optional.empty());
+        when(userDao.findById(10L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> userService.deleteUser(request))
                 .isInstanceOf(UserNotFoundException.class)
                 .hasMessage("no user with such id");
 
-        verify(userDao, never()).deleteById(anyInt());
+        verify(userDao, never()).deleteById(anyLong());
     }
 
     @Test
@@ -405,9 +406,9 @@ class UserServiceTest {
         request.setUsername("alex");
         request.setRole("CUSTOMER");
 
-        Role role = Role.builder().id(1).name("CUSTOMER").build();
-        User user1 = User.builder().id(1).username("alex").email("alex@test.com").passwordHash("h").userRole(role).build();
-        User user2 = User.builder().id(2).username("alex").email("alex@test.com").passwordHash("h").userRole(role).build();
+        Role role = Role.builder().id(1L).name("CUSTOMER").build();
+        User user1 = User.builder().id(1L).username("alex").email("alex@test.com").passwordHash("h").userRole(role).build();
+        User user2 = User.builder().id(2L).username("alex").email("alex@test.com").passwordHash("h").userRole(role).build();
 
         when(roleRepository.findByName("CUSTOMER")).thenReturn(Optional.of(role));
         when(userDao.findAll(any(Specification.class))).thenReturn(List.of(user1, user2));
@@ -437,8 +438,8 @@ class UserServiceTest {
         filter.setUsername("alex");
         filter.setRole("CUSTOMER");
 
-        Role role = Role.builder().id(1).name("CUSTOMER").build();
-        User user = User.builder().id(10).username("alex").email("alex@test.com").passwordHash("h").userRole(role).build();
+        Role role = Role.builder().id(1L).name("CUSTOMER").build();
+        User user = User.builder().id(10L).username("alex").email("alex@test.com").passwordHash("h").userRole(role).build();
 
         when(roleRepository.findByName("CUSTOMER")).thenReturn(Optional.of(role));
         when(userDao.findAll(any(Specification.class))).thenReturn(List.of(user));
@@ -468,8 +469,8 @@ class UserServiceTest {
         filter.setUsername("alex");
         filter.setRole("CUSTOMER");
 
-        Role role = Role.builder().id(1).name("CUSTOMER").build();
-        User user = User.builder().id(10).username("alex").email("alex@test.com").passwordHash("h").userRole(role).build();
+        Role role = Role.builder().id(1L).name("CUSTOMER").build();
+        User user = User.builder().id(10L).username("alex").email("alex@test.com").passwordHash("h").userRole(role).build();
 
         when(roleRepository.findByName("CUSTOMER")).thenReturn(Optional.of(role));
         when(userDao.findAll(any(Specification.class), any(Pageable.class)))
@@ -502,17 +503,17 @@ class UserServiceTest {
     @Test
     void updateUserById_shouldUpdateUser() {
         UserUpdateRequestDto request = new UserUpdateRequestDto();
-        request.setId(10);
+        request.setId(10L);
         request.setEmail("new@test.com");
         request.setUsername("newname");
         request.setRole("ADMIN");
         request.setPassword("newpass");
 
-        Role oldRole = Role.builder().id(1).name("CUSTOMER").build();
-        Role newRole = Role.builder().id(2).name("ADMIN").build();
+        Role oldRole = Role.builder().id(1L).name("CUSTOMER").build();
+        Role newRole = Role.builder().id(2L).name("ADMIN").build();
 
         User existing = User.builder()
-                .id(10)
+                .id(10L)
                 .username("alex")
                 .email("old@test.com")
                 .passwordHash("oldHash")
@@ -520,14 +521,14 @@ class UserServiceTest {
                 .build();
 
         User saved = User.builder()
-                .id(10)
+                .id(10L)
                 .username("newname")
                 .email("new@test.com")
                 .passwordHash("newHash")
                 .userRole(newRole)
                 .build();
 
-        when(userDao.findById(10)).thenReturn(Optional.of(existing));
+        when(userDao.findById(10L)).thenReturn(Optional.of(existing));
         when(userDao.findByEmail("new@test.com")).thenReturn(Optional.empty());
         when(roleRepository.findByName("ADMIN")).thenReturn(Optional.of(newRole));
         when(passwordService.hash("newpass")).thenReturn("newHash");
@@ -554,9 +555,9 @@ class UserServiceTest {
     @Test
     void updateUserById_shouldThrowWhenUserNotFound() {
         UserUpdateRequestDto request = new UserUpdateRequestDto();
-        request.setId(10);
+        request.setId(10L);
 
-        when(userDao.findById(10)).thenReturn(Optional.empty());
+        when(userDao.findById(10L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> userService.updateUserById(request))
                 .isInstanceOf(UserNotFoundException.class)
@@ -568,13 +569,13 @@ class UserServiceTest {
     @Test
     void updateUserById_shouldThrowWhenEmailAlreadyInUse() {
         UserUpdateRequestDto request = new UserUpdateRequestDto();
-        request.setId(10);
+        request.setId(10L);
         request.setEmail("taken@test.com");
 
-        Role role = Role.builder().id(1).name("CUSTOMER").build();
+        Role role = Role.builder().id(1L).name("CUSTOMER").build();
 
         User existing = User.builder()
-                .id(10)
+                .id(10L)
                 .username("alex")
                 .email("old@test.com")
                 .passwordHash("oldHash")
@@ -582,14 +583,14 @@ class UserServiceTest {
                 .build();
 
         User anotherUser = User.builder()
-                .id(20)
+                .id(20L)
                 .username("other")
                 .email("taken@test.com")
                 .passwordHash("hash")
                 .userRole(role)
                 .build();
 
-        when(userDao.findById(10)).thenReturn(Optional.of(existing));
+        when(userDao.findById(10L)).thenReturn(Optional.of(existing));
         when(userDao.findByEmail("taken@test.com")).thenReturn(Optional.of(anotherUser));
 
         assertThatThrownBy(() -> userService.updateUserById(request))
@@ -602,19 +603,19 @@ class UserServiceTest {
     @Test
     void updateUserById_shouldThrowWhenRoleNotFound() {
         UserUpdateRequestDto request = new UserUpdateRequestDto();
-        request.setId(10);
+        request.setId(10L);
         request.setRole("ADMIN");
 
-        Role role = Role.builder().id(1).name("CUSTOMER").build();
+        Role role = Role.builder().id(1L).name("CUSTOMER").build();
         User existing = User.builder()
-                .id(10)
+                .id(10L)
                 .username("alex")
                 .email("old@test.com")
                 .passwordHash("oldHash")
                 .userRole(role)
                 .build();
 
-        when(userDao.findById(10)).thenReturn(Optional.of(existing));
+        when(userDao.findById(10L)).thenReturn(Optional.of(existing));
         when(roleRepository.findByName("ADMIN")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> userService.updateUserById(request))
@@ -628,9 +629,9 @@ class UserServiceTest {
 
     @Test
     void resetPassword_shouldResetPasswordWhenTokenValid() {
-        Role role = Role.builder().id(1).name("CUSTOMER").build();
+        Role role = Role.builder().id(1L).name("CUSTOMER").build();
         User user = User.builder()
-                .id(10)
+                .id(10L)
                 .username("alex")
                 .email("alex@test.com")
                 .passwordHash("oldHash")
@@ -640,9 +641,9 @@ class UserServiceTest {
 
         try (MockedStatic<JwtUtil> jwtUtilMock = mockStatic(JwtUtil.class)) {
             jwtUtilMock.when(() -> JwtUtil.validatePasswordResetToken("valid-token")).thenReturn(true);
-            jwtUtilMock.when(() -> JwtUtil.extractUserIdFromPasswordResetToken("valid-token")).thenReturn(10);
+            jwtUtilMock.when(() -> JwtUtil.extractUserIdFromPasswordResetToken("valid-token")).thenReturn(10L);
 
-            when(userDao.findById(10)).thenReturn(Optional.of(user));
+            when(userDao.findById(10L)).thenReturn(Optional.of(user));
             when(passwordService.hash("newpass")).thenReturn("newHash");
 
             userService.resetPassword("valid-token", "newpass");
@@ -664,7 +665,7 @@ class UserServiceTest {
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessage("Invalid or expired reset token");
 
-            verify(userDao, never()).findById(anyInt());
+            verify(userDao, never()).findById(anyLong());
             verify(userDao, never()).save(any());
         }
     }
@@ -673,9 +674,9 @@ class UserServiceTest {
     void resetPassword_shouldThrowWhenUserNotFound() {
         try (MockedStatic<JwtUtil> jwtUtilMock = mockStatic(JwtUtil.class)) {
             jwtUtilMock.when(() -> JwtUtil.validatePasswordResetToken("valid-token")).thenReturn(true);
-            jwtUtilMock.when(() -> JwtUtil.extractUserIdFromPasswordResetToken("valid-token")).thenReturn(99);
+            jwtUtilMock.when(() -> JwtUtil.extractUserIdFromPasswordResetToken("valid-token")).thenReturn(99L);
 
-            when(userDao.findById(99)).thenReturn(Optional.empty());
+            when(userDao.findById(99L)).thenReturn(Optional.empty());
 
             assertThatThrownBy(() -> userService.resetPassword("valid-token", "newpass"))
                     .isInstanceOf(UserNotFoundException.class)
@@ -726,7 +727,7 @@ class UserServiceTest {
     @Test
     void updateUserById_shouldThrowWhenIdNegative() {
         UserUpdateRequestDto request = new UserUpdateRequestDto();
-        request.setId(-1);
+        request.setId(-1L);
 
         assertThatThrownBy(() -> userService.updateUserById(request))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -736,26 +737,26 @@ class UserServiceTest {
     @Test
     void updateUserById_shouldKeepEmailWhenSameAsCurrent() {
         UserUpdateRequestDto request = new UserUpdateRequestDto();
-        request.setId(10);
+        request.setId(10L);
         request.setEmail("alex@test.com");
 
-        Role role = Role.builder().id(1).name("CUSTOMER").build();
+        Role role = Role.builder().id(1L).name("CUSTOMER").build();
         User existing = User.builder()
-                .id(10)
+                .id(10L)
                 .username("alex")
                 .email("alex@test.com")
                 .passwordHash("oldHash")
                 .userRole(role)
                 .build();
         User saved = User.builder()
-                .id(10)
+                .id(10L)
                 .username("alex")
                 .email("alex@test.com")
                 .passwordHash("oldHash")
                 .userRole(role)
                 .build();
 
-        when(userDao.findById(10)).thenReturn(Optional.of(existing));
+        when(userDao.findById(10L)).thenReturn(Optional.of(existing));
         when(userDao.findByEmail("alex@test.com")).thenReturn(Optional.of(existing));
         when(userDao.save(any(User.class))).thenReturn(saved);
 
@@ -768,11 +769,11 @@ class UserServiceTest {
     @Test
     void updateUserById_shouldKeepFieldsWhenNull() {
         UserUpdateRequestDto request = new UserUpdateRequestDto();
-        request.setId(10);
+        request.setId(10L);
 
-        Role role = Role.builder().id(1).name("CUSTOMER").build();
+        Role role = Role.builder().id(1L).name("CUSTOMER").build();
         User existing = User.builder()
-                .id(10)
+                .id(10L)
                 .username("alex")
                 .email("alex@test.com")
                 .passwordHash("oldHash")
@@ -780,7 +781,7 @@ class UserServiceTest {
                 .isSystem(false)
                 .build();
         User saved = User.builder()
-                .id(10)
+                .id(10L)
                 .username("alex")
                 .email("alex@test.com")
                 .passwordHash("oldHash")
@@ -788,7 +789,7 @@ class UserServiceTest {
                 .isSystem(false)
                 .build();
 
-        when(userDao.findById(10)).thenReturn(Optional.of(existing));
+        when(userDao.findById(10L)).thenReturn(Optional.of(existing));
         when(userDao.save(any(User.class))).thenReturn(saved);
 
         UserResponseDto result = userService.updateUserById(request);
@@ -805,15 +806,15 @@ class UserServiceTest {
     @Test
     void updateUserById_shouldKeepFieldsWhenBlank() {
         UserUpdateRequestDto request = new UserUpdateRequestDto();
-        request.setId(10);
+        request.setId(10L);
         request.setEmail("  ");
         request.setUsername("  ");
         request.setRole("  ");
         request.setPassword("  ");
 
-        Role role = Role.builder().id(1).name("CUSTOMER").build();
+        Role role = Role.builder().id(1L).name("CUSTOMER").build();
         User existing = User.builder()
-                .id(10)
+                .id(10L)
                 .username("alex")
                 .email("alex@test.com")
                 .passwordHash("oldHash")
@@ -821,7 +822,7 @@ class UserServiceTest {
                 .isSystem(false)
                 .build();
         User saved = User.builder()
-                .id(10)
+                .id(10L)
                 .username("alex")
                 .email("alex@test.com")
                 .passwordHash("oldHash")
@@ -829,7 +830,7 @@ class UserServiceTest {
                 .isSystem(false)
                 .build();
 
-        when(userDao.findById(10)).thenReturn(Optional.of(existing));
+        when(userDao.findById(10L)).thenReturn(Optional.of(existing));
         when(userDao.save(any(User.class))).thenReturn(saved);
 
         UserResponseDto result = userService.updateUserById(request);
@@ -846,15 +847,15 @@ class UserServiceTest {
     @Test
     void updateUserById_shouldSetIsSystemWhenRoleAdmin() {
         UserUpdateRequestDto request = new UserUpdateRequestDto();
-        request.setId(10);
+        request.setId(10L);
         request.setRole("ADMIN");
         request.setIsSystem(true);
 
-        Role oldRole = Role.builder().id(1).name("CUSTOMER").build();
-        Role adminRole = Role.builder().id(2).name("ADMIN").build();
+        Role oldRole = Role.builder().id(1L).name("CUSTOMER").build();
+        Role adminRole = Role.builder().id(2L).name("ADMIN").build();
 
         User existing = User.builder()
-                .id(10)
+                .id(10L)
                 .username("alex")
                 .email("alex@test.com")
                 .passwordHash("oldHash")
@@ -862,7 +863,7 @@ class UserServiceTest {
                 .isSystem(false)
                 .build();
         User saved = User.builder()
-                .id(10)
+                .id(10L)
                 .username("alex")
                 .email("alex@test.com")
                 .passwordHash("oldHash")
@@ -870,7 +871,7 @@ class UserServiceTest {
                 .isSystem(true)
                 .build();
 
-        when(userDao.findById(10)).thenReturn(Optional.of(existing));
+        when(userDao.findById(10L)).thenReturn(Optional.of(existing));
         when(roleRepository.findByName("ADMIN")).thenReturn(Optional.of(adminRole));
         when(userDao.save(any(User.class))).thenReturn(saved);
 
@@ -884,14 +885,14 @@ class UserServiceTest {
     @Test
     void updateUserById_shouldKeepIsSystemWhenRoleNotAdmin() {
         UserUpdateRequestDto request = new UserUpdateRequestDto();
-        request.setId(10);
+        request.setId(10L);
         request.setRole("CUSTOMER");
         request.setIsSystem(true);
 
-        Role role = Role.builder().id(1).name("CUSTOMER").build();
+        Role role = Role.builder().id(1L).name("CUSTOMER").build();
 
         User existing = User.builder()
-                .id(10)
+                .id(10L)
                 .username("alex")
                 .email("alex@test.com")
                 .passwordHash("oldHash")
@@ -899,7 +900,7 @@ class UserServiceTest {
                 .isSystem(false)
                 .build();
         User saved = User.builder()
-                .id(10)
+                .id(10L)
                 .username("alex")
                 .email("alex@test.com")
                 .passwordHash("oldHash")
@@ -907,7 +908,7 @@ class UserServiceTest {
                 .isSystem(false)
                 .build();
 
-        when(userDao.findById(10)).thenReturn(Optional.of(existing));
+        when(userDao.findById(10L)).thenReturn(Optional.of(existing));
         when(roleRepository.findByName("CUSTOMER")).thenReturn(Optional.of(role));
         when(userDao.save(any(User.class))).thenReturn(saved);
 
@@ -922,11 +923,11 @@ class UserServiceTest {
 
     @Test
     void updateUser_shouldSendUpdatedEvent() {
-        Role role = Role.builder().id(1).name("CUSTOMER").build();
-        User existing = User.builder().id(10).username("alex").email("alex@test.com").passwordHash("h").userRole(role).build();
-        User updated = User.builder().id(10).username("alex2").email("alex2@test.com").passwordHash("h2").userRole(role).build();
+        Role role = Role.builder().id(1L).name("CUSTOMER").build();
+        User existing = User.builder().id(10L).username("alex").email("alex@test.com").passwordHash("h").userRole(role).build();
+        User updated = User.builder().id(10L).username("alex2").email("alex2@test.com").passwordHash("h2").userRole(role).build();
 
-        when(userDao.findById(10)).thenReturn(Optional.of(existing));
+        when(userDao.findById(10L)).thenReturn(Optional.of(existing));
 
         userService.updateUser(updated);
 
@@ -938,12 +939,12 @@ class UserServiceTest {
     @Test
     void deleteUser_shouldSendDeletedEvent() {
         UserDeleteRequestDto request = new UserDeleteRequestDto();
-        request.setId(10);
+        request.setId(10L);
 
-        Role role = Role.builder().id(1).name("CUSTOMER").build();
-        User existing = User.builder().id(10).username("alex").email("alex@test.com").passwordHash("h").userRole(role).build();
+        Role role = Role.builder().id(1L).name("CUSTOMER").build();
+        User existing = User.builder().id(10L).username("alex").email("alex@test.com").passwordHash("h").userRole(role).build();
 
-        when(userDao.findById(10)).thenReturn(Optional.of(existing));
+        when(userDao.findById(10L)).thenReturn(Optional.of(existing));
 
         userService.deleteUser(request);
 
@@ -958,7 +959,7 @@ class UserServiceTest {
         request.setEmail("nobody@test.com");
         request.setRole("CUSTOMER");
 
-        Role role = Role.builder().id(1).name("CUSTOMER").build();
+        Role role = Role.builder().id(1L).name("CUSTOMER").build();
         when(roleRepository.findByName("CUSTOMER")).thenReturn(Optional.of(role));
         when(userDao.findAll(any(Specification.class))).thenReturn(List.of());
 
@@ -974,9 +975,9 @@ class UserServiceTest {
         request.setEmail("alex@test.com");
         request.setRole("CUSTOMER");
 
-        Role role = Role.builder().id(1).name("CUSTOMER").build();
-        User user1 = User.builder().id(1).username("u1").email("alex@test.com").passwordHash("h").userRole(role).build();
-        User user2 = User.builder().id(2).username("u2").email("alex@test.com").passwordHash("h").userRole(role).build();
+        Role role = Role.builder().id(1L).name("CUSTOMER").build();
+        User user1 = User.builder().id(1L).username("u1").email("alex@test.com").passwordHash("h").userRole(role).build();
+        User user2 = User.builder().id(2L).username("u2").email("alex@test.com").passwordHash("h").userRole(role).build();
 
         when(roleRepository.findByName("CUSTOMER")).thenReturn(Optional.of(role));
         when(userDao.findAll(any(Specification.class))).thenReturn(List.of(user1, user2));
@@ -993,8 +994,8 @@ class UserServiceTest {
     void searchByFilter_shouldReturnAllWhenFiltersNull() {
         UserSearchRequestDto filter = new UserSearchRequestDto();
 
-        Role role = Role.builder().id(1).name("CUSTOMER").build();
-        User user = User.builder().id(10).username("alex").email("alex@test.com").passwordHash("h").userRole(role).build();
+        Role role = Role.builder().id(1L).name("CUSTOMER").build();
+        User user = User.builder().id(10L).username("alex").email("alex@test.com").passwordHash("h").userRole(role).build();
 
         when(userDao.findAll(any(Specification.class))).thenReturn(List.of(user));
 
@@ -1008,8 +1009,8 @@ class UserServiceTest {
         UserSearchRequestDto filter = new UserSearchRequestDto();
         filter.setRole("  ");
 
-        Role role = Role.builder().id(1).name("CUSTOMER").build();
-        User user = User.builder().id(10).username("alex").email("alex@test.com").passwordHash("h").userRole(role).build();
+        Role role = Role.builder().id(1L).name("CUSTOMER").build();
+        User user = User.builder().id(10L).username("alex").email("alex@test.com").passwordHash("h").userRole(role).build();
 
         when(userDao.findAll(any(Specification.class))).thenReturn(List.of(user));
 
@@ -1035,9 +1036,9 @@ class UserServiceTest {
 
     @Test
     void register_shouldPropagateIsSystemTrue() {
-        Role role = Role.builder().id(1).name("ADMIN").build();
+        Role role = Role.builder().id(1L).name("ADMIN").build();
         User savedUser = User.builder()
-                .id(10)
+                .id(10L)
                 .username("admin")
                 .email("admin@test.com")
                 .passwordHash("hashed")
@@ -1058,9 +1059,9 @@ class UserServiceTest {
 
     @Test
     void login_shouldReturnRoleInResponse() {
-        Role role = Role.builder().id(1).name("EVENT_MANAGER").build();
+        Role role = Role.builder().id(1L).name("EVENT_MANAGER").build();
         User user = User.builder()
-                .id(10)
+                .id(10L)
                 .username("alex")
                 .email("alex@test.com")
                 .passwordHash("hashed")
@@ -1100,5 +1101,32 @@ class UserServiceTest {
         List<UserResponseDto> result = userService.getUsersByPage(999, 10);
 
         assertThat(result).isEmpty();
+    }
+
+    @Test
+    void register_shouldRejectDuplicateEmail() {
+        when(userDao.findByEmail("dupe@test.com"))
+                .thenReturn(java.util.Optional.of(User.builder()
+                        .username("someone").email("dupe@test.com").build()));
+
+        assertThatThrownBy(() -> userService.register(
+                "dupe@test.com", "password", "CUSTOMER", "newbie", false))
+                .isInstanceOf(UserAlreadyExistsException.class)
+                .hasMessageContaining("email");
+        verify(userDao, never()).save(any());
+    }
+
+    @Test
+    void register_shouldRejectDuplicateUsername() {
+        when(userDao.findByEmail("fresh@test.com")).thenReturn(java.util.Optional.empty());
+        when(userDao.findByUsername("taken"))
+                .thenReturn(java.util.Optional.of(User.builder()
+                        .username("taken").email("other@test.com").build()));
+
+        assertThatThrownBy(() -> userService.register(
+                "fresh@test.com", "password", "CUSTOMER", "taken", false))
+                .isInstanceOf(UserAlreadyExistsException.class)
+                .hasMessageContaining("именем");
+        verify(userDao, never()).save(any());
     }
 }

@@ -17,4 +17,7 @@ ext {
     set('password4jVersion', '1.8.2')
     set('bucket4jVersion', '8.10.1')
     set('lettuceVersion', '6.3.2.RELEASE')
+
+    set('springdocVersion', '3.2.0')
+    set('logstashEncoderVersion', '9.0')
 }

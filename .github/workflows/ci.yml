@@ -2,9 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
   pull_request:
-    branches: [main]
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -12,11 +10,17 @@ concurrency:
 
 env:
   JAVA_VERSION: '21'
+  NODE_VERSION: '22'
+  PNPM_VERSION: '10'
 
 jobs:
   user-service:
     name: User Service
     runs-on: ubuntu-latest
+    services:
+      docker:
+        image: docker:24-dind
+        options: --privileged
     defaults:
       run:
         working-directory: user-service
@@ -30,8 +34,8 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      - name: Run tests
-        run: ./gradlew test --no-daemon
+      - name: Run tests (exclude e2e & integration)
+        run: ./gradlew check -Djunit.jupiter.tags.exclude=e2e,integration --no-daemon
 
       - name: Build Docker image
         run: docker build -f Dockerfile -t user-service:test ..
@@ -39,6 +43,10 @@ jobs:
   booking-service:
     name: Booking Service
     runs-on: ubuntu-latest
+    services:
+      docker:
+        image: docker:24-dind
+        options: --privileged
     defaults:
       run:
         working-directory: booking-service
@@ -52,15 +60,19 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      - name: Run tests
-        run: ./gradlew test --no-daemon
+      - name: Run tests (exclude e2e & integration)
+        run: ./gradlew check -Djunit.jupiter.tags.exclude=e2e,integration --no-daemon
 
       - name: Build Docker image
         run: docker build -f Dockerfile -t booking-service:test ..
 
   notification-service:
-    name: Notification Service
+    name: Notification Service (Java)
     runs-on: ubuntu-latest
+    services:
+      docker:
+        image: docker:24-dind
+        options: --privileged
     defaults:
       run:
         working-directory: notification-service
@@ -74,15 +86,159 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      - name: Run tests
-        run: ./gradlew test --no-daemon
+      - name: Run tests (exclude e2e & integration)
+        run: ./gradlew check -Djunit.jupiter.tags.exclude=e2e,integration --no-daemon
 
       - name: Build Docker image
         run: docker build -f Dockerfile -t notification-service:test ..
 
+  notification-service-go:
+    name: Notification Service (Go)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache: true
+
+      - name: Download dependencies
+        run: go mod download
+        working-directory: notification-service-go
+
+      - name: Run tests
+        run: go test ./...
+        working-directory: notification-service-go
+
+      - name: Build binary
+        run: CGO_ENABLED=0 go build -o notification-service-go .
+        working-directory: notification-service-go
+
+      # The Go Dockerfile COPYs ./notification-service-go, so the build
+      # context must be the repo root (not notification-service-go/).
+      - name: Build Docker image
+        run: docker build -f notification-service-go/Dockerfile -t notification-service-go:test .
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - run: corepack enable
+      - run: corepack prepare pnpm@${{ env.PNPM_VERSION }} --activate
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: frontend
+
+      - name: Typecheck
+        run: pnpm exec tsc --noEmit
+        working-directory: frontend
+
+      - name: Dialogue parser tests
+        run: pnpm test
+        working-directory: frontend
+
+      - name: Production build (static export)
+        run: pnpm build
+        working-directory: frontend
+
+      - name: Build Docker image
+        run: docker build -f frontend/Dockerfile -t frontend:test .
+
+  collector-service:
+    name: Collector Service (Python)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: 1234
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: collector-service/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+        working-directory: collector-service
+
+      - name: Run tests
+        run: python -m pytest tests/ -q
+        working-directory: collector-service
+        env:
+          COLLECTOR_TEST_DATABASE_URL: postgresql://postgres:1234@localhost:5432/postgres
+
+      # The Dockerfile COPYs ./collector-service, so the build
+      # context must be the repo root.
+      - name: Build Docker image
+        run: docker build -f collector-service/Dockerfile -t collector-service:test .
+
+  assistant-service:
+    name: Assistant Service (Python)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: 1234
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: assistant-service/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+        working-directory: assistant-service
+
+      - name: Run tests
+        run: python -m pytest tests/ -q
+        working-directory: assistant-service
+        env:
+          ASSISTANT_TEST_DATABASE_URL: postgresql://postgres:1234@localhost:5432/postgres
+
+      # The Dockerfile COPYs ./assistant-service, so the build
+      # context must be the repo root.
+      - name: Build Docker image
+        run: docker build -f assistant-service/Dockerfile -t assistant-service:test .
+
   gateway:
     name: Gateway
     runs-on: ubuntu-latest
+    services:
+      docker:
+        image: docker:24-dind
+        options: --privileged
     defaults:
       run:
         working-directory: gateway
@@ -96,13 +252,27 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - run: corepack enable
+      - run: corepack prepare pnpm@${{ env.PNPM_VERSION }} --activate
+
+      # Selenium view tests serve the prebuilt export from ../frontend/out.
+      - name: Build frontend export
+        run: |
+          cd ../frontend
+          pnpm install --frozen-lockfile
+          pnpm build
+
       - name: Install Chromium
         run: |
           sudo apt-get update
           sudo apt-get install -y chromium
 
-      - name: Run tests
-        run: ./gradlew test --no-daemon
+      - name: Run tests (exclude e2e & integration)
+        run: ./gradlew check -Djunit.jupiter.tags.exclude=e2e,integration --no-daemon
         env:
           CHROME_BIN: /usr/bin/chromium
 

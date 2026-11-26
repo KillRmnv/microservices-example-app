@@ -1,6 +1,7 @@
 package com.microservices_example_app.booking.model;
 
 import jakarta.persistence.*;
+import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -28,6 +29,10 @@ public class Event extends BaseEntity {
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "venue_id", nullable = false)
     private Venue venue;
+
+    @Column(nullable = false, length = 32)
+    @Builder.Default
+    private String category = "other";
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)

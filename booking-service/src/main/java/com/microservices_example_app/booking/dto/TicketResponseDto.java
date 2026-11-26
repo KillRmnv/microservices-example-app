@@ -15,11 +15,11 @@ import java.math.BigDecimal;
 @NoArgsConstructor
 @AllArgsConstructor
 public class TicketResponseDto {
-    private Integer id;
-    private Integer eventId;
+    private Long id;
+    private Long eventId;
     private String eventTitle;
     private Zone zone;
     private BigDecimal price;
     private Boolean active;
-    private Integer userId;
+    private Long userId;
 }

@@ -15,8 +15,8 @@ import java.io.Serializable;
 @AllArgsConstructor
 public class VenueResponseDto implements Serializable {
     private static final long serialVersionUID = 1L;
-    private Integer id;
-    private Integer townId;
+    private Long id;
+    private Long townId;
     private String townName;
     private String place;
     private Integer capacity;

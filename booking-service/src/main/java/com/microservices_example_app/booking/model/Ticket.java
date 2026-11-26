@@ -32,5 +32,5 @@ public class Ticket extends BaseEntity {
     private boolean active;
 
     @Column(name = "user_id")
-    private Integer userId;
+    private Long userId;
 }

@@ -7,7 +7,6 @@ import jakarta.mail.internet.MimeMessage;
 import jakarta.mail.internet.MimeMultipart;
 import org.junit.jupiter.api.*;
 import org.openqa.selenium.By;
-import org.openqa.selenium.JavascriptExecutor;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.chrome.ChromeDriver;
@@ -15,16 +14,11 @@ import org.openqa.selenium.chrome.ChromeOptions;
 import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
 
-import java.io.OutputStream;
-import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Date;
 import java.util.Properties;
-
-import com.sun.net.httpserver.HttpServer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -33,10 +27,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 class RegistrationE2ETest {
 
     private static WebDriver driver;
-    private static HttpServer server;
 
-    private static final Path STATIC_DIR = Path.of("src/main/resources/static");
     private static final String GATEWAY_URL = "http://localhost:8080";
+    private static final String FRONTEND_URL = frontendUrl();
     private static final String GMAIL_HOST = "imap.gmail.com";
     private static final int GMAIL_PORT = 993;
     private static final int EMAIL_WAIT_SECONDS = 120;
@@ -47,6 +40,11 @@ class RegistrationE2ETest {
     private static String testPassword;
 
     private record EmailData(String subject, String from, String body) {}
+
+    private static String frontendUrl() {
+        String url = System.getenv("FRONTEND_URL");
+        return url != null && !url.isBlank() ? url : "http://localhost:3000";
+    }
 
     @BeforeAll
     static void setup() throws Exception {
@@ -62,7 +60,6 @@ class RegistrationE2ETest {
 
         startDockerCompose();
         startBrowser();
-        startStaticServer();
     }
 
     @AfterAll
@@ -70,61 +67,41 @@ class RegistrationE2ETest {
         if (driver != null) {
             try { driver.quit(); } catch (Exception ignored) {}
         }
-        if (server != null) {
-            server.stop(0);
-        }
         stopDockerCompose();
     }
 
     @Test
     @Order(1)
-    @DisplayName("Register CUSTOMER via gateway frontend")
+    @DisplayName("Register CUSTOMER via new frontend")
     void testRegisterCustomer() {
-        driver.get(GATEWAY_URL);
-        waitForPageLoad();
+        // The new frontend registers CUSTOMER only and redirects to /profile.
+        driver.get(FRONTEND_URL + "/register");
 
-        ((JavascriptExecutor) driver).executeScript("window.location.hash = '/register'");
-        waitForPageLoad();
+        WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(15));
+        wait.until(ExpectedConditions.presenceOfElementLocated(
+                By.cssSelector("[data-testid='register-submit']")));
 
-        WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(10));
-        wait.until(ExpectedConditions.presenceOfElementLocated(By.id("register-form")));
+        setValue("[data-testid='register-name']", testUsername);
+        setValue("[data-testid='register-email']", gmailUsername);
+        setValue("[data-testid='register-password']", testPassword);
+        setValue("[data-testid='register-confirm']", testPassword);
 
-        WebElement usernameInput = driver.findElement(By.id("username"));
-        WebElement emailInput = driver.findElement(By.id("email"));
-        WebElement passwordInput = driver.findElement(By.id("password"));
-        WebElement confirmPasswordInput = driver.findElement(By.id("confirm-password"));
+        driver.findElement(By.cssSelector("[data-testid='register-submit']")).click();
 
-        usernameInput.clear();
-        usernameInput.sendKeys(testUsername);
+        WebDriverWait navWait = new WebDriverWait(driver, Duration.ofSeconds(30));
+        navWait.until(d -> d.getCurrentUrl().contains("/profile"));
 
-        emailInput.clear();
-        emailInput.sendKeys(gmailUsername);
+        assertThat(driver.getCurrentUrl()).contains("/profile");
+        WebElement profile = navWait.until(
+                ExpectedConditions.presenceOfElementLocated(
+                        By.cssSelector("[data-testid='profile-page']")));
+        assertThat(profile).isNotNull();
+    }
 
-        passwordInput.clear();
-        passwordInput.sendKeys(testPassword);
-
-        confirmPasswordInput.clear();
-        confirmPasswordInput.sendKeys(testPassword);
-
-        waitForPageLoad();
-
-        ((JavascriptExecutor) driver).executeScript(
-                "document.getElementById('role').value = 'CUSTOMER'");
-
-        waitForPageLoad();
-
-        WebElement submitBtn = driver.findElement(By.cssSelector("#register-form button[type='submit']"));
-        submitBtn.click();
-
-        WebDriverWait navWait = new WebDriverWait(driver, Duration.ofSeconds(15));
-        navWait.until(d -> {
-            String hash = (String) ((JavascriptExecutor) d).executeScript("return window.location.hash");
-            return hash != null && hash.contains("/login");
-        });
-
-        String currentHash = (String) ((JavascriptExecutor) driver)
-                .executeScript("return window.location.hash");
-        assertThat(currentHash).contains("/login");
+    private static void setValue(String cssSelector, String value) {
+        WebElement input = driver.findElement(By.cssSelector(cssSelector));
+        input.clear();
+        input.sendKeys(value);
     }
 
     @Test
@@ -253,20 +230,26 @@ class RegistrationE2ETest {
     }
 
     private static void waitForServicesHealthy() throws Exception {
-        System.out.println("Waiting for services to become healthy...");
-        long deadline = System.currentTimeMillis() + 180_000L;
+        waitForUrl(GATEWAY_URL, "Gateway", 180_000L);
+        // Frontend proxies /users and /booking to the gateway, so check it last.
+        waitForUrl(FRONTEND_URL, "Frontend", 180_000L);
+    }
+
+    private static void waitForUrl(String url, String name, long timeoutMs) throws Exception {
+        System.out.println("Waiting for " + name + " at " + url + "...");
+        long deadline = System.currentTimeMillis() + timeoutMs;
 
         while (System.currentTimeMillis() < deadline) {
             ProcessBuilder httpCheck = new ProcessBuilder(
                     "curl", "-s", "-o", "/dev/null", "-w", "%{http_code}",
-                    GATEWAY_URL);
+                    url);
             httpCheck.redirectErrorStream(true);
             Process httpProcess = httpCheck.start();
             String httpCode = new String(httpProcess.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
             httpProcess.waitFor();
 
             if (httpCode.equals("200")) {
-                System.out.println("Gateway is healthy!");
+                System.out.println(name + " is healthy!");
                 Thread.sleep(3000);
                 return;
             }
@@ -274,7 +257,7 @@ class RegistrationE2ETest {
             System.out.print(".");
             Thread.sleep(5000);
         }
-        throw new RuntimeException("Gateway did not become healthy within timeout");
+        throw new RuntimeException(name + " did not become healthy within timeout");
     }
 
     private static void stopDockerCompose() {
@@ -303,43 +286,5 @@ class RegistrationE2ETest {
         driver = new ChromeDriver(options);
         driver.manage().timeouts().pageLoadTimeout(Duration.ofSeconds(30));
         driver.manage().timeouts().scriptTimeout(Duration.ofSeconds(15));
-    }
-
-    private static void startStaticServer() throws Exception {
-        server = HttpServer.create(new InetSocketAddress(0), 0);
-        server.createContext("/", exchange -> {
-            String path = exchange.getRequestURI().getPath();
-            if (path.equals("/")) path = "/index.html";
-
-            Path file = STATIC_DIR.resolve(path.substring(1));
-            if (Files.exists(file) && !Files.isDirectory(file)) {
-                byte[] bytes = Files.readAllBytes(file);
-                String contentType = guessContentType(path);
-                exchange.getResponseHeaders().set("Content-Type", contentType + "; charset=UTF-8");
-                exchange.sendResponseHeaders(200, bytes.length);
-                try (OutputStream os = exchange.getResponseBody()) {
-                    os.write(bytes);
-                }
-            } else {
-                byte[] notFound = "Not Found".getBytes();
-                exchange.sendResponseHeaders(404, notFound.length);
-                try (OutputStream os = exchange.getResponseBody()) {
-                    os.write(notFound);
-                }
-            }
-        });
-        server.start();
-    }
-
-    private void waitForPageLoad() {
-        try { Thread.sleep(1000); } catch (InterruptedException ignored) {}
-    }
-
-    private static String guessContentType(String path) {
-        if (path.endsWith(".html")) return "text/html";
-        if (path.endsWith(".js")) return "application/javascript";
-        if (path.endsWith(".css")) return "text/css";
-        if (path.endsWith(".json")) return "application/json";
-        return "application/octet-stream";
     }
 }

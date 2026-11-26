@@ -8,8 +8,8 @@ import org.springframework.stereotype.Repository;
 import java.util.List;
 
 @Repository
-public interface VenueRepository extends JpaRepository<Venue, Integer>, JpaSpecificationExecutor<Venue> {
-    List<Venue> findByTownId(Integer townId);
+public interface VenueRepository extends JpaRepository<Venue, Long>, JpaSpecificationExecutor<Venue> {
+    List<Venue> findByTownId(Long townId);
 
     List<Venue> findByPlaceContainingIgnoreCase(String place);
 }

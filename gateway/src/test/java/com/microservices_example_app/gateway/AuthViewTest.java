@@ -3,8 +3,6 @@ package com.microservices_example_app.gateway;
 import org.junit.jupiter.api.Test;
 import org.openqa.selenium.WebElement;
 
-import java.util.List;
-
 import static org.assertj.core.api.Assertions.assertThat;
 
 class AuthViewTest extends SeleniumTestBase {
@@ -12,200 +10,79 @@ class AuthViewTest extends SeleniumTestBase {
     @Test
     void shouldRenderLoginForm() {
         navigateTo("/login");
-        assertThat(find("#login-form")).isNotNull();
+        assertThat(findByTestId("login-email").getAttribute("type")).isEqualTo("email");
+        assertThat(findByTestId("login-password").getAttribute("type")).isEqualTo("password");
+        assertThat(findByTestId("login-submit").getText()).isEqualTo("Войти");
     }
 
     @Test
-    void shouldHaveLoginEmailInput() {
+    void shouldRequireLoginInputs() {
         navigateTo("/login");
-        WebElement email = find("#email");
-        assertThat(email.getAttribute("type")).isEqualTo("email");
+        assertThat(findByTestId("login-email").getAttribute("required")).isNotNull();
+        assertThat(findByTestId("login-password").getAttribute("required")).isNotNull();
     }
 
     @Test
-    void shouldHaveLoginPasswordInput() {
+    void shouldLinkRegisterAndForgotPasswordFromLogin() {
         navigateTo("/login");
-        WebElement password = find("#password");
-        assertThat(password.getAttribute("type")).isEqualTo("password");
-    }
-
-    @Test
-    void shouldHaveLoginSubmitButton() {
-        navigateTo("/login");
-        WebElement btn = find("#login-form button[type='submit']");
-        assertThat(btn.getText()).isEqualTo("Войти");
-    }
-
-    @Test
-    void shouldHaveLoginErrorDiv() {
-        navigateTo("/login");
-        WebElement errorDiv = find("#login-error");
-        assertThat(errorDiv.getAttribute("class")).contains("hidden");
-    }
-
-    @Test
-    void shouldHaveForgotPasswordLink() {
-        navigateTo("/login");
-        WebElement link = find("a[href='#/forgot-password']");
-        assertThat(link.getText()).isEqualTo("Забыли пароль?");
-    }
-
-    @Test
-    void shouldHaveRegisterLink() {
-        navigateTo("/login");
-        WebElement link = find("a[href='#/register']");
-        assertThat(link.getText()).isEqualTo("Зарегистрироваться");
-    }
-
-    @Test
-    void shouldHaveLoginFormTitle() {
-        navigateTo("/login");
-        assertThat(find(".card-title").getText()).isEqualTo("Вход в систему");
-    }
-
-    @Test
-    void shouldHaveFormGroups() {
-        navigateTo("/login");
-        List<WebElement> groups = findAll(".form-group");
-        assertThat(groups).hasSize(2);
-    }
-
-    @Test
-    void shouldHaveLoginLabels() {
-        navigateTo("/login");
-        List<WebElement> labels = findAll("#login-form label");
-        assertThat(labels).hasSize(2);
-        assertThat(labels.get(0).getText()).isEqualTo("Email");
-        assertThat(labels.get(1).getText()).isEqualTo("Пароль");
+        assertThat(find("a[href='/register']").getText()).isEqualTo("Оформить");
+        assertThat(find("a[href='/forgot-password']").getText()).isEqualTo("Забыли пароль?");
     }
 
     @Test
     void shouldRenderRegisterForm() {
         navigateTo("/register");
-        assertThat(find("#register-form")).isNotNull();
+        assertThat(findByTestId("register-name")).isNotNull();
+        assertThat(findByTestId("register-email").getAttribute("type")).isEqualTo("email");
+        assertThat(findByTestId("register-password").getAttribute("type")).isEqualTo("password");
+        assertThat(findByTestId("register-confirm").getAttribute("type")).isEqualTo("password");
+        assertThat(findByTestId("register-submit").getText()).isEqualTo("Зарегистрироваться");
     }
 
     @Test
-    void shouldHaveRegisterUsernameInput() {
+    void shouldRequirePasswordMinLengthOnRegister() {
         navigateTo("/register");
-        WebElement username = find("#username");
-        assertThat(username.getAttribute("type")).isEqualTo("text");
+        assertThat(findByTestId("register-password").getAttribute("minlength")).isEqualTo("6");
+        assertThat(findByTestId("register-confirm").getAttribute("minlength")).isEqualTo("6");
     }
 
     @Test
-    void shouldHaveRegisterEmailInput() {
+    void shouldShowPasswordMismatchErrorWithoutBackend() {
         navigateTo("/register");
-        WebElement email = find("#email");
-        assertThat(email.getAttribute("type")).isEqualTo("email");
+        findByTestId("register-name").sendKeys("Читатель");
+        findByTestId("register-email").sendKeys("reader@mail.com");
+        findByTestId("register-password").sendKeys("secret123");
+        findByTestId("register-confirm").sendKeys("other123");
+        findByTestId("register-submit").click();
+        assertThat(find(".auth-error").getText()).isEqualTo("Пароли не совпадают");
     }
 
     @Test
-    void shouldHaveRegisterPasswordInput() {
+    void shouldLinkLoginFromRegister() {
         navigateTo("/register");
-        WebElement password = find("#password");
-        assertThat(password.getAttribute("type")).isEqualTo("password");
+        assertThat(find("a[href='/login']").getText()).contains("Войти");
     }
 
     @Test
-    void shouldHaveConfirmPasswordInput() {
-        navigateTo("/register");
-        WebElement confirmPassword = find("#confirm-password");
-        assertThat(confirmPassword.getAttribute("type")).isEqualTo("password");
-    }
-
-    @Test
-    void shouldHaveRoleSelect() {
-        navigateTo("/register");
-        assertThat(find("#role")).isNotNull();
-    }
-
-    @Test
-    void shouldHaveRegisterSubmitButton() {
-        navigateTo("/register");
-        WebElement btn = find("#register-form button[type='submit']");
-        assertThat(btn.getText()).isEqualTo("Зарегистрироваться");
-    }
-
-    @Test
-    void shouldHaveRegisterErrorDiv() {
-        navigateTo("/register");
-        WebElement errorDiv = find("#register-error");
-        assertThat(errorDiv.getAttribute("class")).contains("hidden");
-    }
-
-    @Test
-    void shouldHavePasswordMatchError() {
-        navigateTo("/register");
-        assertThat(find("#password-match-error").getAttribute("textContent")).isEqualTo("Пароли не совпадают");
-    }
-
-    @Test
-    void shouldHaveRegisterTitle() {
-        navigateTo("/register");
-        assertThat(find(".card-title").getText()).isEqualTo("Регистрация");
-    }
-
-    @Test
-    void shouldHaveLoginLinkOnRegister() {
-        navigateTo("/register");
-        WebElement link = find("a[href='#/login']");
-        assertThat(link.getText()).isEqualTo("Войти");
-    }
-
-    @Test
-    void shouldHaveUsernameMinLength() {
-        navigateTo("/register");
-        assertThat(find("#username").getAttribute("minlength")).isEqualTo("3");
-    }
-
-    @Test
-    void shouldHavePasswordMinLength() {
-        navigateTo("/register");
-        assertThat(find("#password").getAttribute("minlength")).isEqualTo("6");
-    }
-
-    @Test
-    void shouldHaveEmailRequired() {
-        navigateTo("/login");
-        assertThat(find("#email").getAttribute("required")).isNotNull();
-    }
-
-    @Test
-    void shouldHavePasswordRequired() {
-        navigateTo("/login");
-        assertThat(find("#password").getAttribute("required")).isNotNull();
-    }
-
-    @Test
-    void shouldHaveForgotPasswordForm() {
+    void shouldRenderForgotPasswordForm() {
         navigateTo("/forgot-password");
-        assertThat(find(".card")).isNotNull();
+        assertThat(findByTestId("forgot-email").getAttribute("type")).isEqualTo("email");
+        assertThat(findByTestId("forgot-submit").getText()).isEqualTo("Отправить ссылку");
     }
 
     @Test
-    void shouldHaveResetPasswordForm() {
+    void shouldRenderResetPasswordForm() {
         navigateTo("/reset-password");
-        assertThat(find(".card")).isNotNull();
+        assertThat(findByTestId("reset-token")).isNotNull();
+        assertThat(findByTestId("reset-password").getAttribute("type")).isEqualTo("password");
+        assertThat(findByTestId("reset-confirm").getAttribute("type")).isEqualTo("password");
+        assertThat(findByTestId("reset-submit").getText()).isEqualTo("Сохранить пароль");
     }
 
     @Test
-    void shouldShowNavLinksOnLoginPage() {
+    void shouldShowMastheadOnLoginPage() {
         navigateTo("/login");
-        List<WebElement> navLinks = findAll("#main-nav a");
-        assertThat(navLinks).isNotEmpty();
-    }
-
-    @Test
-    void shouldHaveRegisterFormLabels() {
-        navigateTo("/register");
-        List<WebElement> labels = findAll("#register-form label");
-        assertThat(labels.size()).isGreaterThanOrEqualTo(4);
-    }
-
-    @Test
-    void shouldHaveRegisterFormGroups() {
-        navigateTo("/register");
-        List<WebElement> groups = findAll(".form-group");
-        assertThat(groups.size()).isGreaterThanOrEqualTo(5);
+        WebElement brand = find(".auth-logo");
+        assertThat(brand.getText()).isEqualTo("ДОСУГ");
     }
 }

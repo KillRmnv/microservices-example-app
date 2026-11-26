@@ -46,6 +46,10 @@ dependencies {
 	implementation "com.password4j:password4j:${password4jVersion}"
 	implementation "com.bucket4j:bucket4j-core:${bucket4jVersion}"
 
+	implementation "net.logstash.logback:logstash-logback-encoder:${logstashEncoderVersion}"
+
+	implementation "org.springdoc:springdoc-openapi-starter-webmvc-ui:${springdocVersion}"
+
 	compileOnly "org.projectlombok:lombok:${lombokVersion}"
 	annotationProcessor "org.projectlombok:lombok:${lombokVersion}"
 	testCompileOnly "org.projectlombok:lombok:${lombokVersion}"
@@ -61,5 +65,19 @@ dependencies {
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 tasks.named('test') {
-	useJUnitPlatform()
+	useJUnitPlatform {
+		// CI-style tag filtering, e.g.
+		// -Djunit.jupiter.tags.exclude=e2e,integration
+		// -Djunit.jupiter.tags.include=e2e
+		def excluded = (System.getProperty('junit.jupiter.tags.exclude') ?: '')
+				.split(',').collect { it.trim() }.findAll { it }
+		if (!excluded.isEmpty()) {
+			excludeTags(excluded.toArray(new String[0]))
+		}
+		def included = (System.getProperty('junit.jupiter.tags.include') ?: '')
+				.split(',').collect { it.trim() }.findAll { it }
+		if (!included.isEmpty()) {
+			includeTags(included.toArray(new String[0]))
+		}
+	}
 }

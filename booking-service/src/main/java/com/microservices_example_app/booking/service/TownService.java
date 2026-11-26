@@ -9,6 +9,7 @@ import com.microservices_example_app.booking.model.Event;
 import com.microservices_example_app.booking.model.Ticket;
 import com.microservices_example_app.booking.model.Town;
 import com.microservices_example_app.booking.model.Venue;
+import com.microservices_example_app.booking.producers.BookingCatalogProducer;
 import com.microservices_example_app.booking.producers.NotificationKafkaUserProducer;
 import com.microservices_example_app.booking.repository.EventRepository;
 import com.microservices_example_app.booking.repository.TicketRepository;
@@ -36,6 +37,7 @@ public class TownService {
     private final EventRepository eventRepository;
     private final TicketRepository ticketRepository;
     private final NotificationKafkaUserProducer kafkaUserProducer;
+    private final BookingCatalogProducer catalogProducer;
 
     @Value("${spring.application.name}")
     private String serviceName;
@@ -50,7 +52,7 @@ public class TownService {
     }
 
     @Transactional
-    public TownResponseDto getById(Integer id) {
+    public TownResponseDto getById(Long id) {
         log.info("Fetching town with id: {}", id);
         Town town = townRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("Town not found"));
@@ -84,29 +86,30 @@ public class TownService {
             @CacheEvict(cacheNames = "eventSearch", allEntries = true)
     })
     @Transactional
-    public void delete(Integer id) {
+    public void delete(Long id) {
         log.info("Deleting town with id: {}", id);
 
         townRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("Town not found"));
 
-        List<Integer> venueIds = venueRepository.findByTownId(id)
+        List<Long> venueIds = venueRepository.findByTownId(id)
                 .stream().map(Venue::getId).toList();
 
         List<String> eventTitles = List.of();
-        List<Integer> userIds = List.of();
+        List<Long> userIds = List.of();
 
         if (!venueIds.isEmpty()) {
             List<Event> events = eventRepository.findByVenueIdIn(venueIds);
 
             if (!events.isEmpty()) {
-                List<Integer> eventIds = events.stream().map(Event::getId).toList();
+                List<Long> eventIds = events.stream().map(Event::getId).toList();
                 eventTitles = events.stream().map(Event::getTitle).toList();
                 userIds = ticketRepository.findByEventIdInAndUserIdIsNotNull(eventIds)
                         .stream()
                         .map(Ticket::getUserId)
                         .distinct()
                         .toList();
+                events.forEach(catalogProducer::sendDeleted);
             }
         }
 

@@ -1,0 +1,280 @@
+"""JSON-LD Event -> RawEvent normalization.
+
+Dates: naive values use the configured timezone, stored as UTC-aware.
+Prices: numbers in the configured currency; "Уточняйте" -> None.
+Cities: only the configured target city passes (MVP catalog scope).
+"""
+from __future__ import annotations
+
+import logging
+import re
+from datetime import datetime
+from urllib.parse import quote, urljoin
+from zoneinfo import ZoneInfo
+
+from ..core.config import settings
+from ..models.catalog import CATEGORIES, RawEvent, VenueRow  # re-exported for adapters
+
+log = logging.getLogger(__name__)
+
+PRICE_RE = re.compile(r"(\d[\d\s]*(?:[.,]\d+)?)")
+AGE_RE = re.compile(r"(\d+)\s*\+")
+NON_PRICE = re.compile(r"уточняйте|договорная|бесплатно|free", re.I)
+
+# Sanity bounds: a ticket above this is text noise (phone, year range,
+# concatenated digits), not a price. Keeps NUMERIC(12,2) safe.
+MAX_PRICE = 1_000_000.0
+MAX_AGE = 21
+# Capacity above this is a scraped number glued to something else.
+MAX_CAPACITY = 10_000_000
+# schema.org availability tokens (bare or as a schema.org URL) -> our vocabulary.
+AVAILABILITY_MAP = {
+    "instock": "in_stock",
+    "limitedavailability": "limited",
+    "soldout": "sold_out",
+    "outofstock": "sold_out",
+    "preorder": "unknown",
+}
+CANCELLED_RE = re.compile(r"eventcancelled", re.I)
+TICKETPRO_CDN = "https://cdn.ticketpro.by"
+
+
+def _ticketpro_image(data: dict) -> str | None:
+    key = data.get("coverS3Key") or data.get("roundCoverS3Key")
+    if not isinstance(key, str) or not key.strip():
+        return None
+    key = key.strip()
+    if key.startswith(("http://", "https://")):
+        return key
+    # S3 keys contain spaces and Cyrillic; the CDN expects them encoded.
+    return f"{TICKETPRO_CDN}/{quote(key.lstrip('/'), safe='/')}"
+
+
+def parse_datetime(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    text = value.strip()
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=ZoneInfo(settings.default_timezone))
+    return parsed.astimezone(ZoneInfo("UTC"))
+
+
+def parse_price(text: str | None) -> tuple[float | None, float | None]:
+    """Returns (min, max). 'Уточняйте'/free -> (None, None); single -> (v, v)."""
+    if not text or NON_PRICE.search(text):
+        return None, None
+    numbers = []
+    for match in PRICE_RE.findall(text):
+        try:
+            value = float(match.replace(" ", "").replace(",", "."))
+        except ValueError:
+            continue
+        if 0 <= value <= MAX_PRICE:
+            numbers.append(value)
+    if not numbers:
+        return None, None
+    return min(numbers), max(numbers)
+
+
+def parse_age(text: str | None) -> int | None:
+    if not text:
+        return None
+    match = AGE_RE.search(text)
+    if match is None:
+        return None
+    age = int(match.group(1))
+    return age if 0 <= age <= MAX_AGE else None
+
+
+def parse_availability(value) -> str | None:
+    """schema.org InStock/LimitedAvailability/SoldOut/PreOrder -> our values.
+
+    Absent -> None; a present but unrecognised token -> "unknown" so callers
+    can tell "no claim" from "a claim we cannot map".
+    """
+    if not isinstance(value, str) or not value.strip():
+        return None
+    token = re.sub(r"[^a-z]", "", value.rsplit("/", 1)[-1].casefold())
+    if not token:
+        return None
+    return AVAILABILITY_MAP.get(token, "unknown")
+
+
+def parse_capacity(value) -> int | None:
+    """maximumAttendeeCapacity / remainingAttendeeCapacity with sanity bounds."""
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        number = int(float(str(value).strip()))
+    except (TypeError, ValueError):
+        return None
+    return number if 0 <= number <= MAX_CAPACITY else None
+
+
+def availability_for(data: dict, offers: dict | None = None
+                     ) -> tuple[str | None, int | None, int | None, str]:
+    """(availability, capacity, seats_left, status) from schema.org fields."""
+    offers = offers or _offers(data.get("offers"))
+    availability = parse_availability(offers.get("availability"))
+    capacity = parse_capacity(data.get("maximumAttendeeCapacity"))
+    seats_left = parse_capacity(data.get("remainingAttendeeCapacity"))
+    if capacity is not None and seats_left is not None and seats_left > capacity:
+        seats_left = None  # inconsistent pair: keep the capacity only
+    status = "cancelled" if CANCELLED_RE.search(
+        str(data.get("eventStatus") or "")) else "scheduled"
+    return availability, capacity, seats_left, status
+
+
+def _location_strings(location) -> str:
+    """Flatten schema.org location into one searchable string."""
+    if isinstance(location, str):
+        return location
+    if not isinstance(location, dict):
+        return ""
+    parts = [str(location.get("name", ""))]
+    address = location.get("address", "")
+    if isinstance(address, dict):
+        parts += [str(address.get(k, "")) for k in
+                  ("streetAddress", "addressLocality", "addressRegion", "addressCountry")]
+    else:
+        parts.append(str(address))
+    return " ".join(parts)
+
+
+def is_target_city(location, city: str | None = None) -> bool:
+    target = (city or settings.default_city).casefold()
+    text = _location_strings(location).casefold()
+    if target in text:
+        return True
+    return target == "минск" and "minsk" in text
+
+
+def _first_image(image) -> str | None:
+    if isinstance(image, str):
+        return image.strip() or None
+    if isinstance(image, dict):
+        for key in ("url", "contentUrl", "@id"):
+            value = image.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return None
+    if isinstance(image, list):
+        for item in image:
+            found = _first_image(item)
+            if found:
+                return found
+    return None
+
+
+def _offers(offers) -> dict:
+    if isinstance(offers, list):
+        offers = offers[0] if offers else {}
+    return offers if isinstance(offers, dict) else {}
+
+
+def normalize_next_event(source: str, source_id: str, source_url: str,
+                         category: str, data: dict,
+                         now_utc: datetime) -> RawEvent | None:
+    """Ticketpro Next.js event card (eventsPage.items) -> RawEvent."""
+    venue = data.get("venue") or {}
+    city = ((venue.get("city") or {}).get("name") or "")
+    if (city or "").casefold() != settings.default_city.casefold():
+        return None
+    start_at = parse_datetime(data.get("startTime"))
+    end_at = parse_datetime(data.get("endTime"))
+    if end_at is not None and end_at < now_utc and (
+            start_at is None or start_at < now_utc):
+        return None
+    title = (data.get("title") or "").strip()
+    if not title:
+        return None
+    price_min = data.get("minPrice")
+    price_max = data.get("maxPrice")
+    try:
+        price_min = float(price_min) if price_min is not None else None
+    except (TypeError, ValueError):
+        price_min = None
+    try:
+        price_max = float(price_max) if price_max is not None else None
+    except (TypeError, ValueError):
+        price_max = None
+    return RawEvent(
+        source=source,
+        source_id=source_id,
+        source_url=source_url,
+        title=title,
+        description=None,
+        category=category if category in CATEGORIES else "other",
+        start_at=start_at,
+        end_at=end_at,
+        venue_name=(venue.get("title") or None),
+        address=(venue.get("addressLine") or None),
+        city=settings.default_city,
+        price_min=price_min,
+        price_max=price_max,
+        currency=settings.default_currency,
+        age_limit=parse_age(str(data.get("ageRange", "") or "")),
+        image_url=_ticketpro_image(data),
+        raw=data,
+    )
+
+
+def normalize_jsonld(source: str, source_id: str, source_url: str, category: str,
+                     data: dict, now_utc: datetime) -> RawEvent | None:
+    """Returns None when the card must be skipped (past, non-Minsk, ...)."""
+    location = data.get("location", "")
+    if not is_target_city(location):
+        return None
+    end_at = parse_datetime(data.get("endDate"))
+    if end_at is not None and end_at < now_utc:
+        return None  # stale repertoire entry (Relax keeps years-old shows)
+    offers = _offers(data.get("offers"))
+    price_min, price_max = parse_price(str(offers.get("price", "") or ""))
+    if price_min is None:
+        low, _ = parse_price(str(offers.get("lowPrice", "") or ""))
+        _, high = parse_price(str(offers.get("highPrice", "") or ""))
+        price_min, price_max = low, high
+    start_at = parse_datetime(data.get("startDate"))
+    if end_at is not None and start_at is not None and end_at < start_at:
+        # Sources often publish a date-only endDate (midnight); a backwards
+        # end is garbage, not information — drop it instead of the event.
+        log.debug("dropping backwards end_at %s for start %s", end_at, start_at)
+        end_at = None
+    geo = (location.get("geo", {}) if isinstance(location, dict) else {}) or {}
+    title = (data.get("name") or "").strip()
+    if not title:
+        return None
+    image_url = _first_image(data.get("image"))
+    if image_url and image_url.startswith("/"):
+        image_url = urljoin(data.get("url") or source_url, image_url)
+    availability, capacity, seats_left, status = availability_for(data, offers)
+    return RawEvent(
+        source=source,
+        source_id=source_id,
+        source_url=data.get("url") or source_url,
+        title=title,
+        description=(data.get("description") or "").strip() or None,
+        category=category if category in CATEGORIES else "other",
+        start_at=start_at,
+        end_at=end_at,
+        venue_name=(location.get("name") if isinstance(location, dict) else None),
+        address=_location_strings(location) or None,
+        city=settings.default_city,
+        price_min=price_min,
+        price_max=price_max,
+        currency=str(offers.get("priceCurrency") or settings.default_currency),
+        age_limit=parse_age(str(data.get("typicalAgeRange", "") or "")),
+        ticket_url=offers.get("url") if isinstance(offers.get("url"), str) else None,
+        image_url=image_url,
+        organizer=(data.get("organizer") or {}).get("name")
+        if isinstance(data.get("organizer"), dict) else None,
+        status=status,
+        availability=availability,
+        capacity=capacity,
+        seats_left=seats_left,
+        raw=data,
+    )

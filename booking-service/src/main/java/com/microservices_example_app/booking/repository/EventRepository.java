@@ -4,21 +4,30 @@ import com.microservices_example_app.booking.model.Event;
 import com.microservices_example_app.booking.model.EventAdmissionMode;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+import jakarta.persistence.LockModeType;
+import java.util.Optional;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
 import java.util.List;
 
 @Repository
-public interface EventRepository extends JpaRepository<Event, Integer>, JpaSpecificationExecutor<Event> {
+public interface EventRepository extends JpaRepository<Event, Long>, JpaSpecificationExecutor<Event> {
     List<Event> findByTitleContainingIgnoreCase(String title);
 
-    List<Event> findByVenueId(Integer venueId);
+    List<Event> findByVenueId(Long venueId);
 
     List<Event> findByAdmissionMode(EventAdmissionMode admissionMode);
 
     List<Event> findByStartsAtBetween(LocalDateTime from, LocalDateTime to);
 
-    List<Event> findByVenueIdIn(List<Integer> venueIds);
+    List<Event> findByVenueIdIn(List<Long> venueIds);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select e from Event e where e.id = :id")
+    Optional<Event> findByIdForUpdate(@Param("id") Long id);
 
 }

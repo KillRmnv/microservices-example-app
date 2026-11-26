@@ -12,7 +12,7 @@ import lombok.Setter;
 @NoArgsConstructor
 @AllArgsConstructor
 public class SeatSearchRequestDto {
-    private Integer venueId;
+    private Long venueId;
     private String sector;
     private String row;
     private String number;

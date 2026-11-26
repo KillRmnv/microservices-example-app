@@ -30,3 +30,13 @@ replay_pid*
 build
 .gradle
 *.iml
+
+AGENTS.md
+course.md
+Latex_template/
+FRONTEND.*
+places.md
+SCRAPPING.md
+__pycache__/
+*.pyc
+.pytest_cache/

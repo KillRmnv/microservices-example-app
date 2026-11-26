@@ -118,7 +118,7 @@ class UserSpecificationTest {
 
     @Test
     void hasRole_shouldReturnPredicateWhenValid() {
-        Role role = Role.builder().id(1).name("CUSTOMER").build();
+        Role role = Role.builder().id(1L).name("CUSTOMER").build();
         Specification<User> spec = UserSpecification.hasRole(role);
         Predicate dummy = mock(Predicate.class);
         when(cb.equal(root.get("userRole"), role)).thenReturn(dummy);

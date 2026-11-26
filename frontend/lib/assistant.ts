@@ -1,0 +1,163 @@
+'use client'
+
+// Assistant backend client. Same-origin calls: /assistant/* is proxied
+// to the gateway by nginx (see frontend/nginx.conf).
+// NEXT_PUBLIC_ASSISTANT_MOCK=true keeps the old demo scenarios.
+import { ApiError, tokenStore } from './api'
+import type { StateContract } from './types'
+
+// Enrichment is optional: older assistant responses omit these fields and
+// must keep rendering exactly as before.
+export interface DialogResultCard {
+  event_id: string
+  kind?: 'event' | 'venue'
+  detail_id?: string
+  title: string
+  meta: string
+  price: string
+  source?: string
+  rating?: number | null
+  review_count?: number | null
+  address?: string
+  hours?: string
+  seats_left?: number | null
+  fits_party?: boolean | null
+  status?: string
+  /** Film-only extras: present only for cinema rows. */
+  next_session_at?: string | null
+  cinema?: string | null
+  film_genre?: string[] | null
+  film_duration_min?: number | null
+}
+
+export interface DialogPlanStep {
+  time: string
+  title: string
+  detail: string
+  source: string
+  kind?: 'event' | 'venue'
+  detail_id?: string
+  event_id?: string
+  bookable?: boolean
+  rating?: number | null
+  review_count?: number | null
+  address?: string
+  hours?: string
+  seats_left?: number | null
+  fits_party?: boolean | null
+  status?: string
+}
+
+export interface DialogMessage {
+  kind: 'assistant' | 'filters' | 'results' | 'plan' | 'weather'
+  text: string
+  results?: DialogResultCard[]
+  weather?: string
+  plan?: DialogPlanStep[]
+}
+
+export interface DialogResponse {
+  contract: StateContract
+  messages: DialogMessage[]
+}
+
+export interface Hold {
+  id: string
+  session_id: string
+  event_id: number
+  zone: string
+  price: number
+  party_size: number
+  status: string
+}
+
+export function isMockMode(): boolean {
+  return process.env.NEXT_PUBLIC_ASSISTANT_MOCK === 'true'
+}
+
+async function postJson<T>(path: string, body: unknown): Promise<T> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  const token = tokenStore.token
+  if (token) headers.Authorization = `Bearer ${token}`
+  const response = await fetch(path, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    let message = `HTTP ${response.status}`
+    const data = await response.json().catch(() => null)
+    if (data && typeof (data as { detail?: unknown }).detail === 'string') {
+      message = (data as { detail: string }).detail
+    } else if (data && typeof (data as { message?: unknown }).message === 'string') {
+      message = (data as { message: string }).message
+    }
+    throw new ApiError(message, response.status)
+  }
+  return (await response.json()) as T
+}
+
+export function sendDialogue(contract: StateContract): Promise<DialogResponse> {
+  return postJson<DialogResponse>('/assistant/dialogue/v2', contract)
+}
+
+/** LLM structure stage; throws when the model backend is unavailable. */
+export function structureQuery(query: string, language = 'ru', sessionId?: string, forceReasoning?: boolean, previous?: StateContract): Promise<QueryResponse> {
+  return postJson<QueryResponse>('/assistant/query', { query, language, session_id: sessionId, force_reasoning: forceReasoning, contract: previous })
+}
+
+export interface QueryResponse {
+  contract: StateContract
+  reasoning_used: boolean
+  complex: boolean
+  intent: string
+  supported: boolean
+  reply: string | null
+}
+
+/** Reasoning plan stage: explicit evening itinerary, may take minutes. */
+export function requestPlan(contract: StateContract,
+                            contexts: StateContract[] = []): Promise<DialogResponse> {
+  return postJson<DialogResponse>('/assistant/plan', { contract, contexts })
+}
+
+export function createHold(input: {
+  session_id: string
+  event_id: number
+  zone: string
+  price: number
+  party_size: number
+}): Promise<Hold> {
+  return postJson<Hold>('/assistant/holds', input)
+}
+
+export function confirmHold(holdId: string): Promise<Hold> {
+  return postJson<Hold>(`/assistant/holds/${holdId}/confirm`, {})
+}
+
+const CONTRACT_KEY = 'dosugDialogue'
+
+export function loadContract(): StateContract | null {
+  try {
+    const raw = sessionStorage.getItem(CONTRACT_KEY)
+    return raw ? (JSON.parse(raw) as StateContract) : null
+  } catch {
+    return null
+  }
+}
+
+export function saveContract(contract: StateContract): void {
+  try {
+    sessionStorage.setItem(CONTRACT_KEY, JSON.stringify(contract))
+  } catch {
+    /* private mode — dialogue simply won't persist */
+  }
+}
+
+export function clearContract(): void {
+  try {
+    sessionStorage.removeItem(CONTRACT_KEY)
+  } catch {
+    /* ignore */
+  }
+}

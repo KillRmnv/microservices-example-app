@@ -13,6 +13,16 @@ spring:
             - DedupeResponseHeader=Access-Control-Allow-Credentials Access-Control-Allow-Origin
 
           routes:
+            - id: collector-catalog
+              uri: http://collector-service:8080
+              predicates:
+                - Path=/catalog/**
+              filters:
+                - StripPrefix=1
+              metadata:
+                connect-timeout: 3000
+                response-timeout: 15s
+
             - id: users-service
               uri: http://user-service:8081
               predicates:
@@ -50,12 +60,33 @@ spring:
               metadata:
                 connect-timeout: 3000
                 response-timeout: 5s
+
+            - id: assistant-service
+              uri: http://assistant-service:8080
+              predicates:
+                - Path=/assistant/**
+              filters:
+                - name: CircuitBreaker
+                  args:
+                    name: assistantServiceCircuitBreaker
+                    fallbackUri: forward:/fallback/assistant
+                - name: Retry
+                  args:
+                    retries: 2
+                    backoff:
+                      firstBackoff: 500ms
+                      maxBackoff: 1s
+              metadata:
+                connect-timeout: 3000
+                # Local LLM reasoning can take 2-3 minutes on CPU.
+                response-timeout: 600s
           globalcors:
             add-to-simple-url-handler-mapping: true
             cors-configurations:
               '[/**]':
                 allowedOrigins:
                   - "http://localhost:8080"
+                  - "http://localhost:3000"
                 allowedMethods:
                   - GET
                   - POST
@@ -73,6 +104,12 @@ spring:
                 maxAge: 3600
 jwt:
   secret: ${JWT_SECRET:your-super-secret-key-at-least-32-characters-long!}
+springdoc:
+  api-docs:
+    enabled: ${SPRINGDOC_API_DOCS_ENABLED:true}
+  swagger-ui:
+    enabled: ${SPRINGDOC_SWAGGER_UI_ENABLED:true}
+  paths-to-exclude: /actuator/**,/fallback/**
 management:
   endpoints:
     web:
@@ -110,18 +147,31 @@ resilience4j:
         wait-duration-in-open-state: 10s
         permitted-number-of-calls-in-half-open-state: 3
         automatic-transition-from-open-to-half-open-enabled: true
+      assistantServiceCircuitBreaker:
+        register-health-indicator: true
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
+        automatic-transition-from-open-to-half-open-enabled: true
   timelimiter:
     instances:
       userServiceCircuitBreaker:
         timeout-duration: 5s
       bookingServiceCircuitBreaker:
         timeout-duration: 5s
+      assistantServiceCircuitBreaker:
+        # Reasoning stages can take 2-3 minutes on CPU.
+        timeout-duration: 600s
 logging:
   level:
+    root: INFO
     org.springframework.cloud.gateway: INFO
-    org.springframework.security: DEBUG
-    com.microservices_example_app.gateway: DEBUG
-    org.springframework.http.server.reactive: INFO
+    org.springframework.security: INFO
+    com.microservices_example_app.gateway: INFO
     org.springframework.web.server: INFO
+    org.apache.kafka: WARN
+    org.springframework.http.server.reactive: INFO
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} [traceId=%X{traceId}, spanId=%X{spanId}] - %msg%n"

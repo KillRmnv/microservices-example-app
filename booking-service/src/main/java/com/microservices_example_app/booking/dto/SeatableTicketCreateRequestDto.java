@@ -1,6 +1,7 @@
 package com.microservices_example_app.booking.dto;
 
 import com.microservices_example_app.booking.model.Zone;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -14,11 +15,12 @@ import java.math.BigDecimal;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@Schema(description = "Request to create a ticket bound to a specific seat")
 public class SeatableTicketCreateRequestDto {
-    private Integer eventId;
-    private Integer seatId;
+    private Long eventId;
+    private Long seatId;
     private Zone zone;
     private BigDecimal price;
     private Boolean active;
-    private Integer userId;
+    private Long userId;
 }

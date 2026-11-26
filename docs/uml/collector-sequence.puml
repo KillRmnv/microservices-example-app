@@ -1,0 +1,60 @@
+@startuml
+title Сервис сбора данных: сбор, нормализация и публикация каталога
+
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+skinparam shadowing false
+
+participant "Планировщик /\nадминистратор" as TRIGGER
+participant "Collector Service" as COL
+participant "Источники\n(Ticketpro, Telegram,\nAfisha, Relax, 2GIS)" as SRC
+participant "HTTP-клиент\n(вежливость, лимиты)" as HTTP
+participant "Нормализация,\nочистка, дедупликация" as NORM
+database "PostgreSQL\n(collector_db)" as PG
+participant "Embeddings\n(llama-embed)" as EMB
+participant "Qdrant" as QD
+queue "Kafka\nbooking.catalog" as KAFKA
+participant "Frontend /\nAssistant" as CLIENT
+
+== Плановый или ручной сбор ==
+
+TRIGGER -> COL: запуск сбора источника
+COL -> HTTP: запрос к источнику
+HTTP -> SRC: получить страницы / API
+SRC --> HTTP: сырые события и места
+HTTP --> COL: ответ источника
+
+COL -> NORM: разобрать и нормализовать
+NORM -> NORM: даты, город, цены,\nтекст, категории
+NORM -> PG: найти существующие записи
+PG --> NORM: совпадения
+NORM -> PG: upsert событий и мест
+COL -> PG: записать результат запуска\n(source_runs, ошибки, метрики)
+
+== Подготовка поиска ==
+
+COL -> PG: выбрать новые записи
+PG --> COL: батчи событий и мест
+COL -> EMB: получить эмбеддинги
+EMB --> COL: dense-векторы
+COL -> QD: upsert точек\n(dense + sparse + payload)
+
+== События из booking-service ==
+
+KAFKA -> COL: изменения каталога booking
+COL -> PG: зеркалировать событие
+COL -> QD: обновить payload и векторы
+
+== Отдача каталога ==
+
+CLIENT -> COL: GET /events, /events/search, /venues
+COL -> PG: выбрать и отфильтровать каталог
+PG --> COL: события и места
+COL --> CLIENT: карточки каталога
+
+note over COL, PG
+  Планировщик не запускает источник,
+  пока предыдущий сбор ещё выполняется.
+end note
+
+@enduml

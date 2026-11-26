@@ -17,13 +17,13 @@ import lombok.Setter;
 @NoArgsConstructor
 @AllArgsConstructor
 public class SeatableTicketDeleteRequestDto {
-    private Integer eventId;
-    private Integer seatId;
+    private Long eventId;
+    private Long seatId;
     private Zone zone;
     private BigDecimal minPrice;
     private BigDecimal maxPrice;
     private Boolean active;
-    private Integer userId;
+    private Long userId;
     private String sector;
     private String row;
     private String number;

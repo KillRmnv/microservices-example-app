@@ -29,9 +29,13 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
 	implementation 'org.springframework.cloud:spring-cloud-starter-circuitbreaker-reactor-resilience4j'
 
+	implementation "org.springdoc:springdoc-openapi-starter-webflux-ui:${springdocVersion}"
+
 	implementation "io.jsonwebtoken:jjwt-api:${jwtVersion}"
 	implementation "io.jsonwebtoken:jjwt-impl:${jwtVersion}"
 	implementation "io.jsonwebtoken:jjwt-jackson:${jwtVersion}"
+
+	implementation "net.logstash.logback:logstash-logback-encoder:${logstashEncoderVersion}"
 
 	compileOnly "org.projectlombok:lombok:${lombokVersion}"
 	annotationProcessor "org.projectlombok:lombok:${lombokVersion}"
@@ -56,5 +60,19 @@ dependencyManagement {
 }
 
 tasks.named('test') {
-	useJUnitPlatform()
+	useJUnitPlatform {
+		// CI-style tag filtering, e.g.
+		// -Djunit.jupiter.tags.exclude=e2e,integration
+		// -Djunit.jupiter.tags.include=e2e
+		def excluded = (System.getProperty('junit.jupiter.tags.exclude') ?: '')
+				.split(',').collect { it.trim() }.findAll { it }
+		if (!excluded.isEmpty()) {
+			excludeTags(excluded.toArray(new String[0]))
+		}
+		def included = (System.getProperty('junit.jupiter.tags.include') ?: '')
+				.split(',').collect { it.trim() }.findAll { it }
+		if (!included.isEmpty()) {
+			includeTags(included.toArray(new String[0]))
+		}
+	}
 }

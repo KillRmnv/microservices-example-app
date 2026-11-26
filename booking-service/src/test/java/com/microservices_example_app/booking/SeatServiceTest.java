@@ -42,25 +42,25 @@ class SeatServiceTest {
     @Test
     void create_shouldCreateSeat() {
         SeatCreateRequestDto request = new SeatCreateRequestDto();
-        request.setVenueId(10);
+        request.setVenueId(10L);
         request.setSector("A");
         request.setRow("3");
         request.setNumber("12");
 
         Venue venue = Venue.builder()
-                .id(10)
+                .id(10L)
                 .place("Main Hall")
                 .build();
 
         Seat savedSeat = Seat.builder()
-                .id(100)
+                .id(100L)
                 .sector("A")
                 .row("3")
                 .number("12")
                 .venue(venue)
                 .build();
 
-        when(venueRepository.findById(10)).thenReturn(Optional.of(venue));
+        when(venueRepository.findById(10L)).thenReturn(Optional.of(venue));
         when(seatRepository.save(any(Seat.class))).thenReturn(savedSeat);
 
         SeatResponseDto result = seatService.create(request);
@@ -86,9 +86,9 @@ class SeatServiceTest {
     @Test
     void create_shouldThrowWhenVenueNotFound() {
         SeatCreateRequestDto request = new SeatCreateRequestDto();
-        request.setVenueId(10);
+        request.setVenueId(10L);
 
-        when(venueRepository.findById(10)).thenReturn(Optional.empty());
+        when(venueRepository.findById(10L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> seatService.create(request))
                 .isInstanceOf(NotFoundException.class)
@@ -100,21 +100,21 @@ class SeatServiceTest {
     @Test
     void getById_shouldReturnSeat() {
         Venue venue = Venue.builder()
-                .id(10)
+                .id(10L)
                 .place("Main Hall")
                 .build();
 
         Seat seat = Seat.builder()
-                .id(100)
+                .id(100L)
                 .sector("A")
                 .row("3")
                 .number("12")
                 .venue(venue)
                 .build();
 
-        when(seatRepository.findById(100)).thenReturn(Optional.of(seat));
+        when(seatRepository.findById(100L)).thenReturn(Optional.of(seat));
 
-        SeatResponseDto result = seatService.getById(100);
+        SeatResponseDto result = seatService.getById(100L);
 
         assertThat(result.getId()).isEqualTo(100);
         assertThat(result.getSector()).isEqualTo("A");
@@ -123,9 +123,9 @@ class SeatServiceTest {
 
     @Test
     void getById_shouldThrowWhenSeatNotFound() {
-        when(seatRepository.findById(100)).thenReturn(Optional.empty());
+        when(seatRepository.findById(100L)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> seatService.getById(100))
+        assertThatThrownBy(() -> seatService.getById(100L))
                 .isInstanceOf(NotFoundException.class)
                 .hasMessage("Seat not found");
     }
@@ -133,16 +133,16 @@ class SeatServiceTest {
     @Test
     void searchByFilter_shouldReturnSeats() {
         SeatSearchRequestDto filter = new SeatSearchRequestDto();
-        filter.setVenueId(10);
+        filter.setVenueId(10L);
         filter.setSector("A");
 
         Venue venue = Venue.builder()
-                .id(10)
+                .id(10L)
                 .place("Main Hall")
                 .build();
 
         Seat seat = Seat.builder()
-                .id(100)
+                .id(100L)
                 .sector("A")
                 .row("3")
                 .number("12")
@@ -181,51 +181,51 @@ class SeatServiceTest {
 
     @Test
     void deleteById_shouldDeleteSeat() {
-        when(seatRepository.existsById(100)).thenReturn(true);
+        when(seatRepository.existsById(100L)).thenReturn(true);
 
-        seatService.deleteById(100);
+        seatService.deleteById(100L);
 
-        verify(seatRepository).existsById(100);
-        verify(seatRepository).deleteById(100);
+        verify(seatRepository).existsById(100L);
+        verify(seatRepository).deleteById(100L);
     }
 
     @Test
     void deleteById_shouldThrowWhenIdInvalid() {
-        assertThatThrownBy(() -> seatService.deleteById(0))
+        assertThatThrownBy(() -> seatService.deleteById(0L))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Seat id must be positive");
 
-        verify(seatRepository, never()).existsById(anyInt());
-        verify(seatRepository, never()).deleteById(anyInt());
+        verify(seatRepository, never()).existsById(anyLong());
+        verify(seatRepository, never()).deleteById(anyLong());
     }
 
     @Test
     void deleteById_shouldThrowWhenSeatNotFound() {
-        when(seatRepository.existsById(100)).thenReturn(false);
+        when(seatRepository.existsById(100L)).thenReturn(false);
 
-        assertThatThrownBy(() -> seatService.deleteById(100))
+        assertThatThrownBy(() -> seatService.deleteById(100L))
                 .isInstanceOf(NotFoundException.class)
                 .hasMessage("Seat not found");
 
-        verify(seatRepository).existsById(100);
-        verify(seatRepository, never()).deleteById(anyInt());
+        verify(seatRepository).existsById(100L);
+        verify(seatRepository, never()).deleteById(anyLong());
     }
 
     @Test
     void deleteByFilter_shouldDeleteAllMatchedSeatsAndReturnCount() {
         SeatDeleteRequestDto request = new SeatDeleteRequestDto();
-        request.setVenueId(10);
+        request.setVenueId(10L);
         request.setSector("A");
         request.setRow("3");
         request.setNumber("12");
 
         Venue venue = Venue.builder()
-                .id(10)
+                .id(10L)
                 .place("Main Hall")
                 .build();
 
         Seat seat1 = Seat.builder()
-                .id(100)
+                .id(100L)
                 .sector("A")
                 .row("3")
                 .number("12")
@@ -233,7 +233,7 @@ class SeatServiceTest {
                 .build();
 
         Seat seat2 = Seat.builder()
-                .id(101)
+                .id(101L)
                 .sector("A")
                 .row("3")
                 .number("12")
@@ -253,24 +253,24 @@ class SeatServiceTest {
     @Test
     void updateSeatById_shouldUpdateSeat() {
         SeatUpdateRequestDto request = new SeatUpdateRequestDto();
-        request.setId(100);
+        request.setId(100L);
         request.setSector("B");
         request.setRow("5");
         request.setNumber("20");
-        request.setVenueId(11);
+        request.setVenueId(11L);
 
         Venue oldVenue = Venue.builder()
-                .id(10)
+                .id(10L)
                 .place("Old Hall")
                 .build();
 
         Venue newVenue = Venue.builder()
-                .id(11)
+                .id(11L)
                 .place("New Hall")
                 .build();
 
         Seat existing = Seat.builder()
-                .id(100)
+                .id(100L)
                 .sector("A")
                 .row("3")
                 .number("12")
@@ -278,15 +278,15 @@ class SeatServiceTest {
                 .build();
 
         Seat updated = Seat.builder()
-                .id(100)
+                .id(100L)
                 .sector("B")
                 .row("5")
                 .number("20")
                 .venue(newVenue)
                 .build();
 
-        when(seatRepository.findById(100)).thenReturn(Optional.of(existing));
-        when(venueRepository.findById(11)).thenReturn(Optional.of(newVenue));
+        when(seatRepository.findById(100L)).thenReturn(Optional.of(existing));
+        when(venueRepository.findById(11L)).thenReturn(Optional.of(newVenue));
         when(seatRepository.save(any(Seat.class))).thenReturn(updated);
 
         SeatResponseDto result = seatService.updateSeatById(request);
@@ -312,9 +312,9 @@ class SeatServiceTest {
     @Test
     void updateSeatById_shouldThrowWhenSeatNotFound() {
         SeatUpdateRequestDto request = new SeatUpdateRequestDto();
-        request.setId(100);
+        request.setId(100L);
 
-        when(seatRepository.findById(100)).thenReturn(Optional.empty());
+        when(seatRepository.findById(100L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> seatService.updateSeatById(request))
                 .isInstanceOf(NotFoundException.class)
@@ -326,24 +326,24 @@ class SeatServiceTest {
     @Test
     void updateSeatById_shouldThrowWhenVenueNotFound() {
         SeatUpdateRequestDto request = new SeatUpdateRequestDto();
-        request.setId(100);
-        request.setVenueId(11);
+        request.setId(100L);
+        request.setVenueId(11L);
 
         Venue oldVenue = Venue.builder()
-                .id(10)
+                .id(10L)
                 .place("Old Hall")
                 .build();
 
         Seat existing = Seat.builder()
-                .id(100)
+                .id(100L)
                 .sector("A")
                 .row("3")
                 .number("12")
                 .venue(oldVenue)
                 .build();
 
-        when(seatRepository.findById(100)).thenReturn(Optional.of(existing));
-        when(venueRepository.findById(11)).thenReturn(Optional.empty());
+        when(seatRepository.findById(100L)).thenReturn(Optional.of(existing));
+        when(venueRepository.findById(11L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> seatService.updateSeatById(request))
                 .isInstanceOf(NotFoundException.class)
@@ -356,11 +356,11 @@ class SeatServiceTest {
     @Test
     void updateSeatById_shouldKeepSectorWhenNull() {
         SeatUpdateRequestDto request = new SeatUpdateRequestDto();
-        request.setId(100);
-        Venue venue = Venue.builder().id(10).place("Main Hall").build();
-        Seat existing = Seat.builder().id(100).sector("A").row("3").number("12").venue(venue).build();
-        Seat updated = Seat.builder().id(100).sector("A").row("3").number("12").venue(venue).build();
-        when(seatRepository.findById(100)).thenReturn(Optional.of(existing));
+        request.setId(100L);
+        Venue venue = Venue.builder().id(10L).place("Main Hall").build();
+        Seat existing = Seat.builder().id(100L).sector("A").row("3").number("12").venue(venue).build();
+        Seat updated = Seat.builder().id(100L).sector("A").row("3").number("12").venue(venue).build();
+        when(seatRepository.findById(100L)).thenReturn(Optional.of(existing));
         when(seatRepository.save(any(Seat.class))).thenReturn(updated);
         SeatResponseDto result = seatService.updateSeatById(request);
         assertThat(result.getSector()).isEqualTo("A");
@@ -371,14 +371,14 @@ class SeatServiceTest {
     @Test
     void updateSeatById_shouldKeepFieldsWhenBlank() {
         SeatUpdateRequestDto request = new SeatUpdateRequestDto();
-        request.setId(100);
+        request.setId(100L);
         request.setSector("  ");
         request.setRow("  ");
         request.setNumber("  ");
-        Venue venue = Venue.builder().id(10).place("Main Hall").build();
-        Seat existing = Seat.builder().id(100).sector("A").row("3").number("12").venue(venue).build();
-        Seat updated = Seat.builder().id(100).sector("A").row("3").number("12").venue(venue).build();
-        when(seatRepository.findById(100)).thenReturn(Optional.of(existing));
+        Venue venue = Venue.builder().id(10L).place("Main Hall").build();
+        Seat existing = Seat.builder().id(100L).sector("A").row("3").number("12").venue(venue).build();
+        Seat updated = Seat.builder().id(100L).sector("A").row("3").number("12").venue(venue).build();
+        when(seatRepository.findById(100L)).thenReturn(Optional.of(existing));
         when(seatRepository.save(any(Seat.class))).thenReturn(updated);
         SeatResponseDto result = seatService.updateSeatById(request);
         assertThat(result.getSector()).isEqualTo("A");
@@ -389,7 +389,7 @@ class SeatServiceTest {
     @Test
     void updateSeatById_shouldThrowWhenIdNegative() {
         SeatUpdateRequestDto request = new SeatUpdateRequestDto();
-        request.setId(-1);
+        request.setId(-1L);
         assertThatThrownBy(() -> seatService.updateSeatById(request))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Seat id must be positive");
@@ -399,7 +399,7 @@ class SeatServiceTest {
     @Test
     void deleteByFilter_shouldReturnZeroWhenNoMatch() {
         SeatDeleteRequestDto request = new SeatDeleteRequestDto();
-        request.setVenueId(999);
+        request.setVenueId(999L);
         when(seatRepository.findAll(any(Specification.class))).thenReturn(List.of());
         long result = seatService.deleteByFilter(request);
         assertThat(result).isEqualTo(0);

@@ -27,8 +27,8 @@ public class JwtRequestUserExtractor {
         return getClaims().getSubject();
     }
 
-    public Integer extractUserId() {
-        return getClaims().get("id", Integer.class);
+    public Long extractUserId() {
+        return getClaims().get("id", Long.class);
     }
 
     public String extractRole() {

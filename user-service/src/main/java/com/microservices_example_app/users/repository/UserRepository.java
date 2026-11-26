@@ -10,11 +10,13 @@ import org.springframework.stereotype.Repository;
 import java.util.Optional;
 
 @Repository
-public interface UserRepository extends JpaRepository<User, Integer>, JpaSpecificationExecutor<User> {
+public interface UserRepository extends JpaRepository<User, Long>, JpaSpecificationExecutor<User> {
     Optional<User> findByEmail(String email);
 
     @Override
-    Optional<User> findById(Integer id);
+    Optional<User> findById(Long id);
+
+    Optional<User> findByUsername(String username);
 
     Page<User> findAll(Pageable pageable);
 

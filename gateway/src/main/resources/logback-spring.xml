@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <!-- Structured JSON logging (LogstashEncoder). Default appender is JSON.
+         Activate the 'text' Spring profile (SPRING_PROFILES_ACTIVE=text) for plain-text logs. -->
+    <springProperty name="APP_NAME" source="spring.application.name" defaultValue="gateway"/>
+
+    <appender name="JSON_CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <customFields>{"service":"gateway","env":"${APP_ENV:-local}","version":"${APP_VERSION:-dev}"}</customFields>
+            <!-- Defense in depth: mask sensitive JSON fields even if code logs them by accident -->
+            <jsonGeneratorDecorator class="net.logstash.logback.decorate.MaskingJsonGeneratorDecorator">
+                <defaultMask>****</defaultMask>
+                <pathMask>
+                    <path>password</path>
+                    <path>newPassword</path>
+                    <path>passwordHash</path>
+                    <path>token</path>
+                    <path>resetToken</path>
+                    <path>authorization</path>
+                    <path>cookie</path>
+                    <path>set-cookie</path>
+                    <path>secret</path>
+                    <path>clientSecret</path>
+                    <path>apiKey</path>
+                    <path>api_key</path>
+                    <path>dsn</path>
+                    <path>email</path>
+                    <path>username</path>
+                    <path>userName</path>
+                    <path>resetUrl</path>
+                    <path>reset_url</path>
+                    <path>recipient</path>
+                    <path>phone</path>
+                </pathMask>
+                <valueMask>
+                    <value>(?i)[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}</value>
+                    <value>(?i)(bearer\s+)[A-Za-z0-9._~+/=-]+</value>
+                    <value>(?i)((?:password|passwd|pwd|secret|token|api[_-]?key|authorization|reset[_-]?token)\s*[=:]\s*)[^\s,;&amp;"']+</value>
+                </valueMask>
+            </jsonGeneratorDecorator>
+            <includeMdc>true</includeMdc>
+            <timeZone>UTC</timeZone>
+            <fieldNames>
+                <timestamp>timestamp</timestamp>
+                <version>[ignore]</version>
+                <levelValue>[ignore]</levelValue>
+            </fieldNames>
+        </encoder>
+    </appender>
+
+    <appender name="TEXT_CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} [requestId=%X{requestId} userId=%X{userId} traceId=%X{traceId}] - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <springProfile name="!text">
+        <root level="INFO">
+            <appender-ref ref="JSON_CONSOLE"/>
+        </root>
+    </springProfile>
+
+    <springProfile name="text">
+        <root level="INFO">
+            <appender-ref ref="TEXT_CONSOLE"/>
+        </root>
+    </springProfile>
+</configuration>

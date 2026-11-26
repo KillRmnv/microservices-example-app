@@ -1,0 +1,69 @@
+server:
+  port: 0
+  address: 0.0.0.0
+
+spring:
+  application:
+    name: notification-service-test
+
+  kafka:
+    bootstrap-servers: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: notification-service-group
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring:
+          json:
+            trusted:
+              packages: com.microservices_example_app.notification.dto
+            value:
+              default:
+                type: com.microservices_example_app.notification.dto.EmailNotificationEvent
+            use:
+              type:
+                headers: false
+
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: test@test.com
+    password: test
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+
+notification:
+  kafka:
+    topic:
+      authentication: notification.authentication
+      booking: notification.booking
+      ticket-refund: notification.refund
+      user-lifecycle: notification.user-lifecycle
+      mass-mailing: notification.mass-mailing
+      forget-password: notification.forget-password
+
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: when_authorized
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+  tracing:
+    sampling:
+      probability: 1.0
+
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} [traceId=%X{traceId}, spanId=%X{spanId}] - %msg%n"

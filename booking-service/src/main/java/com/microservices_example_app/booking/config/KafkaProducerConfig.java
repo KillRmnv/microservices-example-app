@@ -4,6 +4,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 
+import com.microservices_example_app.booking.event.BookingCatalogEvent;
 import com.microservices_example_app.booking.event.DeleteEventEvent;
 import com.microservices_example_app.booking.event.SuccessfulBookingEvent;
 import com.microservices_example_app.booking.event.SuccessfulTicketRefundEvent;
@@ -62,6 +63,16 @@ public class KafkaProducerConfig {
     @Bean
     public KafkaTemplate<String, DeleteEventEvent> deleteEventKafkaTemplate() {
         return new KafkaTemplate<>(deleteEventProducerFactory());
+    }
+
+    @Bean
+    public ProducerFactory<String, BookingCatalogEvent> bookingCatalogProducerFactory() {
+        return new DefaultKafkaProducerFactory<>(buildBaseProps());
+    }
+
+    @Bean
+    public KafkaTemplate<String, BookingCatalogEvent> bookingCatalogKafkaTemplate() {
+        return new KafkaTemplate<>(bookingCatalogProducerFactory());
     }
 
     @Bean

@@ -8,7 +8,7 @@ import org.springframework.stereotype.Repository;
 import java.util.Optional;
 
 @Repository
-public interface TownRepository extends JpaRepository<Town, Integer> {
+public interface TownRepository extends JpaRepository<Town, Long> {
     Optional<Town> findByNameIgnoreCase(String name);
 
     boolean existsByNameIgnoreCase(String name);

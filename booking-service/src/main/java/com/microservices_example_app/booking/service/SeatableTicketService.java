@@ -13,8 +13,10 @@ import com.microservices_example_app.booking.producers.NotificationKafkaUserProd
 import com.microservices_example_app.booking.repository.EventRepository;
 import com.microservices_example_app.booking.repository.SeatRepository;
 import com.microservices_example_app.booking.repository.SeatableTicketRepository;
+import com.microservices_example_app.booking.repository.TicketRepository;
 import com.microservices_example_app.booking.specification.SeatableTicketSpecification;
 import com.microservices_example_app.booking.utils.JwtRequestUserExtractor;
+import com.microservices_example_app.booking.util.SensitiveMask;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -22,7 +24,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 
@@ -32,6 +36,7 @@ import java.util.List;
 public class SeatableTicketService {
 
     private final SeatableTicketRepository seatableTicketRepository;
+    private final TicketRepository ticketRepository;
     private final EventRepository eventRepository;
     private final SeatRepository seatRepository;
     private final NotificationKafkaBookingProducer notificationKafkaBookingProducer;
@@ -48,10 +53,16 @@ public class SeatableTicketService {
         Event event = eventRepository.findById(requestDto.getEventId())
                 .orElseThrow(() -> new NotFoundException("Event not found"));
 
-        Seat seat = seatRepository.findById(requestDto.getSeatId())
+        Seat seat = seatRepository.findByIdForUpdate(requestDto.getSeatId())
                 .orElseThrow(() -> new NotFoundException("Seat not found"));
 
-        Integer currentUserId = jwtRequestUserExtractor.extractUserId();
+        if (seatableTicketRepository.existsByEventIdAndSeatIdAndActiveTrue(
+                event.getId(), seat.getId())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Seat is already booked for this event");
+        }
+
+        Long currentUserId = jwtRequestUserExtractor.extractUserId();
         String email = jwtRequestUserExtractor.extractEmail();
         String username = jwtRequestUserExtractor.extractUsername();
 
@@ -74,13 +85,13 @@ public class SeatableTicketService {
         );
 
         notificationKafkaBookingProducer.sendSuccessfulBookingEvent(bookingEvent);
-        log.info("Successful seatable booking event sent for ticket id={}, email={}", saved.getId(), email);
+        log.info("Successful seatable booking event sent for ticket id={}, email={}", saved.getId(), SensitiveMask.maskEmail(email));
 
         return toResponseDto(saved);
     }
 
     @Transactional
-    public SeatableTicketResponseDto getById(Integer id) {
+    public SeatableTicketResponseDto getById(Long id) {
         log.info("Fetching seatable ticket with id: {}", id);
 
         SeatableTicket ticket = seatableTicketRepository.findById(id)
@@ -90,7 +101,7 @@ public class SeatableTicketService {
     }
 
     @Transactional
-    public void deleteById(Integer id) {
+    public void deleteById(Long id) {
         if (id == null || id < 1) {
             throw new IllegalArgumentException("SeatableTicket id must be positive");
         }
@@ -98,7 +109,7 @@ public class SeatableTicketService {
         SeatableTicket ticket = seatableTicketRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("Seatable ticket not found"));
 
-        Integer currentUserId = jwtRequestUserExtractor.extractUserId();
+        Long currentUserId = jwtRequestUserExtractor.extractUserId();
         String email = jwtRequestUserExtractor.extractEmail();
         String username = jwtRequestUserExtractor.extractUsername();
 
@@ -118,7 +129,7 @@ public class SeatableTicketService {
         );
 
         notificationKafkaBookingProducer.sendSuccessfulTicketRefundEvent(refundEvent);
-        log.info("Successful seatable refund event sent for ticket id={}, email={}", id, email);
+        log.info("Successful seatable refund event sent for ticket id={}, email={}", id, SensitiveMask.maskEmail(email));
     }
 
 
@@ -164,8 +175,8 @@ public class SeatableTicketService {
         SeatableTicket ticket = seatableTicketRepository.findById(request.getId())
                 .orElseThrow(() -> new NotFoundException("No seatable ticket with id=" + request.getId()));
 
-        Integer currentUserId = jwtRequestUserExtractor.extractUserId();
-        Integer previousUserId = ticket.getUserId();
+        Long currentUserId = jwtRequestUserExtractor.extractUserId();
+        Long previousUserId = ticket.getUserId();
         log.info("previous userid:{}", previousUserId);
 
         var builder = SeatableTicket.builder().id(ticket.getId());
@@ -217,7 +228,11 @@ public class SeatableTicketService {
         String username = jwtRequestUserExtractor.extractUsername();
 
         if (currentUserId != null && ((previousUserId != null && !currentUserId.equals(previousUserId)) || (previousUserId == null))) {
-            
+            notificationKafkaBookingProducer.sendSuccessfulTicketRefundEvent(
+                    new SuccessfulTicketRefundEvent(email, username, saved.getEvent().getTitle(), serviceName)
+            );
+            log.info("Refund event sent: seatable ticket id={}, userId={}", saved.getId(), currentUserId);
+
             notificationKafkaBookingProducer.sendSuccessfulBookingEvent(
                     new SuccessfulBookingEvent(email, username, saved.getEvent().getTitle(), serviceName)
             );
@@ -229,15 +244,18 @@ public class SeatableTicketService {
         return toResponseDto(saved);
     }
     @Transactional
-    public SeatableTicketResponseDto refund(Integer id) {
+    public SeatableTicketResponseDto refund(Long id) {
         if (id == null || id < 1) {
             throw new IllegalArgumentException("SeatableTicket id must be positive");
         }
 
+        if (ticketRepository.lockById(id).isEmpty()) {
+            throw new NotFoundException("Seatable ticket not found");
+        }
         SeatableTicket ticket = seatableTicketRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("Seatable ticket not found"));
 
-        Integer currentUserId = jwtRequestUserExtractor.extractUserId();
+        Long currentUserId = jwtRequestUserExtractor.extractUserId();
         String email = jwtRequestUserExtractor.extractEmail();
         String username = jwtRequestUserExtractor.extractUsername();
 
@@ -263,7 +281,7 @@ public class SeatableTicketService {
     }
     @Transactional
     public long deleteByFilter(SeatableTicketDeleteRequestDto requestDto) {
-        Integer currentUserId = jwtRequestUserExtractor.extractUserId();
+        Long currentUserId = jwtRequestUserExtractor.extractUserId();
         if (currentUserId == null) {
             throw new IllegalArgumentException("Cannot delete by filter: user ID not available from token");
         }

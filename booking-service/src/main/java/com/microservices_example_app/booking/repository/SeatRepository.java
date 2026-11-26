@@ -3,28 +3,36 @@ package com.microservices_example_app.booking.repository;
 import com.microservices_example_app.booking.model.Seat;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+import jakarta.persistence.LockModeType;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
 import java.util.Optional;
 
 @Repository
-public interface SeatRepository extends JpaRepository<Seat, Integer>, JpaSpecificationExecutor<Seat> {
-    List<Seat> findByVenueId(Integer venueId);
+public interface SeatRepository extends JpaRepository<Seat, Long>, JpaSpecificationExecutor<Seat> {
+    List<Seat> findByVenueId(Long venueId);
 
-    List<Seat> findByVenueIdAndSectorIgnoreCase(Integer venueId, String sector);
+    List<Seat> findByVenueIdAndSectorIgnoreCase(Long venueId, String sector);
 
     Optional<Seat> findByVenueIdAndSectorIgnoreCaseAndRowIgnoreCaseAndNumber(
-            Integer venueId,
+            Long venueId,
             String sector,
             String row,
             String number
     );
 
     boolean existsByVenueIdAndSectorIgnoreCaseAndRowIgnoreCaseAndNumber(
-            Integer venueId,
+            Long venueId,
             String sector,
             String row,
             String number
     );
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select s from Seat s where s.id = :id")
+    Optional<Seat> findByIdForUpdate(@Param("id") Long id);
 }

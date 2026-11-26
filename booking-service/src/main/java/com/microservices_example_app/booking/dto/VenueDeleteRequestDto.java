@@ -10,7 +10,7 @@ import lombok.Setter;
 @Setter
 @Getter
 public class VenueDeleteRequestDto {
-    private Integer townId;
+    private Long townId;
     private String place;
     private Integer minCapacity;
     private Integer maxCapacity;

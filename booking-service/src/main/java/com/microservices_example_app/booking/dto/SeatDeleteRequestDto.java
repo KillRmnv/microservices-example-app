@@ -10,5 +10,5 @@ public class SeatDeleteRequestDto {
     private String sector;
     private String row;
     private String number;
-    private Integer venueId;
+    private Long venueId;
 }
