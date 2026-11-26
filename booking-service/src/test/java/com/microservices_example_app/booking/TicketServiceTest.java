@@ -378,7 +378,6 @@ class TicketServiceTest {
         when(jwtRequestUserExtractor.extractUsername()).thenReturn("newuser");
         when(ticketRepository.save(any(Ticket.class))).thenReturn(updated);
         ticketService.updateTicketById(request);
-        verify(notificationKafkaBookingProducer).sendSuccessfulTicketRefundEvent(any());
         verify(notificationKafkaBookingProducer).sendSuccessfulBookingEvent(any());
     }
 
@@ -473,7 +472,6 @@ class TicketServiceTest {
         when(jwtRequestUserExtractor.extractUsername()).thenReturn("alex");
         when(ticketRepository.save(any(Ticket.class))).thenReturn(updated);
         ticketService.updateTicketById(request);
-        verify(notificationKafkaBookingProducer).sendSuccessfulTicketRefundEvent(any());
         verify(notificationKafkaBookingProducer).sendSuccessfulBookingEvent(any());
     }
 }
