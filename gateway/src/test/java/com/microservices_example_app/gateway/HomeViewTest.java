@@ -83,12 +83,13 @@ class HomeViewTest extends SeleniumTestBase {
     }
 
     @Test
-    void shouldHaveDateBudgetAndAtmosphereInputs() {
+    void shouldHaveDateAndBudgetInputs() {
         navigateTo("/");
         assertThat(findByTestId("filters-date").getAttribute("type")).isEqualTo("date");
         assertThat(findByTestId("filters-budget").getAttribute("type")).isEqualTo("range");
-        assertThat(find("textarea[data-testid='filters-atmosphere']")
-                .getAttribute("placeholder")).contains("уютно");
+        // Atmosphere moved to the assistant chat; the static sidebar no longer
+        // offers a free-text input.
+        assertThat(findAllByTestId("filters-atmosphere")).isEmpty();
     }
 
     @Test
