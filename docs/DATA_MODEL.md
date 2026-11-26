@@ -208,6 +208,9 @@ erDiagram
         text image_url
         text organizer
         text status "scheduled | cancelled | sold_out"
+        int capacity "nullable >= 0"
+        int seats_left "nullable <= capacity"
+        text availability "in_stock | limited | sold_out | unknown"
         timestamptz first_seen_at
         timestamptz last_seen_at
         timestamptz updated_at
@@ -232,6 +235,11 @@ erDiagram
         jsonb schedule
         numeric rating
         int review_count
+        numeric avg_check "nullable >= 0"
+        jsonb amenities "nullable source-dependent"
+        text price_level "low | medium | high"
+        text district
+        jsonb atmosphere "tags: quiet, cozy, live_music, ..."
         text source_url
         timestamptz fetched_at
         timestamptz embedded_at
@@ -302,13 +310,30 @@ Notes
   (`sources.priority` replaced `SOURCE_PRIORITY`, `categories` replaced the
   `CATEGORIES` set). Text columns stay next to the FK ids during the
   transition, so old queries keep working.
-- `dedup_key` is a partial unique index: the same logical scraped event from
-  two sources is merged into one row, and `event_sources` keeps every URL.
-  Rows mirrored from booking-service have `dedup_key = NULL` and never join
-  that merge — deleting a booking event must not remove its scraped twin.
+- `dedup_key` drives cross-source merging: the same logical event seen by a
+  scraper and mirrored from booking-service collapses into one row, and
+  `event_sources` keeps every URL. The unique guard is partial — it skips
+  `source = 'booking'` rows so two genuinely separate bookable performances
+  with the same title/time/venue stay apart; a non-unique lookup index keeps
+  booking rows reachable by key.
 - `booking_event_id` marks a row mirrored from `booking.catalog` (Kafka).
   Its value is the bookable id the assistant uses for availability/holds;
   Qdrant payloads carry it next to the UUID point id.
+- Availability columns (V3) are nullable and only filled when the source
+  publishes them: `capacity`/`seats_left` are guarded by
+  `seats_left <= capacity`, `availability` is constrained to
+  `in_stock | limited | sold_out | unknown`. Booking mirrors get live values;
+  scraped rows usually stay `NULL` / `unknown` and carry a source link.
+- Venue enrichment columns (V3) — `avg_check`, `amenities`, `price_level`,
+  `district` — are nullable too. The live 2GIS API returns no attribute
+  groups, so they stay `NULL` on real data and filters that need them fall
+  back to text or treat unknown as passing. `atmosphere` (V4) is a JSONB array
+  of RU tags (`quiet`, `cozy`, `live_music`, ...) written by
+  `POST /collect/atmosphere`; `NULL` means "not enriched yet".
+- `screenings` exists for exact cinema showtimes but is **currently empty**:
+  the cinema sources ingest whole run intervals (`category = 'film'`) and no
+  adapter produces per-screening rows yet.
+
 - `search_vector` is maintained by a trigger (title A, venue B, description C)
   and indexed with GIN — this is the lexical half of hybrid search. The same
   trigger bumps `updated_at`.
@@ -354,9 +379,13 @@ erDiagram
 
 Notes
 
-- `dialogue_runs` is write-only telemetry; it is truncated by tests and read
-  by `GET /metrics`.
+- `dialogue_runs` is the **only** stored dialogue telemetry (one row per turn:
+  action, clarification flag, duration); it is truncated by tests and read by
+  `GET /metrics`. The chat transcript itself is **not** persisted — history
+  lives client-side in the browser, so a new session starts from scratch.
 - `booking_holds` stores a **booking intent**, not real inventory:
+  - it is keyed by `session_id` only (`BIGINT event_id`, no `user_id` column),
+    so anonymous visitors can hold seats before logging in;
   - one pending intent per `(session_id, event_id)` via the partial unique
     index `uq_booking_holds_pending`;
   - `CHECK` constraints keep `price >= 0` and `1 <= party_size <= 20`;
@@ -372,13 +401,14 @@ Notes
 
 ```mermaid
 flowchart LR
-    FE[Next.js frontend] -->|/users/*, /booking/*, /assistant/*| GW[Gateway]
+    FE[Next.js frontend] -->|/users/*, /booking/*, /assistant/*, /catalog/*| GW[Gateway]
     GW --> US[user-service]
     GW --> BS[booking-service]
     GW --> AS[assistant-service]
+    GW -->|/catalog/* (StripPrefix=1)| CS[collector-service]
     BS -.->|Kafka: notification.booking| NS[notification-service-go]
-    US -.->|Kafka: user.mass-mail| BS
-    AS -->|lexical search| CS[collector-service]
+    BS -.->|Kafka: user.mass-mail| US
+    AS -->|lexical search| CS
     AS -->|embeddings| LL[llama.cpp server]
     AS -->|vectors| QD[(Qdrant)]
     AS -->|availability / event read| BS
@@ -390,8 +420,10 @@ flowchart LR
 
 The data model is intentionally split per service: there are no cross-database
 foreign keys, only ids exchanged in DTOs. `event_id` in `booking_holds` is a
-booking-service id (integer); collected events use UUIDs and therefore never
-get a live availability check.
+booking-service id (integer); collected events use UUIDs, so a scraped event
+can only show the availability its source published (`availability` /
+`seats_left`, often `unknown`) plus a source link, while rows mirrored from
+booking-service carry `booking_event_id` and can be checked live.
 
 ---
 

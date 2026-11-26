@@ -65,6 +65,9 @@ entity "collected_events" as collected_events {
   image_url : text
   organizer : text
   + status : text
+  capacity : integer
+  seats_left : integer
+  availability : text
   + first_seen_at : timestamp with time zone
   + last_seen_at : timestamp with time zone
   + updated_at : timestamp with time zone
@@ -89,6 +92,11 @@ entity "collected_venues" as collected_venues {
   schedule : jsonb
   rating : numeric
   review_count : integer
+  avg_check : numeric
+  amenities : jsonb
+  price_level : text
+  district : text
+  atmosphere : jsonb
   source_url : text
   + fetched_at : timestamp with time zone
   embedded_at : timestamp with time zone
@@ -113,6 +121,11 @@ entity "screenings" as screenings {
   + start_at : timestamp with time zone
   price : numeric
 }
+
+note right of screenings
+  Currently empty: cinema sources
+  ingest whole run intervals only.
+end note
 
 entity "source_runs" as source_runs {
   * id : bigint
